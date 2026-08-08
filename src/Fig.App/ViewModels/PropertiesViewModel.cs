@@ -28,6 +28,10 @@ public partial class PropertiesViewModel : ViewModelBase
     private readonly EditorViewModel _editor;
     private bool _suppressApply;
     private string? _clipId;
+    // Context key (kind + object id) currently displayed. Keeps the inspector tab stable
+    // across the Refresh() re-runs that slider drags trigger (each write raises
+    // TimelineChanged), so editing an effect/opacity doesn't yank back to the Video tab.
+    private (PropertiesContextKind Kind, string? Key) _shown;
 
     public PropertiesViewModel(EditorViewModel editor)
     {
@@ -246,7 +250,22 @@ public partial class PropertiesViewModel : ViewModelBase
         ShowProxySection = false;
         CanGenerateProxy = false;
         IsProxyBusy = false;
+        _shown = (PropertiesContextKind.Empty, null);
         _suppressApply = false;
+    }
+
+    /// <summary>
+    /// Resets the inspector tab to the first visible one when the shown object changes, but
+    /// preserves the user's tab while dragging sliders — every slider tick raises
+    /// TimelineChanged and re-runs Show*, which would otherwise jump back to the Video tab.
+    /// </summary>
+    private void ResetTabFor(PropertiesContextKind kind, string? key)
+    {
+        var next = (kind, key);
+        if (_shown == next)
+            return;
+        _shown = next;
+        SelectedTabIndex = FirstVisibleTab();
     }
 
     private void ShowMedia(MediaAsset asset)
@@ -261,7 +280,7 @@ public partial class PropertiesViewModel : ViewModelBase
         ShowProxySection = asset.Kind == MediaKind.Video;
         _proxyTarget = asset.Kind == MediaKind.Video ? asset : null;
         UpdateProxyAction(asset);
-        SelectedTabIndex = FirstVisibleTab();
+        ResetTabFor(PropertiesContextKind.Media, asset.Id);
         _suppressApply = false;
     }
 
@@ -329,7 +348,7 @@ public partial class PropertiesViewModel : ViewModelBase
             ShowProxySection = false;
             CanGenerateProxy = false;
         }
-        SelectedTabIndex = FirstVisibleTab();
+        ResetTabFor(PropertiesContextKind.Clip, clip.Id);
         RefreshAutomation();
         _suppressApply = false;
     }
@@ -380,7 +399,7 @@ public partial class PropertiesViewModel : ViewModelBase
         _proxyTarget = null;
         ShowProxySection = false;
         CanGenerateProxy = false;
-        SelectedTabIndex = FirstVisibleTab();
+        ResetTabFor(PropertiesContextKind.Marker, marker.Id);
         _suppressApply = false;
     }
 
@@ -423,7 +442,7 @@ public partial class PropertiesViewModel : ViewModelBase
         _proxyTarget = null;
         ShowProxySection = false;
         CanGenerateProxy = false;
-        SelectedTabIndex = FirstVisibleTab();
+        ResetTabFor(PropertiesContextKind.Transition, transition.Key);
         _suppressApply = false;
     }
 

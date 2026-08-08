@@ -21,6 +21,7 @@ namespace Fig.Core.Media
     public sealed unsafe class VideoFrameSource : IVideoFrameSource
     {
         private const int SwsBilinear = 2;
+        private const double FastCatchUpSec = 0.5;
 
         private readonly AVFormatContext* _inCtx;
         private readonly AVCodecContext* _decCtx;
@@ -203,7 +204,15 @@ namespace Fig.Core.Media
                     return _lastFrame;
 
                 if (mode == PreviewDecodeMode.Playback)
-                    return DecodeNextSequential(packet, timeSec);
+                {
+                    // After a seek (_lastPresentedSec < 0) or when the decode has fallen far
+                    // behind the target, fast-forward by dropping B-frames (never referenced)
+                    // to reach the target's neighborhood, then decode precisely for the tail.
+                    // Random access no longer costs a full-rate decode of the whole GOP from
+                    // the keyframe — the dominant stall when starting playback mid-clip.
+                    var catchUp = _lastPresentedSec < 0 || timeSec - _lastPresentedSec > FastCatchUpSec;
+                    return DecodeSequential(packet, timeSec, catchUp);
+                }
 
                 var acceptAfter = timeSec - 0.35;
 
@@ -264,42 +273,63 @@ namespace Fig.Core.Media
             }
         }
 
-        private DecodedFrame? DecodeNextSequential(AVPacket* packet, double targetSec)
+        private DecodedFrame? DecodeSequential(AVPacket* packet, double targetSec, bool catchUp)
         {
             var ctx = _inCtx;
             var dec = _decCtx;
-            int ret;
 
-            while ((ret = ffmpeg.av_read_frame(ctx, packet)) >= 0)
+            // While far behind the target, drop B-frames (never referenced) so the reference
+            // stream (I/P frames) advances quickly toward it; switch back to full decode for
+            // the precise tail. skip_frame is restored in finally so the mode policy always
+            // wins after this call.
+            _decCtx->skip_frame = catchUp ? AVDiscard.AVDISCARD_NONREF : AVDiscard.AVDISCARD_DEFAULT;
+            try
             {
-                if (packet->stream_index == _vIdx && ffmpeg.avcodec_send_packet(dec, packet) >= 0)
+                int ret;
+                while ((ret = ffmpeg.av_read_frame(ctx, packet)) >= 0)
                 {
-                    while (ffmpeg.avcodec_receive_frame(dec, _pendingFrame) == 0)
+                    if (packet->stream_index == _vIdx && ffmpeg.avcodec_send_packet(dec, packet) >= 0)
                     {
-                        var sec = _pendingFrame->best_effort_timestamp * ffmpeg.av_q2d(_timeBase);
-                        if (sec >= targetSec)
+                        while (ffmpeg.avcodec_receive_frame(dec, _pendingFrame) == 0)
                         {
-                            _lastPresentedSec = sec;
-                            ffmpeg.av_packet_unref(packet);
-                            return ScalePendingToLastFrame();
+                            var sec = _pendingFrame->best_effort_timestamp * ffmpeg.av_q2d(_timeBase);
+                            if (sec >= targetSec)
+                            {
+                                _lastPresentedSec = sec;
+                                ffmpeg.av_packet_unref(packet);
+                                return ScalePendingToLastFrame();
+                            }
+                            // inside the tail window: resume full decode so the presented
+                            // frame is exact (the fast-forward only skips the approach)
+                            if (catchUp && sec >= targetSec - FastCatchUpSec)
+                            {
+                                catchUp = false;
+                                _decCtx->skip_frame = AVDiscard.AVDISCARD_DEFAULT;
+                            }
                         }
                     }
+                    ffmpeg.av_packet_unref(packet);
                 }
-                ffmpeg.av_packet_unref(packet);
-            }
 
-            ffmpeg.avcodec_send_packet(dec, null);
-            while (ffmpeg.avcodec_receive_frame(dec, _pendingFrame) == 0)
-            {
-                var sec = _pendingFrame->best_effort_timestamp * ffmpeg.av_q2d(_timeBase);
-                if (sec >= targetSec)
+                ffmpeg.avcodec_send_packet(dec, null);
+                while (ffmpeg.avcodec_receive_frame(dec, _pendingFrame) == 0)
                 {
-                    _lastPresentedSec = sec;
-                    return ScalePendingToLastFrame();
+                    var sec = _pendingFrame->best_effort_timestamp * ffmpeg.av_q2d(_timeBase);
+                    if (sec >= targetSec)
+                    {
+                        _lastPresentedSec = sec;
+                        return ScalePendingToLastFrame();
+                    }
                 }
-            }
 
-            return _lastFrame;
+                return _lastFrame;
+            }
+            finally
+            {
+                _decCtx->skip_frame = _mode == PreviewDecodeMode.Scrub
+                    ? AVDiscard.AVDISCARD_NONREF
+                    : AVDiscard.AVDISCARD_DEFAULT;
+            }
         }
 
         private DecodedFrame ScalePendingToLastFrame()

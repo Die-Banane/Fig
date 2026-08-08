@@ -730,7 +730,7 @@
 
                             <!-- VIDEO: transform + crop + timing -->
                             <TabItem Header="Video" IsVisible="{Binding ShowVideoControls}">
-                                <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                                <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Visible">
                                     <StackPanel Spacing="12">
                                         <StackPanel Spacing="6">
                                             <StackPanel Classes="section-header">
@@ -1185,7 +1185,7 @@
                     </DockPanel>
                 </Border>
 
-                
+
             </Grid>
         </Grid>
     </DockPanel>

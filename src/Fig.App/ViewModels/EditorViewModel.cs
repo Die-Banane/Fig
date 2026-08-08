@@ -892,9 +892,19 @@ public partial class EditorViewModel : ViewModelBase
         if (Playback is null)
             return;
         if (Playback.IsPlaying)
+        {
             Playback.Pause();
+        }
         else
+        {
+            // Flag as playing first so the decode worker fills the playback FIFO, then
+            // pre-roll the first video frame before the audio clock starts. This removes
+            // the initial black/stale preview stall while playback seeks + decodes the
+            // first frame mid-clip.
+            IsPlaying = true;
+            Preview.PreRollPlayback();
             Playback.Play();
+        }
         IsPlaying = Playback.IsPlaying;
     }
 

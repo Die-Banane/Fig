@@ -265,6 +265,24 @@ public partial class PreviewViewModel : ViewModelBase
         _ = System.Threading.Tasks.Task.Run(DecodeWorkerAsync);
     }
 
+    /// <summary>
+    /// Starts the playback decode immediately (before the audio clock has moved), so the
+    /// first frame is pre-decoded and ready to present the moment playback begins. Without
+    /// this the preview stays black/stale until the first audio position update triggers a
+    /// seek + GOP decode — the dominant initial delay when starting mid-clip.
+    /// </summary>
+    public void PreRollPlayback()
+    {
+        lock (_decodeLock)
+        {
+            _pendingPlayhead = _playheadSec;
+            if (_decodeRunning)
+                return;
+            _decodeRunning = true;
+        }
+        _ = System.Threading.Tasks.Task.Run(DecodeWorkerAsync);
+    }
+
     private async Task DecodeWorkerAsync()
     {
         while (true)
@@ -320,9 +338,12 @@ public partial class PreviewViewModel : ViewModelBase
             double target;
             lock (_presentLock)
             {
+                // Tolerate the fill running up to PresentQueueDepth frames ahead of the clock
+                // (pre-roll / decode-ahead) without restarting, while still restarting on real
+                // backward jumps (seek/loop) or when the clock runs more than a queue ahead.
                 if (_nextPlaybackDecodeSec < 0
-                    || playhead < _nextPlaybackDecodeSec - frameDur * 1.5
-                    || playhead > _nextPlaybackDecodeSec + frameDur * (PresentQueueDepth + 2))
+                    || playhead < _nextPlaybackDecodeSec - frameDur * (PresentQueueDepth + 1)
+                    || playhead > _nextPlaybackDecodeSec + frameDur * (PresentQueueDepth + 1))
                 {
                     foreach (var f in _presentQueue)
                         FramePool.Return(f.Pixels);

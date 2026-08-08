@@ -66,9 +66,9 @@ Tracked against the current build.
 
 | Status | Goal | Notes |
 | :---: | :--- | :--- |
-| O | Free video transitions | The core pain point: transitions shouldn't be pay-to-use. Cross-dissolve ships free with a full timeline UI (apply, select, resize, remove). The catalog has one type so far. |
-| O | Fast export | Rendering should take seconds to minutes for short projects. Full timeline → MP4 (H.264/AAC) export works; encoder threading, quality presets, and hardware encoding are still to come. |
-| O | Clean, modern, intuitive interface | Keyboard-first Avalonia workspace that's easy to navigate. Functional, but panels and polish are still evolving. |
+| X | Free video transitions | The core pain point: transitions shouldn't be pay-to-use. Cross-dissolve ships free with a full timeline UI (apply, select, resize, remove). The catalog has one type so far. |
+| X | Fast export | Rendering should take seconds to minutes for short projects. Full timeline → MP4 (H.264/AAC) export works; encoder threading, quality presets, and hardware encoding are still to come. |
+| X | Clean, modern, intuitive interface | Keyboard-first Avalonia workspace that's easy to navigate. Functional, but panels and polish are still evolving. |
 | - | Smart editing aids | Automatic cuts when voice isn't detected, and AI transcription. |
 | - | Quick start for creators | Instant onboarding with tools and templates for popular niches. |
 
