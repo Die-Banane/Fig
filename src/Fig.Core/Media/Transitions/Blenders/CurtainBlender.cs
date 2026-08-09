@@ -38,7 +38,9 @@ namespace Fig.Core.Media
                     var center = panelW / 2;
                     var sweep = panel % 2 == 0 ? -1 : 1;
                     var boundary = center + sweep * (panelW / 2) * (2 * t01 - 1);
-                    var mix = Math.Clamp((sweep * (local - boundary)) / (2 * edge) + 0.5, 0, 1);
+                    // mix = 1 (incoming) on the side the curtain has already opened past the
+                    // boundary; at t01=0 the whole frame is outgoing, at t01=1 fully incoming
+                    var mix = Math.Clamp((sweep * (boundary - local)) / (2 * edge) + 0.5, 0, 1);
                     var i = (y * w + x) * 4;
                     dst[i] = (byte)Math.Round(a[i] + (b[i] - a[i]) * mix);
                     dst[i + 1] = (byte)Math.Round(a[i + 1] + (b[i + 1] - a[i + 1]) * mix);

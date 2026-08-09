@@ -819,7 +819,9 @@ namespace Fig.Core.Timeline
 
         public void SetTransitionOut(string clipId, TransitionRef? transition)
         {
-            if (FindClip(clipId) is null)
+            // transitions are a video-only concept; the transition resolver only scans
+            // video tracks, so an edge on an audio clip would silently never render
+            if (FindClip(clipId) is not VideoClip)
                 return;
             History.Execute(new SetTransitionOutCommand(this, clipId, transition));
             RaiseChanged();
@@ -827,11 +829,11 @@ namespace Fig.Core.Timeline
 
         /// <summary>
         /// Applies a catalog transition to the cut between two abutting clips
-        /// (outgoing.transitionOut + incoming.transitionIn).
+        /// (outgoing.transitionOut + incoming.transitionIn). Video clips only.
         /// </summary>
         public void ApplyTransitionAtCut(string outgoingClipId, string incomingClipId, TransitionRef transition)
         {
-            if (FindClip(outgoingClipId) is null || FindClip(incomingClipId) is null)
+            if (FindClip(outgoingClipId) is not VideoClip || FindClip(incomingClipId) is not VideoClip)
                 return;
             History.Execute(new ApplyTransitionAtCutCommand(this, outgoingClipId, incomingClipId, transition));
             RaiseChanged();
@@ -840,13 +842,14 @@ namespace Fig.Core.Timeline
         /// <summary>
         /// Applies <paramref name="transition"/> as transition-out on the selected clip and
         /// transition-in on the next abutting clip on the same track, when one exists.
-        /// Otherwise sets transition-out only.
+        /// Otherwise sets transition-out only. Returns false when the clips are not video
+        /// (transitions only exist between video clips).
         /// </summary>
         public bool TryApplyTransitionFromSelection(string clipId, TransitionRef transition)
         {
             var clip = FindClip(clipId);
             var track = FindClipTrack(clipId);
-            if (clip is null || track is null)
+            if (clip is not VideoClip || track is null)
                 return false;
 
             var cut = clip.StartSec + clip.DurSec;
@@ -863,9 +866,15 @@ namespace Fig.Core.Timeline
             }
 
             if (next is not null)
+            {
+                if (next is not VideoClip)
+                    return false;
                 ApplyTransitionAtCut(clip.Id, next.Id, transition);
+            }
             else
+            {
                 SetTransitionOut(clip.Id, transition);
+            }
             return true;
         }
 

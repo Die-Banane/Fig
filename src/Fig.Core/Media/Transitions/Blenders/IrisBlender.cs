@@ -35,7 +35,8 @@ namespace Fig.Core.Media
                 for (var x = 0; x < w; x++)
                 {
                     var dist = Math.Sqrt((x - cx) * (x - cx) + (y - cy) * (y - cy));
-                    var mix = Math.Clamp((dist - (radius - edge)) / (2 * edge), 0, 1);
+                    // mix = 1 (incoming) inside the expanding circle, 0 (outgoing) outside
+                    var mix = Math.Clamp((radius - dist) / (2 * edge) + 0.5, 0, 1);
                     var i = (y * w + x) * 4;
                     dst[i] = (byte)Math.Round(a[i] + (b[i] - a[i]) * mix);
                     dst[i + 1] = (byte)Math.Round(a[i + 1] + (b[i + 1] - a[i + 1]) * mix);

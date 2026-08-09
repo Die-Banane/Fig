@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace Fig.Core.Timeline
 {
@@ -386,13 +387,17 @@ namespace Fig.Core.Timeline
     /// <summary>
     /// Sets playback speed on a clip (and its link group). The source span stays fixed, so the
     /// clip's timeline duration recomputes to <c>sourceSpan / speed</c> — a 2x clip becomes half
-    /// as long on the timeline. Undo restores both speed and duration.
+    /// as long on the timeline. Changing the duration can push the clip's end past the next clip,
+    /// which would leave overlapping clips and break timeline hit-testing, so every later clip on
+    /// the same track is pushed out of the way by the same delta. Undo restores both the clip and
+    /// the pushed clips.
     /// </summary>
     public sealed class SetSpeedCommand : ICoalescingEditCommand
     {
         private readonly TimelineEditor _editor;
         private readonly string _clipId;
         private readonly Dictionary<string, (double Speed, double DurSec)> _old = new();
+        private readonly List<(Clip Clip, double OldStart)> _shifted = new();
         private double _newValue;
 
         public string Description => "Set speed";
@@ -407,13 +412,43 @@ namespace Fig.Core.Timeline
         public void Execute()
         {
             _old.Clear();
+            _shifted.Clear();
+
+            var targets = new List<Clip>();
             foreach (var clip in Targets())
             {
                 _old[clip.Id] = (clip.Speed, clip.DurSec);
                 ApplySpeed(clip);
+                targets.Add(clip);
             }
             if (_old.Count == 0)
                 throw new InvalidOperationException($"Clip '{_clipId}' not found");
+
+            // Push later clips on each affected track out of the way so nothing overlaps.
+            foreach (var track in _editor.Document.Tracks)
+            {
+                var onTrack = targets.Where(t => ReferenceEquals(_editor.FindClipTrack(t.Id), track)).ToList();
+                if (onTrack.Count == 0)
+                    continue;
+
+                var oldEnd = onTrack.Max(t => t.StartSec + _old[t.Id].DurSec);
+                var newEnd = onTrack.Max(t => t.StartSec + t.DurSec);
+                var delta = newEnd - oldEnd;
+                if (Math.Abs(delta) < 1e-9)
+                    continue;
+
+                var affected = onTrack.Select(t => t.Id).ToHashSet();
+                foreach (var clip in track.Clips)
+                {
+                    if (affected.Contains(clip.Id))
+                        continue;
+                    if (clip.StartSec >= oldEnd - 1e-9)
+                    {
+                        _shifted.Add((clip, clip.StartSec));
+                        clip.StartSec += delta;
+                    }
+                }
+            }
         }
 
         public void Undo()
@@ -427,17 +462,11 @@ namespace Fig.Core.Timeline
                     clip.DurSec = value.DurSec;
                 }
             }
+            foreach (var (clip, oldStart) in _shifted)
+                clip.StartSec = oldStart;
         }
 
-        public void Redo()
-        {
-            foreach (var id in _old.Keys)
-            {
-                var clip = _editor.FindClip(id);
-                if (clip is not null)
-                    ApplySpeed(clip);
-            }
-        }
+        public void Redo() => Execute();
 
         public bool CanCoalesceWith(IEditCommand other)
             => other is SetSpeedCommand o && o._clipId == _clipId;
@@ -447,7 +476,10 @@ namespace Fig.Core.Timeline
             if (other is SetSpeedCommand o)
             {
                 _newValue = o._newValue;
-                Redo();
+                // Re-run from the pre-operation state. Slider drags coalesce into this one
+                // command; without restoring first, the later clips would be pushed twice.
+                Undo();
+                Execute();
             }
         }
 

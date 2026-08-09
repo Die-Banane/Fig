@@ -40,10 +40,12 @@ namespace Fig.Core.Media
                 var row = y * w * 4;
                 for (var x = 0; x < w; x++)
                 {
-                    // mix = 0 -> outgoing (a), mix = 1 -> incoming (b); soft=0 is a hard edge
+                    // mix = 0 -> outgoing (a), mix = 1 -> incoming (b); columns left of the
+                    // sweep boundary have been taken over by the incoming clip, columns right
+                    // of it are still showing the outgoing one. soft=0 is a hard edge.
                     double mix = edge <= 0.5
                         ? (x < incomingCols ? 1 : 0)
-                        : Math.Clamp((x - (incomingCols - edge)) / (2 * edge), 0, 1);
+                        : Math.Clamp((incomingCols - x) / (2 * edge) + 0.5, 0, 1);
                     var i = row + x * 4;
                     dst[i] = Lerp(a[i], b[i], mix);
                     dst[i + 1] = Lerp(a[i + 1], b[i + 1], mix);

@@ -62,6 +62,78 @@ public class EffectTransitionTests
     }
 
     [Fact]
+    public void Wipe_DefaultSoft_Midpoint_IncomingLeft_OutgoingRight()
+    {
+        // the default soft edge used to invert the wipe; only the soft=0 hard branch
+        // was covered, which is why the bug slipped through
+        var a = MakeFrame(64, 1, 0, 0, 0);
+        var b = MakeFrame(64, 1, 200, 200, 200);
+        var blender = TransitionCatalog.Resolve(TransitionCatalog.Wipe)!;
+
+        var mid = blender.Blend(a, b, 0.5, new Dictionary<string, ParamValue>());
+
+        Assert.Equal(200, mid.Pixels[2]);         // x=0: swept in -> incoming
+        Assert.Equal(0, mid.Pixels[(63 * 4) + 2]); // x=63: still outgoing
+    }
+
+    [Fact]
+    public void Iris_RevealsIncomingFromCenter()
+    {
+        var a = MakeFrame(64, 64, 0, 0, 0);
+        var b = MakeFrame(64, 64, 200, 200, 200);
+        var blender = TransitionCatalog.Resolve(TransitionCatalog.Iris)!;
+
+        // pixel at (10, 32), 22px from center: inside the circle when open, outside when closed
+        var idx = (32 * 64 + 10) * 4 + 2;
+        var start = blender.Blend(a, b, 0.0, new Dictionary<string, ParamValue>());
+        Assert.Equal(0, start.Pixels[idx]);   // circle not yet reached -> outgoing
+
+        var end = blender.Blend(a, b, 1.0, new Dictionary<string, ParamValue>());
+        Assert.Equal(200, end.Pixels[idx]);   // fully open -> incoming
+    }
+
+    [Fact]
+    public void Curtain_Start_AllOutgoing_End_AllIncoming()
+    {
+        var a = MakeFrame(64, 64, 0, 0, 0);
+        var b = MakeFrame(64, 64, 200, 200, 200);
+        var blender = TransitionCatalog.Resolve(TransitionCatalog.Curtain)!;
+        var hard = new Dictionary<string, ParamValue>
+        {
+            ["panels"] = ParamValue.OfInt(2),
+            ["soft"] = ParamValue.OfDouble(0),
+        };
+
+        var start = blender.Blend(a, b, 0.0, hard);
+        Assert.Equal(0, start.Pixels[6]);         // panel 0 near its left edge
+        Assert.Equal(0, start.Pixels[(63 * 4) + 2]); // panel 1 right edge
+
+        var end = blender.Blend(a, b, 1.0, hard);
+        Assert.Equal(200, end.Pixels[6]);         // panel 0 fully open (x=1, off the boundary)
+        Assert.Equal(200, end.Pixels[(63 * 4) + 2]);
+    }
+
+    [Fact]
+    public void TryApplyTransition_RejectsAudioClips()
+    {
+        var timeline = new TimelineModel { Rate = FrameRate.Common(30) };
+        var track = new Track { Kind = TrackKind.Audio, Index = 0 };
+        track.Clips.Add(new AudioClip { Id = "a1", SourceId = "m", StartSec = 0, DurSec = 2, SrcInSec = 0, SrcOutSec = 2 });
+        track.Clips.Add(new AudioClip { Id = "a2", SourceId = "m", StartSec = 2, DurSec = 2, SrcInSec = 0, SrcOutSec = 2 });
+        timeline.Tracks.Add(track);
+        var editor = new TimelineEditor(timeline);
+
+        var tx = TransitionCatalog.Find(TransitionCatalog.CrossDissolve)!.CreateRef();
+        Assert.False(editor.TryApplyTransitionFromSelection("a1", tx));
+        Assert.Null(track.Clips[0].TransitionOut);
+        Assert.Null(track.Clips[1].TransitionIn);
+
+        editor.ApplyTransitionAtCut("a1", "a2", tx);
+        Assert.Null(track.Clips[0].TransitionOut);
+        Assert.Null(track.Clips[1].TransitionIn);
+    }
+
+    [Fact]
     public void BrightnessEffect_LightensPixels()
     {
         var frame = MakeFrame(2, 2, 100, 100, 100);
