@@ -62,9 +62,17 @@ namespace Fig.Core.Media
                 return;
             }
 
-            if (delta == 0)
+            // (byte)(-delta) below would silently truncate past 255 — keep the SIMD path
+            // exact by falling back to scalar math for out-of-range deltas.
+            if (delta is > 255 or < -255)
             {
-                Buffer.BlockCopy(src, 0, dst, 0, src.Length);
+                for (var i = 0; i < src.Length; i += 4)
+                {
+                    dst[i] = ClampByte(src[i] + delta);
+                    dst[i + 1] = ClampByte(src[i + 1] + delta);
+                    dst[i + 2] = ClampByte(src[i + 2] + delta);
+                    dst[i + 3] = src[i + 3];
+                }
                 return;
             }
 

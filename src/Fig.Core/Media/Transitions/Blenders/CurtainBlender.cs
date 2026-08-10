@@ -37,9 +37,11 @@ namespace Fig.Core.Media
                     var local = x - panel * panelW;
                     var center = panelW / 2;
                     var sweep = panel % 2 == 0 ? -1 : 1;
-                    var boundary = center + sweep * (panelW / 2) * (2 * t01 - 1);
+                    // Sweep past each panel's far edge by the edge width so the soft band fully
+                    // exits: at t01=0 the whole frame is outgoing, at t01=1 fully incoming.
+                    var boundary = center + sweep * (panelW / 2 + edge) * (2 * t01 - 1);
                     // mix = 1 (incoming) on the side the curtain has already opened past the
-                    // boundary; at t01=0 the whole frame is outgoing, at t01=1 fully incoming
+                    // boundary
                     var mix = Math.Clamp((sweep * (boundary - local)) / (2 * edge) + 0.5, 0, 1);
                     var i = (y * w + x) * 4;
                     dst[i] = (byte)Math.Round(a[i] + (b[i] - a[i]) * mix);

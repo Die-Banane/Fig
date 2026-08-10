@@ -42,8 +42,12 @@ namespace Fig.Core.Media
         {
             if (frame.Pixels is null || frame.Pixels.Length == 0 || seen.Add(frame.Pixels))
                 return;
-            var copy = Rent(frame.Pixels.Length);
-            Buffer.BlockCopy(frame.Pixels, 0, copy, 0, frame.Pixels.Length);
+            // Copy only the meaningful pixels (pooled buffers are oversized ArrayPool buckets).
+            var len = frame.Width * frame.Height * 4;
+            if (len <= 0 || len > frame.Pixels.Length)
+                len = frame.Pixels.Length;
+            var copy = Rent(len);
+            Buffer.BlockCopy(frame.Pixels, 0, copy, 0, len);
             frame.Pixels = copy;
             owned?.Add(copy);
         }

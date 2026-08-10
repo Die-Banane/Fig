@@ -35,6 +35,10 @@ namespace Fig.Core.Media
 
             var incomingCols = (int)Math.Round(t01 * w);
             var edge = soft * w;
+            // The soft band is centered on the sweep boundary; make the boundary travel from
+            // -edge to w+edge so the band fully exits the frame: at t01=0 nothing is incoming
+            // yet, at t01=1 the whole frame is incoming. (Midpoint boundary stays at w/2.)
+            var boundary = t01 * (w + 2 * edge) - edge;
             PixelOps.Rows(h, y =>
             {
                 var row = y * w * 4;
@@ -45,7 +49,7 @@ namespace Fig.Core.Media
                     // of it are still showing the outgoing one. soft=0 is a hard edge.
                     double mix = edge <= 0.5
                         ? (x < incomingCols ? 1 : 0)
-                        : Math.Clamp((incomingCols - x) / (2 * edge) + 0.5, 0, 1);
+                        : Math.Clamp((boundary - x) / (2 * edge) + 0.5, 0, 1);
                     var i = row + x * 4;
                     dst[i] = Lerp(a[i], b[i], mix);
                     dst[i + 1] = Lerp(a[i + 1], b[i + 1], mix);

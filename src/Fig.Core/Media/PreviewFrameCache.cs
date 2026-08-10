@@ -63,9 +63,13 @@ namespace Fig.Core.Media
 
             // Copy into a cache-owned pooled buffer so the caller's mutable scratch (and any
             // pooled effect buffer) can be reused without corrupting the cached frame. The
-            // pool buffer is released when this entry is evicted.
-            var copy = FramePool.Rent(frame.Pixels.Length);
-            Buffer.BlockCopy(frame.Pixels, 0, copy, 0, frame.Pixels.Length);
+            // pool buffer is released when this entry is evicted. Copy only the meaningful
+            // pixels: pooled buffers are oversized (ArrayPool buckets) and the tail is stale.
+            var len = frame.Width * frame.Height * 4;
+            if (len <= 0 || len > frame.Pixels.Length)
+                len = frame.Pixels.Length;
+            var copy = FramePool.Rent(len);
+            Buffer.BlockCopy(frame.Pixels, 0, copy, 0, len);
             var owned = new DecodedFrame { Width = frame.Width, Height = frame.Height, Pixels = copy };
 
             lock (_gate)

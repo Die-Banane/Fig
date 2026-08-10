@@ -153,6 +153,121 @@ public class EffectTransitionTests
         Assert.Equal(outFrame.Pixels[1], outFrame.Pixels[2]);
     }
 
+    /// <summary>
+    /// Crop with Padding: with no crop the frame passes through untouched; cropping only the
+    /// sides pillarboxes (natural scale), cropping only top/bottom letterboxes, an equal crop
+    /// on all sides zooms to fill, and a crop that consumes the frame yields solid padding.
+    /// The test frame encodes column into B and visual row (0 = bottom) into G so pixel
+    /// mapping and orientation are checked exactly.
+    /// </summary>
+    private static DecodedFrame MakePositionFrame(int w, int h)
+    {
+        var px = new byte[w * h * 4];
+        for (var y = 0; y < h; y++)
+        for (var x = 0; x < w; x++)
+        {
+            var si = (h - 1 - y) * w * 4 + x * 4;
+            px[si] = (byte)x;
+            px[si + 1] = (byte)y;
+            px[si + 2] = 200;
+            px[si + 3] = 255;
+        }
+        return new DecodedFrame { Width = w, Height = h, Pixels = px };
+    }
+
+    private static byte Pb(DecodedFrame f, int w, int h, int x, int y)
+        => f.Pixels[((h - 1 - y) * w + x) * 4];
+
+    private static byte Pg(DecodedFrame f, int w, int h, int x, int y)
+        => f.Pixels[((h - 1 - y) * w + x) * 4 + 1];
+
+    [Fact]
+    public void CropWithPadding_NoCrop_PassesFrameThrough()
+    {
+        var frame = MakePositionFrame(32, 32);
+        var fx = EffectCatalog.Find(EffectCatalog.CropWithPadding)!.CreateInstance();
+        var outFrame = EffectPipeline.ApplyStack(frame, new[] { fx }, 0);
+        Assert.Same(frame, outFrame);
+    }
+
+    [Fact]
+    public void CropWithPadding_SideCrop_PillarboxesAtNaturalScale()
+    {
+        const int w = 64, h = 64;
+        var frame = MakePositionFrame(w, h);
+        var fx = EffectCatalog.Find(EffectCatalog.CropWithPadding)!.CreateInstance();
+        fx.Params["left"] = ParamValue.OfDouble(0.25);
+        fx.Params["right"] = ParamValue.OfDouble(0.25);
+        var outFrame = EffectPipeline.ApplyStack(frame, new[] { fx }, 0);
+
+        // bars on the outer 16 columns
+        Assert.Equal(0, Pb(outFrame, w, h, 5, 32));
+        Assert.Equal(0, Pb(outFrame, w, h, 60, 32));
+        // middle 32 columns at natural scale, full height
+        Assert.Equal(32, Pb(outFrame, w, h, 32, 0));
+        Assert.Equal(32, Pb(outFrame, w, h, 32, 63));
+        Assert.Equal(0, Pg(outFrame, w, h, 32, 0));   // visual row 0
+        Assert.Equal(63, Pg(outFrame, w, h, 32, 63)); // visual row 63
+    }
+
+    [Fact]
+    public void CropWithPadding_TopBottomCrop_Letterboxes()
+    {
+        const int w = 64, h = 64;
+        var frame = MakePositionFrame(w, h);
+        var fx = EffectCatalog.Find(EffectCatalog.CropWithPadding)!.CreateInstance();
+        fx.Params["top"] = ParamValue.OfDouble(0.25);
+        fx.Params["bottom"] = ParamValue.OfDouble(0.25);
+        var outFrame = EffectPipeline.ApplyStack(frame, new[] { fx }, 0);
+
+        Assert.Equal(0, Pb(outFrame, w, h, 32, 5));
+        Assert.Equal(0, Pb(outFrame, w, h, 32, 60));
+        Assert.Equal(0, Pb(outFrame, w, h, 0, 32));
+        Assert.Equal(63, Pb(outFrame, w, h, 63, 32));
+        Assert.Equal(32, Pg(outFrame, w, h, 0, 32));
+    }
+
+    [Fact]
+    public void CropWithPadding_EqualCrop_ZoomsToFill()
+    {
+        const int w = 64, h = 64;
+        var frame = MakePositionFrame(w, h);
+        var fx = EffectCatalog.Find(EffectCatalog.CropWithPadding)!.CreateInstance();
+        fx.Params["left"] = ParamValue.OfDouble(0.25);
+        fx.Params["right"] = ParamValue.OfDouble(0.25);
+        fx.Params["top"] = ParamValue.OfDouble(0.25);
+        fx.Params["bottom"] = ParamValue.OfDouble(0.25);
+        var outFrame = EffectPipeline.ApplyStack(frame, new[] { fx }, 0);
+
+        // 2x zoom of the center 32x32; no padding anywhere
+        Assert.Equal(16, Pb(outFrame, w, h, 0, 0));
+        Assert.Equal(16, Pg(outFrame, w, h, 0, 0));
+        Assert.Equal(47, Pb(outFrame, w, h, 63, 63));
+        Assert.Equal(47, Pg(outFrame, w, h, 63, 63));
+    }
+
+    [Fact]
+    public void CropWithPadding_FullCrop_IsSolidPaddingColor()
+    {
+        const int w = 64, h = 64;
+        var frame = MakePositionFrame(w, h);
+        var fx = EffectCatalog.Find(EffectCatalog.CropWithPadding)!.CreateInstance();
+        fx.Params["top"] = ParamValue.OfDouble(0.5);
+        fx.Params["bottom"] = ParamValue.OfDouble(0.5);
+        fx.Params["color"] = ParamValue.OfColor(0xFF102030);
+        var outFrame = EffectPipeline.ApplyStack(frame, new[] { fx }, 0);
+
+        for (var y = 0; y < h; y++)
+        for (var x = 0; x < w; x++)
+        {
+            var i = ((h - 1 - y) * w + x) * 4;
+            Assert.Equal(0x30, outFrame.Pixels[i]);      // B
+            Assert.Equal(0x20, outFrame.Pixels[i + 1]);  // G
+            Assert.Equal(0x10, outFrame.Pixels[i + 2]);  // R
+            Assert.Equal(255, outFrame.Pixels[i + 3]);
+        }
+    }
+
     [Fact]
     public void CrossDissolve_MidpointAverages()
     {
@@ -510,6 +625,32 @@ public class EffectTransitionTests
         Assert.NotNull(loaded);
         Assert.Single(loaded!.Effects);
         Assert.Equal(EffectCatalog.Brightness, loaded.Effects[0].TypeId);
+    }
+
+    /// <summary>
+    /// With the DEFAULT soft edge (soft=0.1), every pixel must be fully outgoing at t01=0 and
+    /// fully incoming at t01=1. Previously the soft band was centered on the sweep boundary at
+    /// the frame edge, so the trailing edge/corners stayed ~50% blended when the transition
+    /// ended — a visible pop at the end of the transition.
+    /// </summary>
+    [Theory]
+    [InlineData(TransitionCatalog.Wipe)]
+    [InlineData(TransitionCatalog.Iris)]
+    [InlineData(TransitionCatalog.Curtain)]
+    public void DefaultSoftEdge_StartsAllOutgoing_EndsAllIncoming(string typeId)
+    {
+        var a = MakeFrame(96, 96, 0, 0, 0);
+        var b = MakeFrame(96, 96, 200, 200, 200);
+        var blender = TransitionCatalog.Resolve(typeId)!;
+        var empty = new Dictionary<string, ParamValue>();
+
+        var start = blender.Blend(a, b, 0.0, empty);
+        for (var i = 0; i < a.Width * a.Height * 4; i += 4)
+            Assert.Equal(0, start.Pixels[i]);   // B channel: outgoing black
+
+        var end = blender.Blend(a, b, 1.0, empty);
+        for (var i = 0; i < a.Width * a.Height * 4; i += 4)
+            Assert.Equal(200, end.Pixels[i]);   // B channel: incoming grey
     }
 
     private static DecodedFrame MakeFrame(int w, int h, byte r, byte g, byte b)

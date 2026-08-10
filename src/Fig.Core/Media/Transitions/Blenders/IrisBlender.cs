@@ -27,8 +27,11 @@ namespace Fig.Core.Media
             var cx = w / 2.0;
             var cy = h / 2.0;
             var maxR = Math.Sqrt(cx * cx + cy * cy);
-            var radius = t01 * maxR;
             var edge = Math.Max(0.5, soft * maxR);
+            // Travel from -edge to maxR+edge so the soft band fully exits the circle's far
+            // side: at t01=0 no pixel is incoming (center starts at mix 0), at t01=1 even the
+            // corners are fully incoming. (Midpoint radius stays maxR/2.)
+            var radius = t01 * (maxR + 2 * edge) - edge;
 
             PixelOps.Rows(h, y =>
             {

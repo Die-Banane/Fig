@@ -157,7 +157,7 @@ namespace Fig.Core.Media
                 var inv = (byte)(255 - alpha); // inverse alpha
                 var alphaV = Vector256.Create((ushort)alpha); // alpha value as a vector
                 var invV = Vector256.Create((ushort)inv); // inverse alpha value as a vector
-                var magicV = Vector256.Create((ushort)257);   // (x * 257) >> 16 ≈ x / 255
+                var magicV = Vector256.Create((ushort)257);   // multiplier for exact /255 ((sum+1)*257)>>16
 
                 fixed (byte* d = dst) // ptr to dst and source bufs
                 fixed (byte* s = src)
@@ -178,14 +178,20 @@ namespace Fig.Core.Media
                         var sumLo = Avx2.Add(Avx2.MultiplyLow(dLo, invV), Avx2.MultiplyLow(sLo, alphaV));
                         var sumHi = Avx2.Add(Avx2.MultiplyLow(dHi, invV), Avx2.MultiplyLow(sHi, alphaV));
 
-                        var outLo = Avx2.MultiplyHigh(sumLo, magicV);   // /255
-                        var outHi = Avx2.MultiplyHigh(sumHi, magicV);
+                        // Exact truncating divide by 255: ((sum+1) * 257) >> 16 matches the
+                        // scalar `sum / 255` for every reachable sum (0..65025), while plain
+                        // (sum * 257) >> 16 is one too small whenever sum is a multiple of 255.
+                        // prevent pixel artifacts
+                        var outLo = Avx2.MultiplyHigh(Avx2.Add(sumLo, Vector256.Create((ushort)1)), magicV);
+                        var outHi = Avx2.MultiplyHigh(Avx2.Add(sumHi, Vector256.Create((ushort)1)), magicV);
 
-                        var packed = Avx2.PackUnsignedSaturate(outLo.AsInt16(), outHi.AsInt16());
-                        var reordered = Avx2.Permute4x64(packed.AsUInt64(), 0b11_01_10_00).AsByte();
+                        // PackUnsignedSaturate already returns all 32 bytes in natural order —
+                        // no cross-lane permute is needed (a permute here scrambles the middle
+                        // two 8-byte groups of every 32-byte chunk).
+                        var packed = Avx2.PackUnsignedSaturate(outLo.AsInt16(), outHi.AsInt16()).AsByte();
 
                         // store the blended sum back to the destination
-                        Avx.Store(d + i, reordered);
+                        Avx.Store(d + i, packed);
                     }
 
                     // for each remaining element, fall back to scalar multiplication if no SIMD support
@@ -199,5 +205,6 @@ namespace Fig.Core.Media
             for (var i = 0; i < total; i++)
                 dst[i] = (byte)((dst[i] * invScalar + src[i] * alpha) / 255);
         }
+
     }
 }

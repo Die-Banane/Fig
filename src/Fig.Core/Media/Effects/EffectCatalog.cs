@@ -28,6 +28,7 @@ namespace Fig.Core.Media
         public const string Pixelate = "pixelate";
         public const string Flip = "flip";
         public const string Posterize = "posterize";
+        public const string CropWithPadding = "cropWithPadding";
 
         private sealed record EffectEntry(Type Implementation, EffectCatalogEntry Metadata);
 

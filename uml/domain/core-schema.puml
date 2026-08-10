@@ -8,7 +8,6 @@ package "fig.Core" {
     + Timeline Document
     + CommandHistory History
     + SelectionState Selection
-    + PlayheadController Clock
     + event TimelineChanged
     + Cut(clip, atSec) : Clip[]
     + Trim(clip, newIn, newOut) : void
@@ -64,14 +63,6 @@ package "fig.Core" {
     + Select(clip) : void
   }
 
-  class PlayheadController {
-    + PositionSec : double
-    + IsPlaying : bool
-    + Play() : void
-    + Pause() : void
-    + Seek(sec) : void
-    + Tick(elapsedSec) : void
-  }
 
   class FrameMath {
     {static} + SecondsToFrame(sec, rate) : long
@@ -91,7 +82,6 @@ package "fig.Models" {
 TimelineEditor *-- Timeline : "operates on"
 TimelineEditor *-- CommandHistory
 TimelineEditor *-- SelectionState
-TimelineEditor *-- PlayheadController
 TimelineEditor ..> FrameMath : "uses"
 TimelineEditor ..> IEditCommand : "creates"
 

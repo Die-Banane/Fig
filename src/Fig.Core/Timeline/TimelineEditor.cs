@@ -11,7 +11,6 @@ namespace Fig.Core.Timeline
         public Timeline Document { get; }
         public CommandHistory History { get; }
         public SelectionState Selection { get; }
-        public PlayheadController Clock { get; }
 
         public event Action? TimelineChanged;
 
@@ -20,7 +19,6 @@ namespace Fig.Core.Timeline
             Document = document;
             History = new CommandHistory();
             Selection = new SelectionState();
-            Clock = new PlayheadController();
         }
 
         public IReadOnlyList<Clip> Cut(string clipId, double atSec)

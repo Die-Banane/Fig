@@ -83,4 +83,26 @@ public class PixelOpsTests
             Assert.Equal(src[i + 3], output.Pixels[i + 3]);
         }
     }
+
+    [Fact]
+    public void Brightness_OutOfByteRangeDeltas_FallBackToScalar()
+    {
+        // |delta| > 255 would truncate inside (byte)(-delta); the SIMD path must fall back to
+        // exact scalar math instead of silently producing wrong colors.
+        var frame = RandomFrame(33, 29, new Random(9));
+        foreach (var delta in new[] { 300, -300, 1000, -1000 })
+        {
+            var px = FramePool.Rent(frame.Pixels.Length);
+            PixelOps.AddSaturateRgb(px, frame.Pixels, delta);
+
+            for (var i = 0; i < frame.Pixels.Length; i += 4)
+            {
+                Assert.Equal(ClampByte(frame.Pixels[i] + delta), px[i]);
+                Assert.Equal(ClampByte(frame.Pixels[i + 1] + delta), px[i + 1]);
+                Assert.Equal(ClampByte(frame.Pixels[i + 2] + delta), px[i + 2]);
+                Assert.Equal(frame.Pixels[i + 3], px[i + 3]);
+            }
+            FramePool.Return(px);
+        }
+    }
 }

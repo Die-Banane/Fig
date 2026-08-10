@@ -175,6 +175,8 @@ public partial class PropertiesViewModel : ViewModelBase
     public bool NoEffects => Effects.Count == 0;
 
     private string? _lastEffectsClipId;
+    private string _lastEffectsSignature = "";
+    private string _lastTransitionSignature = "";
     private string? _selectedEffectId;
     private string? _lastBuiltEffectId;
 
@@ -286,6 +288,13 @@ public partial class PropertiesViewModel : ViewModelBase
 
     private void ShowClip(Clip clip)
     {
+        // Slider/field edits raise TimelineChanged, which re-runs Show* on every tick. When the
+        // same clip is already displayed, skip ClearSections: unconditionally flipping the
+        // section visibility flags (and clearing the effect/param collections) tears down and
+        // recreates the tab's ScrollViewer, snapping the properties panel back to the top
+        // mid-drag. Same-value assignments below raise no change events, so the panel just
+        // updates labels/values in place.
+        var sameClip = Kind == PropertiesContextKind.Clip && _clipId == clip.Id;
         _suppressApply = true;
         Kind = PropertiesContextKind.Clip;
         Title = clip.Kind switch
@@ -296,7 +305,8 @@ public partial class PropertiesViewModel : ViewModelBase
             _ => "Clip",
         };
         Subtitle = ShortId(clip.Id);
-        ClearSections();
+        if (!sameClip)
+            ClearSections();
         _clipId = clip.Id;
         ShowClipSection = true;
         ShowVideoControls = clip is VideoClip;
@@ -384,11 +394,15 @@ public partial class PropertiesViewModel : ViewModelBase
         var marker = location.Marker;
         var absolute = location.Clip is not null ? location.Clip.StartSec + marker.StartSec : marker.StartSec;
 
+        // Same marker already shown: skip the destructive clear so typing a marker name
+        // (which raises TimelineChanged on every keystroke) doesn't reset the panel.
+        var sameMarker = Kind == PropertiesContextKind.Marker && _markerId == marker.Id;
         _suppressApply = true;
         Kind = PropertiesContextKind.Marker;
         Title = "Marker";
         Subtitle = marker.Name.Length == 0 ? "Unnamed marker" : marker.Name;
-        ClearSections();
+        if (!sameMarker)
+            ClearSections();
         _clipId = null;
         _markerId = marker.Id;
         ShowMarkerSection = true;
@@ -426,11 +440,15 @@ public partial class PropertiesViewModel : ViewModelBase
     {
         var displayName = TransitionCatalog.Find(transition.TypeId)?.DisplayName ?? transition.TypeId;
 
+        // Same transition already shown: skip the destructive clear so dragging the duration
+        // or a param slider (both raise TimelineChanged per tick) doesn't reset the panel.
+        var sameTransition = Kind == PropertiesContextKind.Transition && _transitionKey == transition.Key;
         _suppressApply = true;
         Kind = PropertiesContextKind.Transition;
         Title = "Transition";
         Subtitle = displayName;
-        ClearSections();
+        if (!sameTransition)
+            ClearSections();
         _clipId = null;
         _transitionKey = transition.Key;
         ShowTransitionSection = true;
@@ -482,13 +500,18 @@ public partial class PropertiesViewModel : ViewModelBase
 
     private void BuildEffectStack(Clip clip)
     {
-        if (_lastEffectsClipId == clip.Id)
+        // Same clip as last time: only rebuild the list when the stack actually changed
+        // (add/remove/reorder/toggle). The signature covers ids + order + enabled state;
+        // otherwise just refresh the evaluated values of the existing param editors.
+        var signature = EffectSignature(clip);
+        if (_lastEffectsClipId == clip.Id && _lastEffectsSignature == signature)
         {
             RefreshParams();
             return;
         }
 
         _lastEffectsClipId = clip.Id;
+        _lastEffectsSignature = signature;
         Effects.Clear();
         foreach (var effect in clip.Effects)
         {
@@ -506,6 +529,17 @@ public partial class PropertiesViewModel : ViewModelBase
         SelectedEffect = Effects.FirstOrDefault();
         _selectedEffectId = SelectedEffect?.EffectId;
         RebuildEffectParams();
+    }
+
+    private static string EffectSignature(Clip clip)
+    {
+        var sb = new System.Text.StringBuilder();
+        foreach (var effect in clip.Effects)
+        {
+            sb.Append(effect.Id).Append(':').Append(effect.Order).Append(':')
+              .Append(effect.Enabled ? 1 : 0).Append(';');
+        }
+        return sb.ToString();
     }
 
     partial void OnSelectedEffectChanged(EffectItemViewModel? value)
@@ -691,6 +725,14 @@ public partial class PropertiesViewModel : ViewModelBase
 
     private void BuildTransitionParams(CutTransition transition)
     {
+        // Only rebuild when the transition structure (type / parameter set) actually changed;
+        // slider drags re-enter via TimelineChanged on every tick and would otherwise replace
+        // the editor mid-drag.
+        var signature = TransitionSignature(transition);
+        if (_lastTransitionSignature == signature)
+            return;
+        _lastTransitionSignature = signature;
+
         TransitionParams.Clear();
         var entry = TransitionCatalog.Find(transition.TypeId);
         if (entry is null)
@@ -712,6 +754,21 @@ public partial class PropertiesViewModel : ViewModelBase
             SetInitialValue(editor, current);
             TransitionParams.Add(editor);
         }
+    }
+
+    private static string TransitionSignature(CutTransition transition)
+    {
+        // Structural only (type + which params exist). Param values update through the
+        // two-way slider bindings; including them would rebuild the editors mid-drag on
+        // every TimelineChanged tick.
+        var sb = new System.Text.StringBuilder();
+        sb.Append(transition.TypeId).Append('|');
+        var source = transition.Left.TransitionOut?.Params
+                     ?? transition.Right.TransitionIn?.Params
+                     ?? new Dictionary<string, ParamValue>();
+        foreach (var key in source.Keys)
+            sb.Append(key).Append(';');
+        return sb.ToString();
     }
 
     private static ParamEditorViewModel CreateTransitionParamEditor(ParamDef def, Action<ParamValue> write)
@@ -867,6 +924,8 @@ public partial class PropertiesViewModel : ViewModelBase
         SelectedEffect = null;
         _selectedEffectId = null;
         _lastEffectsClipId = null;
+        _lastEffectsSignature = "";
+        _lastTransitionSignature = "";
         _lastBuiltEffectId = null;
         _markerId = null;
         _transitionKey = null;
