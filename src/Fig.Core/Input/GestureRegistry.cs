@@ -30,7 +30,7 @@ namespace Fig.Core.Input
             if (bindings is null)
                 return;
 
-            _bindings.Clear();
+            // Overlay user bindings on top of defaults so newly added defaults still apply.
             foreach (var b in bindings)
             {
                 if (string.IsNullOrEmpty(b.Pattern))
@@ -41,6 +41,27 @@ namespace Fig.Core.Input
                     : TimelineGesture.None;
                 _bindings[pattern] = gesture;
             }
+
+            MigrateNavigationDefaults();
+        }
+
+        /// <summary>
+        /// Plain wheel scrolls tracks; middle-drag pans time. Older configs mapped wheel to
+        /// horizontal time scroll — rewrite those so navigation stays consistent.
+        /// </summary>
+        private void MigrateNavigationDefaults()
+        {
+            foreach (var dir in new[] { WheelDirection.Up, WheelDirection.Down })
+            {
+                var pattern = new GesturePattern { Wheel = true, WheelDir = dir };
+                if (_bindings.TryGetValue(pattern, out var gesture)
+                    && gesture == TimelineGesture.ScrollHorizontal)
+                {
+                    _bindings[pattern] = TimelineGesture.ScrollVertical;
+                }
+            }
+
+            _bindings[new GesturePattern { Button = MouseButton.Middle }] = TimelineGesture.Pan;
         }
 
         public void Save(string path)
@@ -76,8 +97,10 @@ namespace Fig.Core.Input
             Bind(GesturePatternParser.Parse("Ctrl+WheelDown"), TimelineGesture.ZoomOut);
             Bind(GesturePatternParser.Parse("Shift+WheelUp"), TimelineGesture.ScrollHorizontal);
             Bind(GesturePatternParser.Parse("Shift+WheelDown"), TimelineGesture.ScrollHorizontal);
-            Bind(GesturePatternParser.Parse("WheelUp"), TimelineGesture.ScrollHorizontal);
-            Bind(GesturePatternParser.Parse("WheelDown"), TimelineGesture.ScrollHorizontal);
+            // Plain wheel → vertical track scroll (ScrollViewer). Middle-drag → pan time.
+            Bind(GesturePatternParser.Parse("WheelUp"), TimelineGesture.ScrollVertical);
+            Bind(GesturePatternParser.Parse("WheelDown"), TimelineGesture.ScrollVertical);
+            Bind(GesturePatternParser.Parse("Middle"), TimelineGesture.Pan);
             Bind(GesturePatternParser.Parse("Middle+Move"), TimelineGesture.Pan);
             Bind(GesturePatternParser.Parse("Left+Move"), TimelineGesture.MoveClip);
         }

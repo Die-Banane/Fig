@@ -246,6 +246,7 @@ namespace Fig.App.Views
                     newEditor.TimelineChanged += OnTimelineChanged;
                 // project/editor swap — drop any in-flight slide offsets
                 ClearRippleSlides();
+                InvalidateMeasure();
                 InvalidateVisual();
             }
             else if (change.Property == MediaByIdProperty)
@@ -256,6 +257,28 @@ namespace Fig.App.Views
             {
                 BindEditorViewModel(DataContext as EditorViewModel);
             }
+        }
+
+        /// <summary>
+        /// Height needed to show the ruler, every track lane, and the add-track control.
+        /// Used so a parent <see cref="ScrollViewer"/> can scroll when tracks overflow.
+        /// </summary>
+        private double ComputeContentHeight()
+        {
+            var tracks = Editor?.Document.Tracks.Count ?? 0;
+            var lanes = Math.Max(1, tracks) * TimelineGeometry.TrackHeight;
+            return RulerHeight + lanes + HeaderButtonSize + 12;
+        }
+
+        protected override Size MeasureOverride(Size availableSize)
+        {
+            var height = ComputeContentHeight();
+            // Outside a scroll viewer, fill the given slot; inside one, grow with track count.
+            if (!double.IsInfinity(availableSize.Height))
+                height = Math.Max(height, availableSize.Height);
+
+            var width = double.IsInfinity(availableSize.Width) ? 0 : availableSize.Width;
+            return new Size(width, height);
         }
 
         protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
@@ -282,7 +305,11 @@ namespace Fig.App.Views
                 _editorVm.RippleSlideStarted += OnRippleSlideStarted;
         }
 
-        private void OnTimelineChanged() => InvalidateVisual();
+        private void OnTimelineChanged()
+        {
+            InvalidateMeasure();
+            InvalidateVisual();
+        }
 
         private void OnRippleSlideStarted(IReadOnlyList<RippleSlideDelta> deltas)
         {
@@ -368,6 +395,12 @@ namespace Fig.App.Views
         {
             base.OnPointerWheelChanged(e);
 
+            // Plain wheel always scrolls tracks via the parent ScrollViewer.
+            // Ctrl+wheel zooms; Shift+wheel pans time horizontally.
+            if (!e.KeyModifiers.HasFlag(KeyModifiers.Control)
+                && !e.KeyModifiers.HasFlag(KeyModifiers.Shift))
+                return;
+
             var pattern = new GesturePattern
             {
                 Wheel = true,
@@ -390,11 +423,8 @@ namespace Fig.App.Views
                 case TimelineGesture.ScrollHorizontal:
                     Viewport.ScrollBy(e.Delta.X != 0 ? e.Delta.X : -e.Delta.Y);
                     break;
-                case TimelineGesture.ScrollVertical:
-                    Viewport.ScrollBy(e.Delta.Y);
-                    break;
                 default:
-                    return;   // not handled -> don't mark handled
+                    return;
             }
 
             InvalidateVisual();
@@ -1188,16 +1218,20 @@ namespace Fig.App.Views
                 return;
             }
 
-            // middle-button pan (resolved through gesture registry)
-            if (e.GetCurrentPoint(this).Properties.IsMiddleButtonPressed
-                && (Gestures?.Resolve(new GesturePattern { Button = Fig.Core.Input.MouseButton.Middle, Ctrl = e.KeyModifiers.HasFlag(KeyModifiers.Control) })
-                    == TimelineGesture.Pan))
+            // middle-button pan (time axis). Always available — not gated on Ctrl.
+            if (e.GetCurrentPoint(this).Properties.IsMiddleButtonPressed)
             {
-                _panning = true;
-                _panStartX = pos.X;
-                _panStartScroll = Viewport.ScrollTime;
-                e.Handled = true;
-                return;
+                var panGesture = Gestures?.Resolve(new GesturePattern { Button = Fig.Core.Input.MouseButton.Middle })
+                    ?? TimelineGesture.Pan;
+                if (panGesture == TimelineGesture.Pan || Gestures is null)
+                {
+                    _panning = true;
+                    _panStartX = pos.X;
+                    _panStartScroll = Viewport.ScrollTime;
+                    e.Pointer.Capture(this);
+                    e.Handled = true;
+                    return;
+                }
             }
 
             // transition badge hit-test: select + drag to resize; double-click seeks to the cut
@@ -1596,7 +1630,8 @@ namespace Fig.App.Views
             InvalidateVisual();
         }
 
-        protected override void OnPointerReleased(PointerReleasedEventArgs e)        {
+        protected override void OnPointerReleased(PointerReleasedEventArgs e)
+        {
             base.OnPointerReleased(e);
 
             if (_draggingClip && _dragClip is not null)
@@ -1609,7 +1644,12 @@ namespace Fig.App.Views
             _draggingTransition = false;
             _dragTransitionKey = null;
             _draggingPlayhead = false;
-            _panning = false;
+            if (_panning)
+            {
+                _panning = false;
+                if (e.Pointer.Captured == this)
+                    e.Pointer.Capture(null);
+            }
         }
 
         private void BeginClipDrag(Clip clip, Track track, double time, double pointerX)
