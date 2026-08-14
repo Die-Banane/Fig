@@ -231,6 +231,7 @@ namespace Fig.Core.Timeline
     public sealed class TransitionRef
     {
         public string TypeId { get; set; } = "";
+        /// <summary>Total transition duration, centered equally around the cut.</summary>
         public double DurationSec { get; set; } = 0.5;
         public Dictionary<string, ParamValue> Params { get; set; } = new();
 

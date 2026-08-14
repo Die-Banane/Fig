@@ -11,6 +11,7 @@ namespace Fig.App.ViewModels;
 /// <summary>One selectable preview decode resolution (Kdenlive's consumer-level preview scaling).</summary>
 public sealed record PreviewScaleOption(string Name, int Height)
 {
+    public override string ToString() => Name;
     public static readonly PreviewScaleOption P270 = new("270p", 270);
     public static readonly PreviewScaleOption P360 = new("360p", 360);
     public static readonly PreviewScaleOption P540 = new("540p", 540);
@@ -25,12 +26,25 @@ public partial class PreviewViewModel : ViewModelBase
     private readonly IMediaService _media;
     private readonly Func<double, IReadOnlyList<PreviewLayer>> _resolver;
     private EditorViewModel? _editor;
+    private Fig.App.Services.PlaybackEngine? _playback;
 
     [ObservableProperty]
     private string _decodeStatus = "";
 
     [ObservableProperty]
     private PreviewScaleOption _previewScale = PreviewScaleOption.P360;
+
+    [ObservableProperty]
+    private double _monitorVolume = 1;
+
+    [ObservableProperty]
+    private bool _isMonitorMuted;
+
+    [ObservableProperty]
+    private bool _isBuffering;
+
+    [ObservableProperty]
+    private bool _hasPlaybackError;
 
     /// <summary>Available preview decode resolutions (bound to the preview ComboBox).</summary>
     public IReadOnlyList<PreviewScaleOption> PreviewScaleOptions => PreviewScaleOption.All;
@@ -48,6 +62,9 @@ public partial class PreviewViewModel : ViewModelBase
     private int _baseCanvasH = 360;
 
     // persistent sequential decoders per source path, so playback decodes forward without re-seeking
+    // A decoder is owned by one clip. Two timeline clips may reference the same path at
+    // different source times; sharing the decoder would overwrite the first frame while
+    // decoding the second side of a transition.
     private readonly Dictionary<string, IVideoFrameSource> _sources = new();
     // Paths that failed to open — skip re-open spam (FFmpeg "moov atom not found") until InvalidateSources.
 
@@ -88,6 +105,7 @@ public partial class PreviewViewModel : ViewModelBase
         OnPropertyChanged(nameof(StepBackFrameCommand));
         OnPropertyChanged(nameof(TogglePlaybackCommand));
         OnPropertyChanged(nameof(StepForwardFrameCommand));
+        OnPropertyChanged(nameof(JumpToEndCommand));
     }
 
     /// <summary>Requests that all persistent decoders be reopened on the decode worker thread.</summary>
@@ -137,6 +155,7 @@ public partial class PreviewViewModel : ViewModelBase
     public CommunityToolkit.Mvvm.Input.IRelayCommand? StepBackFrameCommand => _editor?.StepBackFrameCommand;
     public CommunityToolkit.Mvvm.Input.IRelayCommand? TogglePlaybackCommand => _editor?.TogglePlaybackCommand;
     public CommunityToolkit.Mvvm.Input.IRelayCommand? StepForwardFrameCommand => _editor?.StepForwardFrameCommand;
+    public CommunityToolkit.Mvvm.Input.IRelayCommand? JumpToEndCommand => _editor?.JumpToEndCommand;
 
     private void OnEditorPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
@@ -156,17 +175,64 @@ public partial class PreviewViewModel : ViewModelBase
         {
             if (_editor is null)
                 return "";
-            var cur = Fig.App.Converters.SecondsToTimeConverter.Instance.Convert(
-                _editor.PlayheadTimeSec, typeof(string), null, System.Globalization.CultureInfo.CurrentCulture) as string ?? "";
-            var end = Fig.App.Converters.SecondsToTimeConverter.Instance.Convert(
-                _editor.SequenceEndSec, typeof(string), null, System.Globalization.CultureInfo.CurrentCulture) as string ?? "";
+            var fps = Math.Max(1, _editor.Editor.Document.Rate.Fps);
+            var cur = FormatTimecode(_editor.PlayheadTimeSec, fps);
+            var end = FormatTimecode(_editor.SequenceEndSec, fps);
             return $"{cur} / {end}";
         }
     }
 
     public void AttachPlayback(Fig.App.Services.PlaybackEngine? playback)
     {
-        // Playback position is centralized on EditorViewModel.
+        if (_playback is not null)
+            _playback.StateChanged -= OnPlaybackStateChanged;
+        _playback = playback;
+        if (_playback is not null)
+        {
+            _playback.StateChanged += OnPlaybackStateChanged;
+            MonitorVolume = _playback.Volume;
+            IsMonitorMuted = _playback.IsMuted;
+            OnPlaybackStateChanged(_playback.State);
+        }
+    }
+
+    partial void OnMonitorVolumeChanged(double value)
+    {
+        if (_playback is not null)
+            _playback.Volume = (float)Math.Clamp(value, 0, 1);
+        OnPropertyChanged(nameof(MonitorAudioIconKey));
+    }
+
+    partial void OnIsMonitorMutedChanged(bool value)
+    {
+        if (_playback is not null)
+            _playback.IsMuted = value;
+        OnPropertyChanged(nameof(MonitorAudioIconKey));
+    }
+
+    public string MonitorAudioIconKey => IsMonitorMuted || MonitorVolume <= 0.001 ? "volume-x" : "volume";
+
+    [CommunityToolkit.Mvvm.Input.RelayCommand]
+    private void ToggleMonitorMute() => IsMonitorMuted = !IsMonitorMuted;
+
+    private void OnPlaybackStateChanged(Fig.App.Services.PlaybackState state)
+    {
+        IsBuffering = state == Fig.App.Services.PlaybackState.Buffering;
+        HasPlaybackError = state is Fig.App.Services.PlaybackState.Faulted
+            or Fig.App.Services.PlaybackState.Unavailable;
+    }
+
+    private static string FormatTimecode(double seconds, double fps)
+    {
+        var roundedFps = Math.Max(1, (int)Math.Round(fps));
+        var totalFrames = Math.Max(0L, (long)Math.Floor(seconds * fps + 1e-7));
+        var frames = totalFrames % roundedFps;
+        var totalSeconds = totalFrames / roundedFps;
+        var s = totalSeconds % 60;
+        var minutes = totalSeconds / 60;
+        var m = minutes % 60;
+        var h = minutes / 60;
+        return $"{h:00}:{m:00}:{s:00}:{frames:00}";
     }
 
     private readonly object _decodeLock = new();
@@ -484,56 +550,36 @@ public partial class PreviewViewModel : ViewModelBase
             _lastRequestSec = target;
 
             var document = _editor?.Editor.Document;
-            var activeTx = document is not null
-                ? TransitionResolver.FindActive(document, target)
-                : null;
-
-            if (activeTx is not null
-                && activeTx.Outgoing is VideoClip outVc
-                && activeTx.Incoming is VideoClip inVc
-                && TransitionCatalog.Resolve(activeTx.TypeId) is { } blender
-                && TryDecodeClipFrame(outVc, target, needsSeek, decodeMode, out var outFrame, out var outLocal)
-                && TryDecodeClipFrame(inVc, target, needsSeek, decodeMode, out var inFrame, out var inLocal))
+            var layers = _resolver(target);
+            if ((document is null || document.Tracks.Count == 0) && layers.Count == 0)
             {
-                var txRented = new List<byte[]>();
-                var seen = new HashSet<byte[]>();
-                // the two clips may share one media file (same source scratch) — blending
-                // aliased buffers would blend a frame with itself and freeze the transition
-                FramePool.EnsureDistinct(outFrame!, seen, txRented);
-                FramePool.EnsureDistinct(inFrame!, seen, txRented);
-                outFrame = EffectPipeline.ApplyStack(outFrame!, outVc.Effects, outLocal, txRented);
-                inFrame = EffectPipeline.ApplyStack(inFrame!, inVc.Effects, inLocal, txRented);
-                var blended = blender.Blend(outFrame, inFrame, activeTx.Progress01, activeTx.Params);
-                try
-                {
-                    FrameCompositor.ComposeInto(
-                        new[] { new CompositeLayer { Frame = blended, Opacity = 1 } },
-                        _targetWidth, _targetHeight, pixels, ref _cropScratch);
-                }
-                finally
-                {
-                    // blend output is always pooled; effect outputs are pooled when effects ran
-                    FramePool.Return(blended.Pixels);
-                    foreach (var buf in txRented)
-                        FramePool.Return(buf);
-                }
-                status = $"transition {activeTx.TypeId} · {(int)(activeTx.Progress01 * 100)}%";
+                status = "No video at playhead";
+                return false;
             }
-            else
-            {
-                var layers = _resolver(target);
-                if (layers.Count == 0)
-                {
-                    status = "No video at playhead";
-                    return false;
-                }
 
-                var composites = new List<CompositeLayer>(layers.Count);
-                var cacheHits = 0;
-                var rented = new List<byte[]>();
-                var seen = new HashSet<byte[]>();
+            var activeByTrack = new Dictionary<int, ActiveTransition>();
+            if (document is not null)
+            {
+                for (var i = 0; i < document.Tracks.Count; i++)
+                {
+                    if (TransitionResolver.FindActive(document.Tracks[i], target) is { } active)
+                        activeByTrack[i] = active;
+                }
+            }
+
+            var ordered = new List<(int TrackIndex, CompositeLayer Layer)>();
+            var cacheHits = 0;
+            var rented = new List<byte[]>();
+            var seen = new HashSet<byte[]>();
+            var transitionCount = 0;
+            try
+            {
                 foreach (var layer in layers)
                 {
+                    if (activeByTrack.TryGetValue(layer.TrackIndex, out var active)
+                        && (layer.Clip.Id == active.Outgoing.Id || layer.Clip.Id == active.Incoming.Id))
+                        continue;
+
                     DecodedFrame? frame = null;
                     try
                     {
@@ -542,8 +588,7 @@ public partial class PreviewViewModel : ViewModelBase
                             cacheHits++;
                         if (frame is not null)
                         {
-                            // stacked tracks may share one media file / source scratch buffer
-                            FramePool.EnsureDistinct(frame, seen, rented);
+                            frame = FramePool.MakeDistinct(frame, seen, rented);
                             var localT = target - layer.Clip.StartSec;
                             frame = EffectPipeline.ApplyStack(frame, layer.Clip.Effects, localT, rented);
                         }
@@ -552,30 +597,48 @@ public partial class PreviewViewModel : ViewModelBase
                     {
                         frame = null;
                     }
-                    composites.Add(new CompositeLayer
+                    ordered.Add((layer.TrackIndex, new CompositeLayer
                     {
                         Frame = frame,
                         Opacity = layer.Opacity,
                         Crop = ToPixelCrop(layer.Clip, target - layer.Clip.StartSec, _targetWidth, _targetHeight),
-                    });
+                    }));
                 }
 
-                try
+                foreach (var (trackIndex, active) in activeByTrack)
                 {
-                    FrameCompositor.ComposeInto(composites, _targetWidth, _targetHeight, pixels, ref _cropScratch);
+                    if (TryBuildTransitionLayer(active, target, needsSeek, decodeMode, seen, rented, out var txLayer))
+                    {
+                        ordered.Add((trackIndex, txLayer));
+                        transitionCount++;
+                    }
                 }
-                finally
+
+                if (ordered.Count == 0)
                 {
-                    foreach (var buf in rented)
-                        FramePool.Return(buf);
+                    status = "No video at playhead";
+                    return false;
                 }
+
+                ordered.Sort((a, b) => b.TrackIndex.CompareTo(a.TrackIndex));
+                var composites = new List<CompositeLayer>(ordered.Count);
+                foreach (var item in ordered)
+                    composites.Add(item.Layer);
+                FrameCompositor.ComposeInto(composites, _targetWidth, _targetHeight, pixels, ref _cropScratch);
+
                 var modeTag = scrubbing ? "scrub" : "play";
                 var cacheTag = cacheHits > 0 ? $" · cache {cacheHits}/{layers.Count}" : "";
                 var dropsTag = _playbackDrops > 30 ? " · dropping" : "";
-                status = $"{_targetWidth}x{_targetHeight} · {layers.Count} layer(s) · {modeTag}{cacheTag}{dropsTag}";
-            }
+                var txTag = transitionCount > 0 ? $" · {transitionCount} transition(s)" : "";
+                status = $"{_targetWidth}x{_targetHeight} · {ordered.Count} layer(s) · {modeTag}{txTag}{cacheTag}{dropsTag}";
 
-            return true;
+                return true;
+            }
+            finally
+            {
+                foreach (var buf in rented)
+                    FramePool.Return(buf);
+            }
         }
         catch (Exception)
         {
@@ -597,7 +660,7 @@ public partial class PreviewViewModel : ViewModelBase
             return cached;
         }
 
-        if (!TryGetOrOpenSource(layer.SourcePath, out var source) || source is null)
+        if (!TryGetOrOpenSource(layer.SourcePath, layer.Clip.Id, out var source) || source is null)
             return null;
 
         if (needsSeek
@@ -622,7 +685,9 @@ public partial class PreviewViewModel : ViewModelBase
         out double localT)
     {
         frame = null;
-        localT = Math.Clamp(timelineSec - clip.StartSec, 0, Math.Max(0, clip.DurSec - 1e-4));
+        // Transition frames deliberately extend outside the visible clip range into trimmed
+        // source handles. Callers validate the transition duration against those handles.
+        localT = timelineSec - clip.StartSec;
         if (_editor is null || !_editor.MediaById.TryGetValue(clip.SourceId, out var asset)
             || string.IsNullOrEmpty(asset.Url) || asset.Offline)
             return false;
@@ -633,10 +698,10 @@ public partial class PreviewViewModel : ViewModelBase
         try
         {
             var path = asset.PlaybackVideoPath;
-            if (!TryGetOrOpenSource(path, out var source)
+            if (!TryGetOrOpenSource(path, clip.Id, out var source)
                 && !(!string.Equals(path, asset.Url, StringComparison.Ordinal)
                      && !string.IsNullOrEmpty(asset.Url)
-                     && TryGetOrOpenSource(asset.Url, out source)))
+                     && TryGetOrOpenSource(asset.Url, clip.Id, out source)))
             {
                 return false;
             }
@@ -668,28 +733,76 @@ public partial class PreviewViewModel : ViewModelBase
         }
     }
 
-    private bool TryGetOrOpenSource(string path, out IVideoFrameSource? source)
+    private bool TryGetOrOpenSource(string path, string clipId, out IVideoFrameSource? source)
     {
         source = null;
+        var decoderKey = $"{clipId}|{path}";
         lock (_decodeLock)
         {
-            if (_sources.TryGetValue(path, out source!))
+            if (_sources.TryGetValue(decoderKey, out source!))
                 return true;
-            if (_failedPaths.Contains(path))
+            if (_failedPaths.Contains(decoderKey))
                 return false;
             try
             {
                 source = _media.OpenVideoSource(path, _targetWidth, _targetHeight);
-                _sources[path] = source;
+                _sources[decoderKey] = source;
                 return true;
             }
             catch
             {
-                _failedPaths.Add(path);
+                _failedPaths.Add(decoderKey);
                 source = null;
                 return false;
             }
         }
+    }
+
+    private bool TryBuildTransitionLayer(
+        ActiveTransition active, double target, bool needsSeek, PreviewDecodeMode mode,
+        HashSet<byte[]> seen, List<byte[]> rented, out CompositeLayer layer)
+    {
+        layer = new CompositeLayer();
+        if (active.Outgoing is not VideoClip outgoing
+            || active.Incoming is not VideoClip incoming
+            || TransitionCatalog.Resolve(active.TypeId) is not { } blender
+            || !TryDecodeClipFrame(outgoing, target, needsSeek, mode, out var outFrame, out var outLocal)
+            || outFrame is null
+            || !TryDecodeClipFrame(incoming, target, needsSeek, mode, out var inFrame, out var inLocal)
+            || inFrame is null)
+            return false;
+
+        outFrame = FramePool.MakeDistinct(outFrame, seen, rented);
+        inFrame = FramePool.MakeDistinct(inFrame, seen, rented);
+        outFrame = EffectPipeline.ApplyStack(outFrame, outgoing.Effects, outLocal, rented);
+        inFrame = EffectPipeline.ApplyStack(inFrame, incoming.Effects, inLocal, rented);
+        outFrame = ApplyCrop(outFrame, outgoing, outLocal, rented);
+        inFrame = ApplyCrop(inFrame, incoming, inLocal, rented);
+
+        var blended = blender.Blend(outFrame, inFrame, active.Progress01, active.Params);
+        rented.Add(blended.Pixels);
+        var outOpacity = ClipFade.EffectiveOpacity(outgoing, Math.Clamp(outLocal, 0, outgoing.DurSec));
+        var inOpacity = ClipFade.EffectiveOpacity(incoming, Math.Clamp(inLocal, 0, incoming.DurSec));
+        layer = new CompositeLayer
+        {
+            Frame = blended,
+            Opacity = outOpacity + (inOpacity - outOpacity) * active.Progress01,
+        };
+        return true;
+    }
+
+    private DecodedFrame ApplyCrop(DecodedFrame frame, VideoClip clip, double localT, List<byte[]> rented)
+    {
+        var crop = ToPixelCrop(clip, localT, _targetWidth, _targetHeight);
+        if (crop is null)
+            return frame;
+        var pixels = FramePool.Rent(_targetWidth * _targetHeight * 4);
+        byte[]? scratch = pixels;
+        FrameCompositor.ComposeInto(
+            new[] { new CompositeLayer { Frame = frame, Crop = crop, Opacity = 1 } },
+            _targetWidth, _targetHeight, pixels, ref scratch);
+        rented.Add(pixels);
+        return new DecodedFrame { Width = _targetWidth, Height = _targetHeight, Pixels = pixels };
     }
 
     /// <summary>Re-decode the current playhead (e.g. after opacity/crop changes).</summary>

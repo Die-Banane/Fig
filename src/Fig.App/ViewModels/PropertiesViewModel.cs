@@ -109,9 +109,13 @@ public partial class PropertiesViewModel : ViewModelBase
         CropRightAutomation.Refresh();
     }
 
-    [ObservableProperty] private PropertiesContextKind _kind = PropertiesContextKind.Empty;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasContext))]
+    private PropertiesContextKind _kind = PropertiesContextKind.Empty;
     [ObservableProperty] private string _title = "Properties";
     [ObservableProperty] private string _subtitle = "Select a clip, track, or media item.";
+
+    public bool HasContext => Kind != PropertiesContextKind.Empty;
 
     // shared / media
     [ObservableProperty] private string? _fileName;
@@ -454,7 +458,8 @@ public partial class PropertiesViewModel : ViewModelBase
         ShowTransitionSection = true;
         TransitionTypeLabel = displayName;
         TransitionDurationValue = transition.DurationSec;
-        TransitionMaxDuration = Math.Max(0.1, Math.Min(transition.Left.DurSec, transition.Right.DurSec));
+        TransitionMaxDuration = Math.Max(transition.DurationSec, Math.Max(0.05,
+            _editor.Editor.GetMaxTransitionDuration(transition.LeftClipId, transition.RightClipId)));
         TransitionSpanLabel = $"{FormatTime(transition.DurationSec)} across the cut";
         BuildTransitionParams(transition);
         _proxyTarget = null;

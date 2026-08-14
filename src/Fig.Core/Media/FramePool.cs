@@ -51,5 +51,26 @@ namespace Fig.Core.Media
             frame.Pixels = copy;
             owned?.Add(copy);
         }
+
+        /// <summary>
+        /// Returns a frame whose pixel storage is distinct within the current composition.
+        /// Unlike <see cref="EnsureDistinct"/>, this never mutates the supplied frame, which
+        /// is required for cache-owned frames shared by multiple layers.
+        /// </summary>
+        public static DecodedFrame MakeDistinct(
+            DecodedFrame frame, HashSet<byte[]> seen, List<byte[]> owned)
+        {
+            if (frame.Pixels is null || frame.Pixels.Length == 0 || seen.Add(frame.Pixels))
+                return frame;
+
+            var len = frame.Width * frame.Height * 4;
+            if (len <= 0 || len > frame.Pixels.Length)
+                len = frame.Pixels.Length;
+            var copy = Rent(len);
+            Buffer.BlockCopy(frame.Pixels, 0, copy, 0, len);
+            owned.Add(copy);
+            seen.Add(copy);
+            return new DecodedFrame { Width = frame.Width, Height = frame.Height, Pixels = copy };
+        }
     }
 }

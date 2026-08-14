@@ -16,10 +16,6 @@ sealed class Program
             .WithInterFont()
             .LogToTrace();
 
-#if DEBUG
-        builder = builder.WithDeveloperTools();
-#endif
-
         if (OperatingSystem.IsLinux()
             && Environment.GetEnvironmentVariable("WAYLAND_DISPLAY") is not null)
         {

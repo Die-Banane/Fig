@@ -8,6 +8,7 @@
         x:Class="Fig.App.Views.MainWindow"
         x:DataType="vm:AppViewModel"
         Icon="/Assets/avalonia-logo.ico"
+        MinWidth="1100" MinHeight="700"
         Title="fig">
 
     <Window.KeyBindings>

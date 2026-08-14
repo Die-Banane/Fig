@@ -66,7 +66,7 @@ Tracked against the current build.
 
 | Status | Goal | Notes |
 | :---: | :--- | :--- |
-| X | Free video transitions | The core pain point: transitions shouldn't be pay-to-use. Cross-dissolve ships free with a full timeline UI (apply, select, resize, remove). The catalog has one type so far. |
+| X | Free video transitions | Cross-dissolve, wipe, slide, push, fade-to-black, iris, and curtain transitions ship with timeline apply/select/resize/remove controls and visual catalog previews. |
 | X | Fast export | Rendering should take seconds to minutes for short projects. Full timeline → MP4 (H.264/AAC) export works; encoder threading, quality presets, and hardware encoding are still to come. |
 | X | Clean, modern, intuitive interface | Keyboard-first Avalonia workspace that's easy to navigate. Functional, but panels and polish are still evolving. |
 | - | Smart editing aids | Automatic cuts when voice isn't detected, and AI transcription. |
@@ -89,6 +89,10 @@ AI is welcome as an assistant. If you architect a change yourself, understand ev
 
 I reserve the right to use AI in this project as it aligns with my development philosophy. Documented architecture -> fully human-directed micro-edits.
 
+# Rust transition
+
+As a Rust developer, I will be trying to transition this project to Rust using gpui and ffmpeg_next. This is a viability study.
+Rust 2024 edition.
 ## License
 
 Not yet licensed.

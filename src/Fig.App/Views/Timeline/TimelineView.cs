@@ -224,6 +224,7 @@ namespace Fig.App.Views
         private const double HeaderButtonGap = 8;
         private const double HeaderPaddingLeft = 6;
         private const double TrackAccentBarWidth = 3;
+        private const double EmptyTrackHeight = 40;
 
         public TimelineView()
         {
@@ -265,10 +266,30 @@ namespace Fig.App.Views
         /// </summary>
         private double ComputeContentHeight()
         {
-            var tracks = Editor?.Document.Tracks.Count ?? 0;
-            var lanes = Math.Max(1, tracks) * TimelineGeometry.TrackHeight;
+            var lanes = Editor is null || Editor.Document.Tracks.Count == 0
+                ? TimelineGeometry.TrackHeight
+                : Editor.Document.Tracks.Sum(TrackHeight);
             return RulerHeight + lanes + HeaderButtonSize + 12;
         }
+
+        private static double TrackHeight(Track track) =>
+            track.Clips.Count == 0 && track.Markers.Count == 0
+                ? EmptyTrackHeight
+                : TimelineGeometry.TrackHeight;
+
+        private double TrackTop(int index)
+        {
+            if (Editor is null || index <= 0)
+                return RulerHeight;
+
+            var top = RulerHeight;
+            for (var i = 0; i < Math.Min(index, Editor.Document.Tracks.Count); i++)
+                top += TrackHeight(Editor.Document.Tracks[i]);
+            return top;
+        }
+
+        private double TrackBottom(int index) =>
+            TrackTop(index) + TrackHeight(Editor!.Document.Tracks[index]);
 
         protected override Size MeasureOverride(Size availableSize)
         {
@@ -615,8 +636,10 @@ namespace Fig.App.Views
                 var cut = track is not null ? FindCutNear(track, XToTime(pos.X)) : null;
                 if (entry is not null && cut is not null)
                 {
-                    Editor.ApplyTransitionAtCut(cut.Value.Left.Id, cut.Value.Right.Id, entry.CreateRef());
-                    Editor.Selection.SelectOnly(cut.Value.Left.Id);
+                    if (Editor.ApplyTransitionAtCut(cut.Value.Left.Id, cut.Value.Right.Id, entry.CreateRef()))
+                        Editor.Selection.SelectTransition($"{cut.Value.Left.Id}|{cut.Value.Right.Id}");
+                    else
+                        _editorVm?.Notify?.Invoke(Editor.TransitionValidationMessage ?? "Could not apply transition");
                 }
                 ClearDropPreview();
                 InvalidateVisual();
@@ -923,11 +946,9 @@ namespace Fig.App.Views
             foreach (var effect in clip.Effects)
             {
                 var name = EffectCatalog.Find(effect.TypeId)?.DisplayName ?? effect.TypeId;
-                var text = new FormattedText(name, System.Globalization.CultureInfo.CurrentCulture,
-                    FlowDirection.LeftToRight, Typeface.Default, 10, Brushes.White);
-                var w = Math.Min(90, text.Width + 12);
+                const double w = 18;
                 list.Add((new Rect(x, labelRect.Y + 1, w, labelRect.Height - 2), effect.Id, name));
-                x += w + 3;
+                x += w + 2;
             }
             return list;
         }
@@ -940,12 +961,13 @@ namespace Fig.App.Views
             if (tabs.Count == 0)
                 return 0;
 
-            foreach (var (rect, _, name) in tabs)
+            foreach (var (rect, _, _) in tabs)
             {
                 context.DrawRectangle(new SolidColorBrush(Color.Parse("#2f3540")), null, new RoundedRect(rect, 3));
-                var text = new FormattedText(name, System.Globalization.CultureInfo.CurrentCulture,
-                    FlowDirection.LeftToRight, Typeface.Default, 10, new SolidColorBrush(Color.Parse("#8fb4ff")));
-                context.DrawText(text, new Point(rect.X + 5, rect.Y + (rect.Height - text.Height) / 2));
+                var text = new FormattedText("fx", System.Globalization.CultureInfo.CurrentCulture,
+                    FlowDirection.LeftToRight, Typeface.Default, 8, new SolidColorBrush(Color.Parse("#8fb4ff")));
+                context.DrawText(text, new Point(rect.X + (rect.Width - text.Width) / 2,
+                    rect.Y + (rect.Height - text.Height) / 2));
             }
             return tabs[^1].Rect.Right - labelRect.X;
         }
@@ -959,7 +981,7 @@ namespace Fig.App.Views
             for (var i = 0; i < Editor.Document.Tracks.Count; i++)
             {
                 var track = Editor.Document.Tracks[i];
-                var top = TimelineGeometry.TrackTop(i) + RulerHeight;
+                var top = TrackTop(i);
                 foreach (var clip in track.Clips)
                 {
                     // a clip's label strip sits at its top inset; bookmarks live there
@@ -1035,8 +1057,8 @@ namespace Fig.App.Views
                 var track = Editor.Document.Tracks[i];
                 if (track.Kind != TrackKind.Video)
                     continue;
-                var top = TimelineGeometry.TrackTop(i) + RulerHeight;
-                if (pos.Y < top || pos.Y >= TimelineGeometry.TrackBottom(i) + RulerHeight)
+                var top = TrackTop(i);
+                if (pos.Y < top || pos.Y >= TrackBottom(i))
                     continue;
                 // automation diamonds render along the top edge of the body, effect diamonds along the bottom
                 var bodyTop = top + 10 + TimelineGeometry.ClipLabelHeight;
@@ -1075,8 +1097,8 @@ namespace Fig.App.Views
             for (var i = 0; i < Editor.Document.Tracks.Count; i++)
             {
                 var track = Editor.Document.Tracks[i];
-                var top = TimelineGeometry.TrackTop(i) + RulerHeight;
-                if (pos.Y < top || pos.Y >= TimelineGeometry.TrackBottom(i) + RulerHeight)
+                var top = TrackTop(i);
+                if (pos.Y < top || pos.Y >= TrackBottom(i))
                     continue;
                 // the badge sits at the clip body's vertical center; only grab within that band so
                 // markers / keyframes near the cut stay clickable
@@ -1156,8 +1178,8 @@ namespace Fig.App.Views
         {
             // use the track's list position (matching render), not a possibly-stale Index
             var listIndex = Editor?.Document.Tracks.IndexOf(track) ?? track.Index;
-            var top = TimelineGeometry.TrackTop(listIndex) + RulerHeight;
-            var center = top + TimelineGeometry.TrackHeight / 2;
+            var top = TrackTop(listIndex);
+            var center = top + TrackHeight(track) / 2;
             var x = HeaderPaddingLeft + column * (HeaderButtonSize + HeaderButtonGap);
             return new Rect(x, center - HeaderButtonSize / 2, HeaderButtonSize, HeaderButtonSize);
         }
@@ -1243,7 +1265,8 @@ namespace Fig.App.Views
                 Editor.Selection.SelectTransition(transitionHit.Key);
                 _dragTransitionKey = transitionHit.Key;
                 _dragTransitionCutSec = transitionHit.CutSec;
-                _dragTransitionMaxSec = Math.Max(0.05, Math.Min(transitionHit.Left.DurSec, transitionHit.Right.DurSec));
+                _dragTransitionMaxSec = Math.Max(0.05,
+                    Editor.GetMaxTransitionDuration(transitionHit.LeftClipId, transitionHit.RightClipId));
                 _draggingTransition = true;
                 InvalidateVisual();
                 e.Handled = true;
@@ -1741,8 +1764,7 @@ namespace Fig.App.Views
             for (var i = 0; i < Editor.Document.Tracks.Count; i++)
             {
                 var track = Editor.Document.Tracks[i];
-                if (y >= TimelineGeometry.TrackTop(i) + RulerHeight
-                    && y < TimelineGeometry.TrackBottom(i) + RulerHeight)
+                if (y >= TrackTop(i) && y < TrackBottom(i))
                     return track;
             }
             return null;
@@ -1768,7 +1790,7 @@ namespace Fig.App.Views
             if (track is not null)
             {
                 var trackIdx = Editor.Document.Tracks.IndexOf(track);
-                var top = TimelineGeometry.TrackTop(trackIdx) + RulerHeight;
+                var top = TrackTop(trackIdx);
                 var clipTop = top + 10;
 
                 // clip markers only grab within the tab + label strip, so the body (transition
@@ -1792,7 +1814,7 @@ namespace Fig.App.Views
                 }
 
                 // track markers are diamonds at the lane bottom edge
-                var trackBottom = top + TimelineGeometry.TrackHeight;
+                var trackBottom = top + TrackHeight(track);
                 if (pos.Y >= trackBottom - 16 && pos.Y <= trackBottom)
                 {
                     foreach (var m in track.Markers)
@@ -1983,7 +2005,7 @@ namespace Fig.App.Views
         {
             if (Editor is null)
                 return default;
-            var y = TimelineGeometry.TrackBottom(Editor.Document.Tracks.Count - 1) + RulerHeight + 4;
+            var y = TrackBottom(Editor.Document.Tracks.Count - 1) + 4;
             return new Rect(8, y, HeaderButtonSize, HeaderButtonSize);
         }
 
@@ -2010,8 +2032,8 @@ namespace Fig.App.Views
             for (var i = 0; i < Editor.Document.Tracks.Count; i++)
             {
                 var track = Editor.Document.Tracks[i];
-                var top = TimelineGeometry.TrackTop(i) + RulerHeight;
-                var height = TimelineGeometry.TrackHeight;
+                var top = TrackTop(i);
+                var height = TrackHeight(track);
 
                 var isTrackSelected = track.Id == _selectedTrackId;
                 var rowRect = new Rect(0, top, Bounds.Width, height);
@@ -2098,20 +2120,23 @@ namespace Fig.App.Views
                             : new SolidColorBrush(Color.Parse("#1c1c1e"));
                         context.DrawRectangle(labelBrush, null, new RoundedRect(labelRect, new CornerRadius(topLeft, topRight, 0, 0)));
 
-                        // effect folder-bookmarks first; the clip name draws to the right of them
-                        var bookmarkWidth = DrawEffectBookmarks(context, labelRect, clip);
-
-                        var clipName = ClipName(clip);
-                        if (clipName is not null)
+                        using (context.PushClip(labelRect))
                         {
-                            var labelText = new FormattedText(
-                                clipName,
-                                System.Globalization.CultureInfo.CurrentCulture,
-                                FlowDirection.LeftToRight,
-                                Typeface.Default,
-                                10,
-                                TrackHeaderTextBrush);
-                            context.DrawText(labelText, new Point(x + 4 + bookmarkWidth, labelRect.Y + (labelHeight - labelText.Height) / 2));
+                            // Compact effect indicators preserve the clip name as the primary label.
+                            var bookmarkWidth = DrawEffectBookmarks(context, labelRect, clip);
+                            var clipName = ClipName(clip);
+                            if (clipName is not null)
+                            {
+                                var labelText = new FormattedText(
+                                    clipName,
+                                    System.Globalization.CultureInfo.CurrentCulture,
+                                    FlowDirection.LeftToRight,
+                                    Typeface.Default,
+                                    10,
+                                    TrackHeaderTextBrush);
+                                context.DrawText(labelText, new Point(x + 4 + bookmarkWidth,
+                                    labelRect.Y + (labelHeight - labelText.Height) / 2));
+                            }
                         }
 
                         // --- clip body ---
@@ -2197,13 +2222,16 @@ namespace Fig.App.Views
             // drop preview: highlight target track + ghost clip rect
             if (_dropPreviewTrack is not null && _dropPreviewTime >= 0 && _dropPreviewAsset is not null)
             {
-                var trackTop = TimelineGeometry.TrackTop(_dropPreviewTrack.Index) + RulerHeight;
+                var trackIndex = Editor.Document.Tracks.IndexOf(_dropPreviewTrack);
+                var trackTop = TrackTop(Math.Max(0, trackIndex));
+                var trackHeight = TrackHeight(_dropPreviewTrack);
                 context.DrawRectangle(new SolidColorBrush(Color.Parse("#2244aa44")), null,
-                    new Rect(0, trackTop, Bounds.Width, TimelineGeometry.TrackHeight));
+                    new Rect(0, trackTop, Bounds.Width, trackHeight));
 
                 var ghostX = TrackHeaderWidth + Viewport.TimeToX(_dropPreviewTime);
                 var ghostW = _dropPreviewAsset.DurationSec * px;
-                var ghostRect = new Rect(ghostX, trackTop + 10, ghostW, TimelineGeometry.ClipTotalHeight);
+                var ghostHeight = Math.Min(TimelineGeometry.ClipTotalHeight, trackHeight - 8);
+                var ghostRect = new Rect(ghostX, trackTop + 4, ghostW, ghostHeight);
                 context.DrawRectangle(new SolidColorBrush(Color.Parse("#88ffffff")), null,
                     new RoundedRect(ghostRect, ClipCornerRadius));
                 context.DrawRectangle(Brushes.Transparent, new Pen(SelectionBrush, 2),
@@ -2223,7 +2251,7 @@ namespace Fig.App.Views
                 var listIndex = Editor.Document.Tracks.IndexOf(_dropTransitionTrack);
                 if (listIndex >= 0)
                 {
-                    var trackTop = TimelineGeometry.TrackTop(listIndex) + RulerHeight;
+                    var trackTop = TrackTop(listIndex);
                     var x = TrackHeaderWidth + Viewport.TimeToX(_dropTransitionCutSec);
                     var marker = new SolidColorBrush(Color.FromArgb(230, 0xea, 0xb3, 0x08));
                     context.DrawLine(new Pen(marker, 3), new Point(x, trackTop + 10),

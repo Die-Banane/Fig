@@ -11,6 +11,8 @@ namespace Fig.Core.Timeline
         public Timeline Document { get; }
         public CommandHistory History { get; }
         public SelectionState Selection { get; }
+        public Func<string, MediaAsset?>? MediaResolver { get; set; }
+        public string? TransitionValidationMessage { get; private set; }
 
         public event Action? TimelineChanged;
 
@@ -829,12 +831,25 @@ namespace Fig.Core.Timeline
         /// Applies a catalog transition to the cut between two abutting clips
         /// (outgoing.transitionOut + incoming.transitionIn). Video clips only.
         /// </summary>
-        public void ApplyTransitionAtCut(string outgoingClipId, string incomingClipId, TransitionRef transition)
+        public bool ApplyTransitionAtCut(string outgoingClipId, string incomingClipId, TransitionRef transition)
         {
-            if (FindClip(outgoingClipId) is not VideoClip || FindClip(incomingClipId) is not VideoClip)
-                return;
+            if (FindClip(outgoingClipId) is not VideoClip left || FindClip(incomingClipId) is not VideoClip right)
+                return false;
+            var requestedDuration = transition.DurationSec;
+            var duration = ClampTransitionDuration(left, right, requestedDuration);
+            if (duration < 2.0 / Math.Max(1, Document.Rate.Fps))
+            {
+                TransitionValidationMessage = "The cut does not have enough trimmed media for a transition.";
+                return false;
+            }
+            transition = transition.Clone();
+            transition.DurationSec = duration;
             History.Execute(new ApplyTransitionAtCutCommand(this, outgoingClipId, incomingClipId, transition));
             RaiseChanged();
+            TransitionValidationMessage = duration + 1e-6 < requestedDuration
+                ? "Transition duration was limited by available media handles."
+                : null;
+            return true;
         }
 
         /// <summary>
@@ -867,13 +882,10 @@ namespace Fig.Core.Timeline
             {
                 if (next is not VideoClip)
                     return false;
-                ApplyTransitionAtCut(clip.Id, next.Id, transition);
+                return ApplyTransitionAtCut(clip.Id, next.Id, transition);
             }
-            else
-            {
-                SetTransitionOut(clip.Id, transition);
-            }
-            return true;
+            TransitionValidationMessage = "Transitions require an abutting video clip at the cut.";
+            return false;
         }
 
         /// <summary>Enumerates the transitions living across abutting cuts on a track.</summary>
@@ -937,8 +949,44 @@ namespace Fig.Core.Timeline
             var right = FindClip(rightClipId);
             if (left is null || right is null || (left.TransitionOut is null && right.TransitionIn is null))
                 return;
+            if (left is VideoClip leftVideo && right is VideoClip rightVideo)
+                durationSec = ClampTransitionDuration(leftVideo, rightVideo, durationSec);
+            if (durationSec <= 1e-6)
+                return;
             History.ExecuteCoalescing(new SetTransitionDurationCommand(this, leftClipId, rightClipId, durationSec));
             RaiseChanged();
+        }
+
+        public double GetMaxTransitionDuration(string leftClipId, string rightClipId)
+        {
+            if (FindClip(leftClipId) is not VideoClip left || FindClip(rightClipId) is not VideoClip right)
+                return 0;
+            return ClampTransitionDuration(left, right, double.MaxValue);
+        }
+
+        private double ClampTransitionDuration(VideoClip left, VideoClip right, double requested)
+        {
+            var visibleLimit = 2 * Math.Min(left.DurSec, right.DurSec);
+            if (MediaResolver is null)
+                return Math.Clamp(requested, 0, visibleLimit);
+
+            var leftAsset = MediaResolver(left.SourceId);
+            var rightAsset = MediaResolver(right.SourceId);
+            if (leftAsset is null || rightAsset is null)
+                return 0;
+
+            var timelineFps = Math.Max(1, Document.Rate.Fps);
+            var leftFactor = Math.Max(1e-9, left.Speed * (left.SourceRate?.Fps ?? timelineFps) / timelineFps);
+            var rightFactor = Math.Max(1e-9, right.Speed * (right.SourceRate?.Fps ?? timelineFps) / timelineFps);
+            var leftVisibleOut = left.SrcOutSec > left.SrcInSec
+                ? left.SrcOutSec
+                : left.SrcInSec + left.DurSec * leftFactor;
+            var rightVisibleIn = right.SrcInSec;
+            var leftSourceEnd = leftAsset.SourceStartSec + leftAsset.DurationSec;
+            var outgoingHandle = Math.Max(0, leftSourceEnd - leftVisibleOut) / leftFactor;
+            var incomingHandle = Math.Max(0, rightVisibleIn - rightAsset.SourceStartSec) / rightFactor;
+            var handleLimit = 2 * Math.Min(outgoingHandle, incomingHandle);
+            return Math.Clamp(requested, 0, Math.Min(visibleLimit, handleLimit));
         }
 
         /// <summary>Resizes a cut transition identified by its selection key ("{left}|{right}").</summary>

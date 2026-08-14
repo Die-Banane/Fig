@@ -38,13 +38,16 @@ public sealed class PreviewLayer
     public double TimeSec { get; }
     public double Opacity { get; }
     public Fig.Core.Timeline.VideoClip Clip { get; }
+    public int TrackIndex { get; }
 
-    public PreviewLayer(string sourcePath, double timeSec, double opacity, Fig.Core.Timeline.VideoClip clip)
+    public PreviewLayer(string sourcePath, double timeSec, double opacity,
+        Fig.Core.Timeline.VideoClip clip, int trackIndex)
     {
         SourcePath = sourcePath;
         TimeSec = timeSec;
         Opacity = opacity;
         Clip = clip;
+        TrackIndex = trackIndex;
     }
 }
 
@@ -85,8 +88,8 @@ public partial class EditorViewModel : ViewModelBase
             ? mw
             : null;
 
-    public IReadOnlyDictionary<string, MediaAsset> MediaById =>
-        Media.ToDictionary(m => m.Id);
+    private readonly Dictionary<string, MediaAsset> _mediaById = new();
+    public IReadOnlyDictionary<string, MediaAsset> MediaById => _mediaById;
 
     [ObservableProperty]
     private System.Collections.ObjectModel.ObservableCollection<MediaAsset> _media = new();
@@ -147,11 +150,15 @@ public partial class EditorViewModel : ViewModelBase
         Gestures = gestures;
         SelectedLibraryTab = LibraryTabs[0];
         Editor = CreateSeededEditor();
+        Editor.MediaResolver = FindAssetById;
         Preview = new PreviewViewModel(_mediaService, ResolvePreviewLayers);
         Preview.AttachEditor(this);
         Properties = new PropertiesViewModel(this);
         Media.CollectionChanged += (_, _) =>
         {
+            _mediaById.Clear();
+            foreach (var asset in Media)
+                _mediaById[asset.Id] = asset;
             OnPropertyChanged(nameof(MediaById));
             OnPropertyChanged(nameof(Media));
             OnPropertyChanged(nameof(SequenceEndSec));
@@ -304,7 +311,7 @@ public partial class EditorViewModel : ViewModelBase
                 var srcTime = vc.SrcInSec + (timeSec - clip.StartSec) * vc.Speed * ratio;
                 var localT = timeSec - clip.StartSec;
                 var opacity = ClipFade.EffectiveOpacity(vc, localT);
-                layers.Add(new PreviewLayer(asset.PlaybackVideoPath, srcTime, opacity, vc));
+                layers.Add(new PreviewLayer(asset.PlaybackVideoPath, srcTime, opacity, vc, i));
             }
         }
         return layers;
@@ -346,7 +353,7 @@ public partial class EditorViewModel : ViewModelBase
         }
         if (!Editor.TryApplyTransitionFromSelection(clipId, entry.CreateRef()))
         {
-            Notify?.Invoke("Could not apply transition");
+            Notify?.Invoke(Editor.TransitionValidationMessage ?? "Could not apply transition");
             return;
         }
         Preview.RefreshFrame();
@@ -405,6 +412,7 @@ public partial class EditorViewModel : ViewModelBase
 
         UnwireEditorEvents(Editor);
         Editor = new TimelineEditor(project.Timelines[0]);
+        Editor.MediaResolver = FindAssetById;
         Editor.MagneticSnap = MagneticSnap;
         Editor.RefreshTrackIndices();
         WireEditorEvents(Editor);
@@ -421,10 +429,14 @@ public partial class EditorViewModel : ViewModelBase
     private void InitializePlaybackForCurrentEditor()
     {
         if (Playback is not null)
+        {
             Playback.PositionChanged -= OnPlaybackPositionChanged;
+            Playback.StateChanged -= OnPlaybackStateChanged;
+        }
         Playback?.Dispose();
         Playback = new PlaybackEngine(Editor, _mediaService, sourceId => FindAssetById(sourceId));
         Playback.PositionChanged += OnPlaybackPositionChanged;
+        Playback.StateChanged += OnPlaybackStateChanged;
         Preview.AttachPlayback(Playback);
         OnPropertyChanged(nameof(Playback));
         PlaybackAssigned?.Invoke(Playback);
@@ -434,7 +446,10 @@ public partial class EditorViewModel : ViewModelBase
     public void DisposePlayback()
     {
         if (Playback is not null)
+        {
             Playback.PositionChanged -= OnPlaybackPositionChanged;
+            Playback.StateChanged -= OnPlaybackStateChanged;
+        }
         Playback?.Dispose();
         Playback = null;
         Preview.AttachPlayback(null);
@@ -443,6 +458,14 @@ public partial class EditorViewModel : ViewModelBase
     }
 
     private void OnPlaybackPositionChanged(double sec) => NotifyPlaybackPosition(sec);
+    private void OnPlaybackStateChanged(PlaybackState state)
+    {
+        IsPlaying = state is PlaybackState.Buffering or PlaybackState.Playing;
+        if (state == PlaybackState.Faulted && Playback?.Error is { Length: > 0 } error)
+            Notify?.Invoke(error);
+        else if (state == PlaybackState.Unavailable)
+            Notify?.Invoke("No audio output device is available.");
+    }
 
     private MediaAsset? FindAssetById(string sourceId)
     {
@@ -887,13 +910,13 @@ public partial class EditorViewModel : ViewModelBase
     }
 
     [RelayCommand]
-    private void TogglePlayback()
+    private async Task TogglePlaybackAsync()
     {
         if (Playback is null)
             return;
         if (Playback.IsPlaying)
         {
-            Playback.Pause();
+            await Playback.PauseAsync();
         }
         else
         {
@@ -903,17 +926,32 @@ public partial class EditorViewModel : ViewModelBase
             // first frame mid-clip.
             IsPlaying = true;
             Preview.PreRollPlayback();
-            Playback.Play();
+            await Playback.PlayAsync();
         }
         IsPlaying = Playback.IsPlaying;
     }
 
     [RelayCommand]
-    private void JumpToStart()
+    private async Task JumpToStartAsync()
     {
         if (Playback is { IsPlaying: true })
-            Playback.Pause();
-        SeekFromUser(0);
+            await Playback.PauseAsync();
+        if (Playback is not null)
+            await Playback.SeekAsync(0);
+        PlayheadTimeSec = 0;
+        Preview.PlayheadSec = 0;
+        IsPlaying = false;
+    }
+
+    [RelayCommand]
+    private async Task JumpToEndAsync()
+    {
+        if (Playback is { IsPlaying: true })
+            await Playback.PauseAsync();
+        if (Playback is not null)
+            await Playback.SeekAsync(SequenceEndSec);
+        PlayheadTimeSec = SequenceEndSec;
+        Preview.PlayheadSec = SequenceEndSec;
         IsPlaying = false;
     }
 

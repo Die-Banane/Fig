@@ -7,7 +7,7 @@ namespace Fig.Core.Media
 {
     /// <summary>
     /// Finds abutting video clips with matching edge transitions and reports progress
-    /// across the window [cut - D, cut + D).
+    /// across the centered window [cut - D/2, cut + D/2), where D is the total duration.
     /// </summary>
     public static class TransitionResolver
     {
@@ -19,40 +19,51 @@ namespace Fig.Core.Media
             {
                 if (track.Kind != TrackKind.Video || !track.Visible)
                     continue;
+                if (FindActive(track, timeSec) is { } active)
+                    return active;
+            }
+            return null;
+        }
 
-                var clips = new List<Clip>(track.Clips);
-                clips.Sort((a, b) => a.StartSec.CompareTo(b.StartSec));
+        /// <summary>Finds the active transition on one video track.</summary>
+        public static ActiveTransition? FindActive(Track track, double timeSec)
+        {
+            if (track.Kind != TrackKind.Video || !track.Visible)
+                return null;
 
-                for (var i = 0; i < clips.Count - 1; i++)
+            // Avoid allocating and sorting a fresh list for every rendered frame. Clip storage
+            // order is not stable after moves/imports, so find the abutting partner directly.
+            var clips = track.Clips;
+            for (var i = 0; i < clips.Count; i++)
+            {
+                var a = clips[i];
+                if (!a.Enabled)
+                    continue;
+                var cut = a.StartSec + a.DurSec;
+                for (var j = 0; j < clips.Count; j++)
                 {
-                    var a = clips[i];
-                    var b = clips[i + 1];
-                    if (!a.Enabled || !b.Enabled)
+                    if (i == j)
                         continue;
-                    var cut = a.StartSec + a.DurSec;
-                    if (Math.Abs(b.StartSec - cut) > AbutEps)
+                    var b = clips[j];
+                    if (!b.Enabled || Math.Abs(b.StartSec - cut) > AbutEps)
                         continue;
 
                     var tx = ResolvePair(a, b);
-                    if (tx is null)
+                    if (tx is null || tx.DurationSec <= 1e-6)
                         continue;
 
                     var d = tx.DurationSec;
-                    if (d <= 1e-6)
-                        continue;
-
-                    var winStart = cut - d;
-                    var winEnd = cut + d;
+                    var winStart = cut - d / 2;
+                    var winEnd = cut + d / 2;
                     if (timeSec < winStart || timeSec >= winEnd)
                         continue;
 
-                    var t01 = Math.Clamp((timeSec - winStart) / (2 * d), 0, 1);
                     return new ActiveTransition
                     {
                         Outgoing = a,
                         Incoming = b,
                         TypeId = tx.TypeId,
-                        Progress01 = t01,
+                        Progress01 = Math.Clamp((timeSec - winStart) / d, 0, 1),
                         DurationSec = d,
                         Params = tx.Params,
                         CutSec = cut,

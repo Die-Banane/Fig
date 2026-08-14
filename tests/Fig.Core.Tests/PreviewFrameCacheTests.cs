@@ -50,4 +50,24 @@ public class PreviewFrameCacheTests
         Assert.Equal(0, cache.Count);
         Assert.False(cache.TryGet("/a.mp4", 0, 64, 36, out _));
     }
+
+    [Fact]
+    public void MakeDistinct_DoesNotMutateCacheOwnedFrame()
+    {
+        var cache = new PreviewFrameCache();
+        cache.Put("/a.mp4", 0, 2, 2, Frame(9));
+        Assert.True(cache.TryGet("/a.mp4", 0, 2, 2, out var cached));
+        var originalPixels = cached!.Pixels;
+        var seen = new HashSet<byte[]> { originalPixels };
+        var rented = new List<byte[]>();
+
+        var distinct = FramePool.MakeDistinct(cached, seen, rented);
+
+        Assert.NotSame(cached, distinct);
+        Assert.Same(originalPixels, cached.Pixels);
+        Assert.NotSame(originalPixels, distinct.Pixels);
+        foreach (var pixels in rented)
+            FramePool.Return(pixels);
+        cache.Clear();
+    }
 }

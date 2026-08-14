@@ -407,10 +407,48 @@ public class EffectTransitionTests
         Assert.NotNull(active);
         Assert.Equal("a", active!.Outgoing.Id);
         Assert.Equal("b", active.Incoming.Id);
-        Assert.InRange(active.Progress01, 0.2, 0.4);
+        Assert.Equal(0.1, active.Progress01, 3);
+
+        Assert.Null(TransitionResolver.FindActive(timeline, 1.74));
+        Assert.NotNull(TransitionResolver.FindActive(timeline, 2.24));
+        Assert.Null(TransitionResolver.FindActive(timeline, 2.25));
 
         Assert.Null(TransitionResolver.FindActive(timeline, 0.5));
         Assert.Null(TransitionResolver.FindActive(timeline, 3.5));
+    }
+
+    [Fact]
+    public void TransitionResolver_DoesNotDependOnClipStorageOrder()
+    {
+        var timeline = new TimelineModel { Rate = FrameRate.Common(30) };
+        var track = new Track { Kind = TrackKind.Video, Visible = true };
+        var outgoing = new VideoClip
+        {
+            Id = "a",
+            StartSec = 0,
+            DurSec = 2,
+            TransitionOut = new TransitionRef
+            {
+                TypeId = TransitionCatalog.CrossDissolve,
+                DurationSec = 0.5,
+            },
+        };
+        var incoming = new VideoClip
+        {
+            Id = "b",
+            StartSec = 2,
+            DurSec = 2,
+            TransitionIn = outgoing.TransitionOut.Clone(),
+        };
+        track.Clips.Add(incoming);
+        track.Clips.Add(outgoing);
+        timeline.Tracks.Add(track);
+
+        var active = TransitionResolver.FindActive(track, 2);
+
+        Assert.NotNull(active);
+        Assert.Equal("a", active!.Outgoing.Id);
+        Assert.Equal("b", active.Incoming.Id);
     }
 
     [Fact]
@@ -447,6 +485,66 @@ public class EffectTransitionTests
         Assert.Equal(TransitionCatalog.CrossDissolve, track.Clips[1].TransitionIn!.TypeId);
 
         Assert.True(editor.Undo());
+        Assert.Null(track.Clips[0].TransitionOut);
+        Assert.Null(track.Clips[1].TransitionIn);
+    }
+
+    [Fact]
+    public void ApplyTransitionAtCut_ClampsToAvailableSourceHandles()
+    {
+        var timeline = new TimelineModel { Rate = FrameRate.Common(30) };
+        var track = new Track { Kind = TrackKind.Video, Index = 0 };
+        var left = new VideoClip
+        {
+            Id = "a",
+            SourceId = "left",
+            StartSec = 0,
+            DurSec = 2,
+            SrcInSec = 1,
+            SrcOutSec = 3,
+        };
+        var right = new VideoClip
+        {
+            Id = "b",
+            SourceId = "right",
+            StartSec = 2,
+            DurSec = 2,
+            SrcInSec = 0.25,
+            SrcOutSec = 2.25,
+        };
+        track.Clips.Add(left);
+        track.Clips.Add(right);
+        timeline.Tracks.Add(track);
+        var assets = new Dictionary<string, MediaAsset>
+        {
+            ["left"] = new() { Id = "left", DurationSec = 3.5 },
+            ["right"] = new() { Id = "right", DurationSec = 4 },
+        };
+        var editor = new TimelineEditor(timeline) { MediaResolver = id => assets.GetValueOrDefault(id) };
+
+        var applied = editor.ApplyTransitionAtCut("a", "b",
+            TransitionCatalog.Find(TransitionCatalog.CrossDissolve)!.CreateRef(1));
+
+        Assert.True(applied);
+        Assert.Equal(0.5, left.TransitionOut!.DurationSec, 3);
+        Assert.Equal(0.5, right.TransitionIn!.DurationSec, 3);
+    }
+
+    [Fact]
+    public void ApplyTransitionAtCut_RejectsMissingIncomingHandle()
+    {
+        var timeline = new TimelineModel { Rate = FrameRate.Common(30) };
+        var track = new Track { Kind = TrackKind.Video, Index = 0 };
+        track.Clips.Add(new VideoClip { Id = "a", SourceId = "left", DurSec = 2, SrcOutSec = 2 });
+        track.Clips.Add(new VideoClip { Id = "b", SourceId = "right", StartSec = 2, DurSec = 2, SrcInSec = 0 });
+        timeline.Tracks.Add(track);
+        var editor = new TimelineEditor(timeline)
+        {
+            MediaResolver = id => new MediaAsset { Id = id, DurationSec = 5 },
+        };
+
+        Assert.False(editor.ApplyTransitionAtCut("a", "b",
+            TransitionCatalog.Find(TransitionCatalog.CrossDissolve)!.CreateRef(0.5)));
         Assert.Null(track.Clips[0].TransitionOut);
         Assert.Null(track.Clips[1].TransitionIn);
     }

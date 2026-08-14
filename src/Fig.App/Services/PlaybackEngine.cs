@@ -15,6 +15,16 @@ using SoundFlow.Structs;
 
 namespace Fig.App.Services
 {
+    public enum PlaybackState
+    {
+        Unavailable,
+        Paused,
+        Buffering,
+        Playing,
+        Ended,
+        Faulted,
+    }
+
     /// <summary>
     /// A <see cref="SoundComponent"/> that pulls the next chunk from the queue the
     /// producer fills. This is the bridge between the mixed ring buffer and the device.
@@ -56,6 +66,10 @@ namespace Fig.App.Services
 
         private CancellationTokenSource? _cts;
         private Task? _producerTask;
+        private readonly SemaphoreSlim _transportGate = new(1, 1);
+        private readonly object _seekGate = new();
+        private double? _pendingSeekSec;
+        private bool _seekPumpRunning;
 
         private double _seekBaseSec;          // timeline time of queue frame 0 (after Reset, Position starts at 0)
         private bool _disposed;
@@ -65,6 +79,7 @@ namespace Fig.App.Services
         private const long MinPositionEmitTicks = 15 * TimeSpan.TicksPerMillisecond; // ~66 Hz max
 
         public event Action<double>? PositionChanged;
+        public event Action<PlaybackState>? StateChanged;
 
         /// <summary>
         /// Raises <see cref="PositionChanged"/> on the UI thread. Concurrent raises are coalesced
@@ -116,10 +131,36 @@ namespace Fig.App.Services
                 fullBehavior: QueueFullBehavior.Block);
             _source = new QueueSource(_engine, _format, _queue);
             _device?.MasterMixer.ConnectInput(_source);
+            State = _device is null ? PlaybackState.Unavailable : PlaybackState.Paused;
         }
 
         public bool IsAvailable => _device is not null;
         public bool IsPlaying { get; private set; }
+        public PlaybackState State { get; private set; }
+        public string? Error { get; private set; }
+
+        private float _volume = 1;
+        private bool _isMuted;
+
+        public float Volume
+        {
+            get => _volume;
+            set
+            {
+                _volume = Math.Clamp(value, 0, 1);
+                ApplyMonitorGain();
+            }
+        }
+
+        public bool IsMuted
+        {
+            get => _isMuted;
+            set
+            {
+                _isMuted = value;
+                ApplyMonitorGain();
+            }
+        }
 
         /// <summary>Current timeline position, driven by the audio device's consumption.</summary>
         public double PositionSec
@@ -135,74 +176,180 @@ namespace Fig.App.Services
 
         public void Seek(double timelineSec)
         {
-            _seekBaseSec = Math.Max(0, timelineSec);
-            _queue.Reset();
-            // ResetSources can block behind an in-flight mix decode; don't stall the UI thread
-            // while scrubbing. Next Play() resets again synchronously, so this is just a fast path.
-            System.Threading.Tasks.Task.Run(() => _mixer.ResetSources());
-            RaisePositionChanged();
+            lock (_seekGate)
+            {
+                _pendingSeekSec = timelineSec;
+                if (_seekPumpRunning)
+                    return;
+                _seekPumpRunning = true;
+            }
+            _ = PumpSeeksAsync();
         }
 
-        public void Play()
+        private async Task PumpSeeksAsync()
         {
-            if (_device is null || IsPlaying)
-                return;
+            while (true)
+            {
+                double target;
+                lock (_seekGate)
+                {
+                    if (_pendingSeekSec is null)
+                    {
+                        _seekPumpRunning = false;
+                        return;
+                    }
+                    target = _pendingSeekSec.Value;
+                    _pendingSeekSec = null;
+                }
+                await SeekAsync(target);
+            }
+        }
 
-            _queue.Reset();
-            _mixer.ResetSources();
+        public async Task SeekAsync(double timelineSec)
+        {
+            await _transportGate.WaitAsync();
+            try
+            {
+                var wasPlaying = IsPlaying;
+                await StopProducerAsync();
+                _device?.Stop();
+                IsPlaying = false;
+                _seekBaseSec = Math.Clamp(timelineSec, 0, TimelineEnd(_editor.Document));
+                _queue.Reset();
+                await Task.Run(_mixer.ResetSources);
+
+                if (wasPlaying && _device is not null && _seekBaseSec < TimelineEnd(_editor.Document) - 1e-6)
+                {
+                    SetState(PlaybackState.Buffering);
+                    await Task.Run(() => FillUntil(PrebufferFrames));
+                    StartDeviceAndProducer();
+                }
+                else
+                {
+                    SetState(_seekBaseSec >= TimelineEnd(_editor.Document) - 1e-6
+                        ? PlaybackState.Ended
+                        : PlaybackState.Paused);
+                }
+                RaisePositionChanged();
+            }
+            catch (Exception ex)
+            {
+                Error = ex.Message;
+                SetState(PlaybackState.Faulted);
+            }
+            finally
+            {
+                _transportGate.Release();
+            }
+        }
+
+        public async Task PlayAsync()
+        {
+            await _transportGate.WaitAsync();
+            try
+            {
+                if (_device is null)
+                {
+                    SetState(PlaybackState.Unavailable);
+                    return;
+                }
+                if (IsPlaying)
+                    return;
+
+                await StopProducerAsync();
+                Error = null;
+
+                var end = TimelineEnd(_editor.Document);
+                if (end <= 0)
+                    return;
+                if (_seekBaseSec >= end - 1e-6 || State == PlaybackState.Ended)
+                    _seekBaseSec = 0;
+
+                _queue.Reset();
+                await Task.Run(_mixer.ResetSources);
+                SetState(PlaybackState.Buffering);
+
+                // Audio decoding and prebuffering can seek through a GOP and must never block UI.
+                await Task.Run(() => FillUntil(PrebufferFrames));
+                StartDeviceAndProducer();
+            }
+            catch (Exception ex)
+            {
+                Error = ex.Message;
+                IsPlaying = false;
+                SetState(PlaybackState.Faulted);
+            }
+            finally
+            {
+                _transportGate.Release();
+            }
+        }
+
+        private void StartDeviceAndProducer()
+        {
             IsPlaying = true;
-
-            // pre-buffer before starting the device so the first callback never underruns
-            FillUntil(PrebufferFrames);
-
-            _device.Start();
-
+            _device!.Start();
             _cts = new CancellationTokenSource();
             _producerTask = Task.Run(() => ProducerLoop(_cts.Token));
+            SetState(PlaybackState.Playing);
         }
 
-        public void Pause()
+        public async Task PauseAsync()
         {
-            if (!IsPlaying)
-                return;
-
-            // freeze the position: advance the base by however much the device has consumed
-            _seekBaseSec += _queue.Position / (2.0 * AudioMixer.SampleRate);
-            _queue.Reset();
-            System.Threading.Tasks.Task.Run(() => _mixer.ResetSources());
-
-            IsPlaying = false;
-            _cts?.Cancel();
-            _device?.Stop();
-            RaisePositionChanged();
+            await _transportGate.WaitAsync();
+            try
+            {
+                if (!IsPlaying && State != PlaybackState.Buffering)
+                    return;
+                var position = PositionSec;
+                IsPlaying = false;
+                await StopProducerAsync();
+                _device?.Stop();
+                _seekBaseSec = Math.Clamp(position, 0, TimelineEnd(_editor.Document));
+                _queue.Reset();
+                await Task.Run(_mixer.ResetSources);
+                SetState(PlaybackState.Paused);
+                RaisePositionChanged();
+            }
+            finally
+            {
+                _transportGate.Release();
+            }
         }
 
         /// <summary>Decode+mix ahead of the device until cancelled or the timeline ends.</summary>
         private async Task ProducerLoop(CancellationToken token)
         {
-            while (!token.IsCancellationRequested)
+            try
             {
-                var bufferedFrames = _queue.SamplesAvailable / 2;
-                if (bufferedFrames < TargetBufferedFrames)
+                while (!token.IsCancellationRequested)
                 {
-                    if (!EnqueueOneChunk())
+                    var bufferedFrames = _queue.SamplesAvailable / 2;
+                    if (bufferedFrames < TargetBufferedFrames)
                     {
-                        // timeline ended: let the tail play out
-                        await Task.Delay(40, token);
-                        RaisePositionChanged();
-                        continue;
+                        if (!EnqueueOneChunk())
+                        {
+                            if (_queue.SamplesAvailable == 0)
+                            {
+                                CompletePlaybackFromProducer();
+                                return;
+                            }
+                            await Task.Delay(10, token);
+                            RaisePositionChanged();
+                            continue;
+                        }
+                        if (_queue.SamplesAvailable / 2 < TargetBufferedFrames)
+                        {
+                            RaisePositionChanged();
+                            continue;
+                        }
                     }
-                    // keep filling without sleeping while below the waterline
-                    if (_queue.SamplesAvailable / 2 < TargetBufferedFrames)
-                    {
-                        RaisePositionChanged();
-                        continue;
-                    }
-                }
 
-                RaisePositionChanged();
-                await Task.Delay(10, token);
+                    RaisePositionChanged();
+                    await Task.Delay(10, token);
+                }
             }
+            catch (OperationCanceledException) when (token.IsCancellationRequested) { }
         }
 
         /// <summary>Mixes chunks until at least <paramref name="frameCount"/> frames are buffered (or timeline ends).</summary>
@@ -225,11 +372,55 @@ namespace Fig.App.Services
             if (startSec >= timelineEnd)
                 return false;
 
-            var durationSec = ChunkFrames / (double)AudioMixer.SampleRate;
+            var durationSec = Math.Min(ChunkFrames / (double)AudioMixer.SampleRate, timelineEnd - startSec);
             var chunk = _mixer.Mix(timeline, startSec, durationSec);
-            // Mix always returns exactly ChunkFrames*2 floats (silence-padded)
             _queue.AddSamples(chunk);
             return true;
+        }
+
+        private async Task StopProducerAsync()
+        {
+            var cts = _cts;
+            var producer = _producerTask;
+            _cts = null;
+            _producerTask = null;
+            if (cts is null)
+                return;
+            cts.Cancel();
+            _queue.Reset();
+            if (producer is not null && producer.Id != Task.CurrentId)
+            {
+                try { await producer; }
+                catch (OperationCanceledException) { }
+            }
+            cts.Dispose();
+        }
+
+        private void CompletePlaybackFromProducer()
+        {
+            _device?.Stop();
+            _seekBaseSec = TimelineEnd(_editor.Document);
+            _queue.Reset();
+            IsPlaying = false;
+            SetState(PlaybackState.Ended);
+            RaisePositionChanged();
+        }
+
+        private void ApplyMonitorGain()
+        {
+            if (!_disposed)
+                _source.Volume = _isMuted ? 0 : _volume;
+        }
+
+        private void SetState(PlaybackState state)
+        {
+            if (State == state)
+                return;
+            State = state;
+            if (Avalonia.Threading.Dispatcher.UIThread.CheckAccess())
+                StateChanged?.Invoke(state);
+            else
+                Avalonia.Threading.Dispatcher.UIThread.Post(() => StateChanged?.Invoke(state));
         }
 
         private static double TimelineEnd(Timeline timeline)
@@ -250,8 +441,12 @@ namespace Fig.App.Services
             if (_disposed)
                 return;
             _disposed = true;
-            Pause();
+            IsPlaying = false;
+            _cts?.Cancel();
+            _queue.Reset();
+            try { _producerTask?.Wait(TimeSpan.FromSeconds(2)); } catch { }
             _cts?.Dispose();
+            _transportGate.Dispose();
             _mixer.Dispose();
             _queue.Dispose();
             _device?.Dispose();

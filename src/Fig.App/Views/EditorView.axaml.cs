@@ -30,6 +30,7 @@ public partial class EditorView : UserControl
         DragDrop.SetAllowDrop(this, true);
         DragDrop.AddDragOverHandler(this, OnFileDragOver);
         DragDrop.AddDropHandler(this, OnFileDrop);
+        Timeline.PlayheadChanged += OnTimelinePlayheadChanged;
     }
 
     private void OnDataContextChanged(object? sender, EventArgs e)
@@ -38,13 +39,13 @@ public partial class EditorView : UserControl
         {
             _boundVm.PlaybackAssigned -= OnPlaybackAssigned;
             _boundVm = null;
+            OnPlaybackAssigned(null);
         }
 
         if (DataContext is not EditorViewModel vm)
             return;
 
         _boundVm = vm;
-        Timeline.PlayheadChanged += sec => vm.SeekFromUser(sec);
         vm.PlaybackAssigned += OnPlaybackAssigned;
         if (vm.Playback is not null)
             WirePlayback(vm.Playback);
@@ -54,15 +55,16 @@ public partial class EditorView : UserControl
 
     private void OnPlaybackAssigned(PlaybackEngine? playback)
     {
-        if (playback is null)
-            return;
         if (_wiredPlayback == playback)
             return;
         if (_wiredPlayback is not null)
             _wiredPlayback.PositionChanged -= OnPlaybackPositionChanged;
         _wiredPlayback = playback;
-        playback.PositionChanged += OnPlaybackPositionChanged;
+        if (playback is not null)
+            playback.PositionChanged += OnPlaybackPositionChanged;
     }
+
+    private void OnTimelinePlayheadChanged(double sec) => _boundVm?.SeekFromUser(sec);
 
     private void OnPlaybackPositionChanged(double sec) => Timeline.SetPlayheadFromPlayback(sec);
 
