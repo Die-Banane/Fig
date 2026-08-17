@@ -70,7 +70,9 @@ namespace Fig.Core.Timeline
         /// <summary>Source-format provenance preserved across imports.</summary>
         public Dictionary<string, JsonElement> Metadata { get; set; } = new();
 
+        [JsonIgnore]
         public virtual double SourceIn => throw new NotSupportedException($"{GetType().Name} has no source range");
+        [JsonIgnore]
         public virtual double SourceOut => throw new NotSupportedException($"{GetType().Name} has no source range");
     }
 
@@ -97,7 +99,9 @@ namespace Fig.Core.Timeline
         /// <summary>Normalized crop inset from the bottom edge (0..1).</summary>
         public double CropB { get; set; }
 
+        [JsonIgnore]
         public override double SourceIn => SrcInSec;
+        [JsonIgnore]
         public override double SourceOut => SrcOutSec;
 
         /// <summary>True when any crop inset is applied.</summary>
@@ -111,7 +115,9 @@ namespace Fig.Core.Timeline
         public double SrcInSec { get; set; }
         public double SrcOutSec { get; set; }
 
+        [JsonIgnore]
         public override double SourceIn => SrcInSec;
+        [JsonIgnore]
         public override double SourceOut => SrcOutSec;
     }
 

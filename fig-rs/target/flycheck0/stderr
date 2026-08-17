@@ -1,8 +1,0 @@
-error: failed to load manifest for workspace member `/home/neckles/projects/fig/fig-rs/crates/fig-core`
-referenced by workspace at `/home/neckles/projects/fig/fig-rs/Cargo.toml`
-
-Caused by:
-  failed to read `/home/neckles/projects/fig/fig-rs/crates/fig-core/Cargo.toml`
-
-Caused by:
-  No such file or directory (os error 2)

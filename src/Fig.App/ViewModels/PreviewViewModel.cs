@@ -685,8 +685,8 @@ public partial class PreviewViewModel : ViewModelBase
         out double localT)
     {
         frame = null;
-        // Transition frames deliberately extend outside the visible clip range into trimmed
-        // source handles. Callers validate the transition duration against those handles.
+        // Transition frames deliberately extend outside the visible clip range. Real source
+        // handles are used when available; otherwise srcTime is clamped to repeat an edge frame.
         localT = timelineSec - clip.StartSec;
         if (_editor is null || !_editor.MediaById.TryGetValue(clip.SourceId, out var asset)
             || string.IsNullOrEmpty(asset.Url) || asset.Offline)
@@ -695,6 +695,9 @@ public partial class PreviewViewModel : ViewModelBase
         var timelineRate = _editor.Editor.Document.Rate.Fps;
         var ratio = clip.SourceRate is { } r ? r.Fps / timelineRate : 1.0;
         var srcTime = clip.SrcInSec + localT * clip.Speed * ratio;
+        var sourceStart = asset.SourceStartSec;
+        var sourceEnd = sourceStart + Math.Max(0, asset.DurationSec - 1e-4);
+        srcTime = Math.Clamp(srcTime, sourceStart, Math.Max(sourceStart, sourceEnd));
         try
         {
             var path = asset.PlaybackVideoPath;

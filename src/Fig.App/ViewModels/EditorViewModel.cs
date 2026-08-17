@@ -8,6 +8,7 @@ using Fig.App.Views;
 using Fig.Core.Input;
 using Fig.Core.Media;
 using Fig.Core.Project;
+using Fig.Core.Templates;
 using Fig.Core.Timeline;
 using ProjectModel = Fig.Core.Project.Project;
 using TimelineModel = Fig.Core.Timeline.Timeline;
@@ -18,6 +19,7 @@ namespace Fig.App.ViewModels;
 public enum LibraryPanelTab
 {
     Media,
+    Templates,
     Transitions,
     Effects,
 }
@@ -89,6 +91,9 @@ public partial class EditorViewModel : ViewModelBase
             : null;
 
     private readonly Dictionary<string, MediaAsset> _mediaById = new();
+    private readonly object _importGate = new();
+    private readonly Dictionary<string, Task<MediaAsset?>> _importsInFlight =
+        new(StringComparer.OrdinalIgnoreCase);
     public IReadOnlyDictionary<string, MediaAsset> MediaById => _mediaById;
 
     [ObservableProperty]
@@ -116,24 +121,43 @@ public partial class EditorViewModel : ViewModelBase
     public IReadOnlyList<LibraryTabItem> LibraryTabs { get; } =
     [
         new(LibraryPanelTab.Media, "film", "Media"),
+        new(LibraryPanelTab.Templates, "clapperboard", "Templates"),
         new(LibraryPanelTab.Transitions, "blend", "Transitions"),
         new(LibraryPanelTab.Effects, "wand-sparkles", "Effects"),
     ];
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsLibraryMedia))]
+    [NotifyPropertyChangedFor(nameof(IsLibraryTemplates))]
     [NotifyPropertyChangedFor(nameof(IsLibraryTransitions))]
     [NotifyPropertyChangedFor(nameof(IsLibraryEffects))]
     [NotifyPropertyChangedFor(nameof(LibraryPanelTitle))]
     private LibraryTabItem? _selectedLibraryTab;
 
     public bool IsLibraryMedia => SelectedLibraryTab?.Tab == LibraryPanelTab.Media;
+    public bool IsLibraryTemplates => SelectedLibraryTab?.Tab == LibraryPanelTab.Templates;
     public bool IsLibraryTransitions => SelectedLibraryTab?.Tab == LibraryPanelTab.Transitions;
     public bool IsLibraryEffects => SelectedLibraryTab?.Tab == LibraryPanelTab.Effects;
     public string LibraryPanelTitle => SelectedLibraryTab?.Title ?? "Media";
 
     public IReadOnlyList<EffectCatalogEntry> EffectCatalogItems => EffectCatalog.All;
     public IReadOnlyList<TransitionCatalogEntry> TransitionCatalogItems => TransitionCatalog.All;
+
+    private readonly TemplateStore _templateStore = new(AppPaths.TemplatesDir);
+    public System.Collections.ObjectModel.ObservableCollection<VideoTemplate> Templates { get; } = new();
+    public System.Collections.ObjectModel.ObservableCollection<VideoTemplate> FilteredTemplates { get; } = new();
+    public IReadOnlyList<string> TemplateCategories { get; } =
+        ["All", "My templates", "Social", "YouTube", "Business"];
+
+    [ObservableProperty] private VideoTemplate? _selectedTemplate;
+    [ObservableProperty] private string _templateSearchText = "";
+    [ObservableProperty] private string _selectedTemplateCategory = "All";
+
+    public bool HasTemplates => FilteredTemplates.Count > 0;
+    public bool NoTemplates => !HasTemplates;
+
+    partial void OnTemplateSearchTextChanged(string value) => RefreshTemplateFilter();
+    partial void OnSelectedTemplateCategoryChanged(string value) => RefreshTemplateFilter();
 
     partial void OnMagneticSnapChanged(bool value)
     {
@@ -149,6 +173,7 @@ public partial class EditorViewModel : ViewModelBase
     {
         Gestures = gestures;
         SelectedLibraryTab = LibraryTabs[0];
+        LoadTemplates();
         Editor = CreateSeededEditor();
         Editor.MediaResolver = FindAssetById;
         Preview = new PreviewViewModel(_mediaService, ResolvePreviewLayers);
@@ -181,6 +206,89 @@ public partial class EditorViewModel : ViewModelBase
             OnPropertyChanged(nameof(ShowEmptyJobs));
             OnPropertyChanged(nameof(ActiveExportCount));
         };
+    }
+
+    private void LoadTemplates()
+    {
+        Templates.Clear();
+        foreach (var template in BuiltInTemplateCatalog.All)
+            Templates.Add(template);
+        foreach (var template in _templateStore.List())
+            Templates.Add(template);
+        RefreshTemplateFilter();
+    }
+
+    private void RefreshTemplateFilter()
+    {
+        var query = TemplateSearchText.Trim();
+        FilteredTemplates.Clear();
+        foreach (var template in Templates.Where(template =>
+                     (SelectedTemplateCategory == "All" || template.Category == SelectedTemplateCategory)
+                     && (query.Length == 0
+                         || template.Name.Contains(query, StringComparison.OrdinalIgnoreCase)
+                         || template.Description.Contains(query, StringComparison.OrdinalIgnoreCase)
+                         || template.Tags.Any(tag => tag.Contains(query, StringComparison.OrdinalIgnoreCase)))))
+        {
+            FilteredTemplates.Add(template);
+        }
+        OnPropertyChanged(nameof(HasTemplates));
+        OnPropertyChanged(nameof(NoTemplates));
+    }
+
+    [RelayCommand]
+    private void CreateTemplate()
+    {
+        if (Project is null || !Editor.Document.Tracks.SelectMany(track => track.Clips).Any())
+        {
+            Notify?.Invoke("Add clips before saving a template");
+            return;
+        }
+
+        var template = TemplateBuilder.FromTimeline(
+            $"{Project.Name} template",
+            "My templates",
+            Editor.Document,
+            Media,
+            "Reusable edit created from the current timeline.");
+        _templateStore.Save(template);
+        LoadTemplates();
+        SelectedLibraryTab = LibraryTabs.First(tab => tab.Tab == LibraryPanelTab.Templates);
+        SelectedTemplateCategory = "My templates";
+        SelectedTemplate = template;
+        Notify?.Invoke($"Saved template \"{template.Name}\"");
+    }
+
+    [RelayCommand]
+    private void UseTemplate(VideoTemplate? template)
+    {
+        if (template is null || Project is null)
+            return;
+        if (Editor.Document.Tracks.SelectMany(track => track.Clips).Any())
+        {
+            Notify?.Invoke("Templates can be applied to an empty timeline");
+            return;
+        }
+
+        var available = Media.ToList();
+        var assignments = new Dictionary<string, MediaAsset>();
+        foreach (var slot in template.Slots)
+        {
+            var asset = available.FirstOrDefault(candidate =>
+                candidate.Kind == slot.Kind || slot.Kind == MediaKind.Video && candidate.Kind == MediaKind.Image);
+            if (asset is null)
+            {
+                Notify?.Invoke($"Import {template.SlotLabel} with compatible media first");
+                return;
+            }
+            assignments[slot.Id] = asset;
+            available.Remove(asset);
+        }
+
+        var timeline = TemplateInstantiator.Instantiate(template, assignments);
+        Project.Timelines[0] = timeline;
+        ActivateTimeline(timeline);
+        _store?.SaveProject(Project);
+        Notify?.Invoke($"Applied \"{template.Name}\"");
     }
 
     private void WireEditorEvents(TimelineEditor editor)
@@ -410,8 +518,13 @@ public partial class EditorViewModel : ViewModelBase
         if (project.Timelines.Count == 0)
             project.Timelines.Add(new TimelineModel { Rate = FrameRate.Common(30) });
 
+        ActivateTimeline(project.Timelines[0]);
+    }
+
+    private void ActivateTimeline(TimelineModel timeline)
+    {
         UnwireEditorEvents(Editor);
-        Editor = new TimelineEditor(project.Timelines[0]);
+        Editor = new TimelineEditor(timeline);
         Editor.MediaResolver = FindAssetById;
         Editor.MagneticSnap = MagneticSnap;
         Editor.RefreshTrackIndices();
@@ -601,7 +714,27 @@ public partial class EditorViewModel : ViewModelBase
     /// probe/hash/thumbnail work runs off the UI thread; awaiting returns once the asset is
     /// ready to be placed on the timeline.
     /// </summary>
-    public async Task<MediaAsset?> ImportFileAsync(string path)
+    public Task<MediaAsset?> ImportFileAsync(string path)
+    {
+        var importPath = NormalizeImportPath(path);
+        lock (_importGate)
+        {
+            var existingAsset = Media.FirstOrDefault(asset =>
+                string.Equals(NormalizeImportPath(asset.Url), importPath, StringComparison.OrdinalIgnoreCase));
+            if (existingAsset is not null)
+                return Task.FromResult<MediaAsset?>(existingAsset);
+
+            if (_importsInFlight.TryGetValue(importPath, out var existingImport))
+                return existingImport;
+
+            var import = ImportFileCoreAsync(importPath);
+            _importsInFlight[importPath] = import;
+            _ = RemoveCompletedImportAsync(importPath, import);
+            return import;
+        }
+    }
+
+    private async Task<MediaAsset?> ImportFileCoreAsync(string path)
     {
         if (ProjectManager is null)
             return null;
@@ -632,6 +765,34 @@ public partial class EditorViewModel : ViewModelBase
             }));
         _store?.SaveProject(Project!);
         return asset;
+    }
+
+    private async Task RemoveCompletedImportAsync(string path, Task<MediaAsset?> import)
+    {
+        try
+        {
+            await import;
+        }
+        finally
+        {
+            lock (_importGate)
+            {
+                if (_importsInFlight.TryGetValue(path, out var current) && ReferenceEquals(current, import))
+                    _importsInFlight.Remove(path);
+            }
+        }
+    }
+
+    private static string NormalizeImportPath(string path)
+    {
+        try
+        {
+            return Path.GetFullPath(path);
+        }
+        catch
+        {
+            return path;
+        }
     }
 
     [RelayCommand]

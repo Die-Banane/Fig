@@ -3,6 +3,7 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:vm="using:Fig.App.ViewModels"
              xmlns:local="using:Fig.App.Views"
+             xmlns:ctrls="using:Fig.App.Controls"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              mc:Ignorable="d" d:DesignWidth="600" d:DesignHeight="420"
              x:Class="Fig.App.Views.PreviewView"
@@ -10,40 +11,40 @@
 
     <UserControl.Styles>
         <Style Selector="Button.monitor-btn">
-            <Setter Property="Width" Value="34"/>
-            <Setter Property="Height" Value="34"/>
-            <Setter Property="Padding" Value="8"/>
+            <Setter Property="Width" Value="28"/>
+            <Setter Property="Height" Value="28"/>
+            <Setter Property="Padding" Value="6"/>
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="BorderThickness" Value="0"/>
-            <Setter Property="CornerRadius" Value="4"/>
-            <Setter Property="Foreground" Value="#d4d4d6"/>
+            <Setter Property="CornerRadius" Value="3"/>
+            <Setter Property="Foreground" Value="#c6c9ce"/>
         </Style>
         <Style Selector="Button.monitor-btn:pointerover /template/ ContentPresenter">
             <Setter Property="Background" Value="#333336"/>
         </Style>
         <Style Selector="Button.monitor-play">
-            <Setter Property="Width" Value="38"/>
-            <Setter Property="Height" Value="38"/>
-            <Setter Property="Padding" Value="10"/>
-            <Setter Property="Background" Value="#2a4a7a"/>
+            <Setter Property="Width" Value="30"/>
+            <Setter Property="Height" Value="30"/>
+            <Setter Property="Padding" Value="7"/>
+            <Setter Property="Background" Value="#35383d"/>
             <Setter Property="BorderThickness" Value="0"/>
-            <Setter Property="CornerRadius" Value="4"/>
-            <Setter Property="Foreground" Value="#ffffff"/>
+            <Setter Property="CornerRadius" Value="3"/>
+            <Setter Property="Foreground" Value="#e5e7eb"/>
         </Style>
         <Style Selector="Button.monitor-play:pointerover /template/ ContentPresenter">
-            <Setter Property="Background" Value="#3568ad"/>
+            <Setter Property="Background" Value="#45494f"/>
         </Style>
     </UserControl.Styles>
 
-    <Border Background="#111111" CornerRadius="4">
+    <Border Background="#101113" CornerRadius="3">
         <DockPanel>
-            <Border DockPanel.Dock="Bottom" Background="#1c1c1e" Padding="12,8"
-                    BorderBrush="#2a2a2b" BorderThickness="0,1,0,0">
-                <Grid ColumnDefinitions="*,Auto,*" MinHeight="38">
+            <Border DockPanel.Dock="Bottom" Background="#191a1d" Padding="10,4"
+                    BorderBrush="#303238" BorderThickness="0,1,0,0">
+                <Grid ColumnDefinitions="*,Auto,*" MinHeight="32">
                     <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6"
                                 VerticalAlignment="Center">
                         <TextBlock Text="{Binding TimeDisplay}"
-                                   Foreground="#d4d4d6" FontSize="12"
+                                   Foreground="#c9ccd1" FontSize="11"
                                    FontFamily="monospace" VerticalAlignment="Center"/>
                         <local:StrokeIcon Icon="loader-circle" Width="13" Height="13"
                                           IsVisible="{Binding IsBuffering}"
@@ -59,23 +60,23 @@
                                 HorizontalAlignment="Center" VerticalAlignment="Center">
                         <Button Classes="monitor-btn" Command="{Binding JumpToStartCommand}"
                                 ToolTip.Tip="Jump to start">
-                            <local:StrokeIcon Icon="skip-start" Width="14" Height="14"/>
+                            <local:StrokeIcon Icon="skip-start" Width="13" Height="13"/>
                         </Button>
                         <Button Classes="monitor-btn" Command="{Binding StepBackFrameCommand}"
                                 ToolTip.Tip="Previous frame">
-                            <local:StrokeIcon Icon="step-back" Width="14" Height="14"/>
+                            <local:StrokeIcon Icon="step-back" Width="13" Height="13"/>
                         </Button>
                         <Button Classes="monitor-play" Command="{Binding TogglePlaybackCommand}"
                                 ToolTip.Tip="Play / pause">
-                            <local:StrokeIcon Icon="{Binding PlaybackIconKey}" Width="16" Height="16"/>
+                            <local:StrokeIcon Icon="{Binding PlaybackIconKey}" Width="14" Height="14"/>
                         </Button>
                         <Button Classes="monitor-btn" Command="{Binding StepForwardFrameCommand}"
                                 ToolTip.Tip="Next frame">
-                            <local:StrokeIcon Icon="step-forward" Width="14" Height="14"/>
+                            <local:StrokeIcon Icon="step-forward" Width="13" Height="13"/>
                         </Button>
                         <Button Classes="monitor-btn" Command="{Binding JumpToEndCommand}"
                                 ToolTip.Tip="Jump to end">
-                            <local:StrokeIcon Icon="skip-end" Width="14" Height="14"/>
+                            <local:StrokeIcon Icon="skip-end" Width="13" Height="13"/>
                         </Button>
                     </StackPanel>
 
@@ -85,12 +86,14 @@
                                 ToolTip.Tip="Mute monitor audio">
                             <local:StrokeIcon Icon="{Binding MonitorAudioIconKey}" Width="15" Height="15"/>
                         </Button>
-                        <Slider Minimum="0" Maximum="1" Value="{Binding MonitorVolume}"
-                                Width="82" Height="24" VerticalAlignment="Center"
-                                ToolTip.Tip="Monitor volume"/>
+                        <ctrls:FigSlider Minimum="0" Maximum="1" Value="{Binding MonitorVolume}"
+                                           Width="72" Height="18" VerticalAlignment="Center"
+                                           ToolTip.Tip="Monitor volume"/>
                         <ComboBox ItemsSource="{Binding PreviewScaleOptions}"
                                   SelectedItem="{Binding PreviewScale}"
-                                  FontSize="11" Width="74" Height="26"
+                                  FontSize="10" Width="66" Height="24"
+                                  Background="#202226" BorderBrush="#3a3d42"
+                                  BorderThickness="1" CornerRadius="3"
                                   ToolTip.Tip="Preview quality">
                             <ComboBox.ItemTemplate>
                                 <DataTemplate x:DataType="vm:PreviewScaleOption">
@@ -98,14 +101,14 @@
                                 </DataTemplate>
                             </ComboBox.ItemTemplate>
                         </ComboBox>
-                        <local:StrokeIcon Icon="gauge" Width="14" Height="14"
+                        <local:StrokeIcon Icon="gauge" Width="13" Height="13"
                                           ToolTip.Tip="{Binding DecodeStatus}"
                                           IconBrush="#77777a"/>
                     </StackPanel>
                 </Grid>
             </Border>
-            <Border CornerRadius="4" Background="#000000"
-                    BorderBrush="#333333" BorderThickness="1"
+            <Border CornerRadius="3" Background="#090a0b"
+                    BorderBrush="#292b30" BorderThickness="1"
                     ClipToBounds="True">
                 <local:PreviewSurface x:Name="Surface"/>
             </Border>

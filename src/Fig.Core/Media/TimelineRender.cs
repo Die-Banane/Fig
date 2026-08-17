@@ -304,6 +304,9 @@ namespace Fig.Core.Media
             localT = timelineSec - clip.StartSec;
             var ratio = clip.SourceRate is { } r ? r.Fps / timeline.Rate.Fps : 1.0;
             var srcTime = clip.SrcInSec + localT * clip.Speed * ratio;
+            var sourceStart = asset.SourceStartSec;
+            var sourceEnd = sourceStart + Math.Max(0, asset.DurationSec - 1e-4);
+            srcTime = Math.Clamp(srcTime, sourceStart, Math.Max(sourceStart, sourceEnd));
 
             var path = asset.PlaybackVideoPath;
             var decoderKey = $"{clip.Id}|{path}";

@@ -192,39 +192,42 @@ namespace Fig.App.Views
         private static readonly IBrush TrackLaneAltBrush = new SolidColorBrush(EditorTheme.TrackLaneAlt);
         private static readonly IBrush RulerBackground = new SolidColorBrush(EditorTheme.RulerBackground);
         private static readonly IBrush BorderBrush = EditorTheme.BorderBrush;
-        private static readonly IBrush RulerTickBrush = new SolidColorBrush(Color.Parse("#4a4a4a"));
+        private static readonly IBrush RulerTickBrush = new SolidColorBrush(Color.Parse("#41454b"));
         private static readonly IBrush RulerTextBrush = EditorTheme.TextMutedBrush;
         private static readonly IBrush SelectedLaneTintBrush = new SolidColorBrush(EditorTheme.SelectedLaneTint);
         private static readonly IBrush DeleteHoverBrush = new SolidColorBrush(Color.Parse("#5a1f1f"));
 
         // Clip fills
-        private static readonly IBrush VideoBrush = new SolidColorBrush(Color.Parse("#3b82f6"));
-        private static readonly IBrush AudioBrush = new SolidColorBrush(Color.Parse("#22c55e"));
-        private static readonly IBrush AudioWaveformBrush = new SolidColorBrush(Color.Parse("#86efac"));
-        private static readonly IBrush TextClipBrush = new SolidColorBrush(Color.Parse("#eab308"));
+        private static readonly IBrush VideoBrush = new SolidColorBrush(Color.Parse("#2f7484"));
+        private static readonly IBrush AudioBrush = new SolidColorBrush(Color.Parse("#2d674a"));
+        private static readonly IBrush AudioWaveformBrush = new SolidColorBrush(Color.Parse("#8bc9a3"));
+        private static readonly IBrush TextClipBrush = new SolidColorBrush(Color.Parse("#8b7040"));
 
-        private static readonly IBrush VideoBorder = new SolidColorBrush(Color.Parse("#1d4ed8"));
-        private static readonly IBrush AudioBorder = new SolidColorBrush(Color.Parse("#15803d"));
-        private static readonly IBrush TextBorder = new SolidColorBrush(Color.Parse("#a16207"));
+        private static readonly IBrush VideoBorder = new SolidColorBrush(Color.Parse("#55a2b2"));
+        private static readonly IBrush AudioBorder = new SolidColorBrush(Color.Parse("#589b74"));
+        private static readonly IBrush TextBorder = new SolidColorBrush(Color.Parse("#aa8950"));
 
         private static readonly IBrush ClipShadow = new SolidColorBrush(Color.Parse("#00000060"));
         private static readonly IBrush TrackHeaderTextBrush = EditorTheme.TextMutedBrush;
         private static readonly IBrush HeaderIconDimBrush = new SolidColorBrush(Color.Parse("#6a6a6a"));
+        private static readonly IBrush TrackHeaderBrush = new SolidColorBrush(Color.Parse("#191b1e"));
+        private static readonly IBrush ClipSelectionBrush = new SolidColorBrush(Color.Parse("#d9e0e7"));
+        private static readonly IBrush GridLineBrush = new SolidColorBrush(Color.Parse("#292c31"));
 
         // transitions
         private static readonly IBrush TransitionBandBrush = new SolidColorBrush(Color.FromArgb(70, 0xe0, 0xa3, 0x08));
         private static readonly IBrush TransitionBandSelectedBrush = new SolidColorBrush(Color.FromArgb(120, 0xea, 0xb3, 0x08));
         private static readonly IBrush TransitionBadgeBrush = new SolidColorBrush(Color.FromArgb(235, 0xe0, 0xa3, 0x08));
 
-        private const double RulerHeight = 24;
-        private const double ClipCornerRadius = 4;
-        private const double TrackHeaderWidth = 130;
+        private const double RulerHeight = 22;
+        private const double ClipCornerRadius = 2;
+        private const double TrackHeaderWidth = 118;
         private const double ZoomFactor = 1.25;
-        private const double HeaderButtonSize = 26;
-        private const double HeaderButtonGap = 8;
-        private const double HeaderPaddingLeft = 6;
-        private const double TrackAccentBarWidth = 3;
-        private const double EmptyTrackHeight = 40;
+        private const double HeaderButtonSize = 22;
+        private const double HeaderButtonGap = 4;
+        private const double HeaderPaddingLeft = 7;
+        private const double TrackAccentBarWidth = 2;
+        private const double EmptyTrackHeight = 34;
 
         public TimelineView()
         {
@@ -526,7 +529,7 @@ namespace Fig.App.Views
                 _dropTimeSec = -1;
                 _dropEffectClipId = null;
 
-                var cut = track is not null ? FindCutNear(track, time) : null;
+                var cut = track is not null ? FindTransitionCut(track, time) : null;
                 if (cut is not null && track is not null)
                 {
                     e.DragEffects = DragDropEffects.Copy;
@@ -565,6 +568,7 @@ namespace Fig.App.Views
 
             if (e.DataTransfer.Contains(MediaFormat))
             {
+                e.Handled = true;
                 var asset = e.DataTransfer.TryGetValue(MediaFormat);
                 if (asset is null)
                     return;
@@ -585,6 +589,7 @@ namespace Fig.App.Views
 
             if (e.DataTransfer.Formats.Contains(DataFormat.File))
             {
+                e.Handled = true;
                 var files = e.DataTransfer.TryGetFiles();
                 if (files is not null)
                 {
@@ -614,6 +619,7 @@ namespace Fig.App.Views
 
             if (e.DataTransfer.Contains(EffectFormat))
             {
+                e.Handled = true;
                 var entry = e.DataTransfer.TryGetValue(EffectFormat);
                 var pos = e.GetPosition(this);
                 var track = HitTestTrack(pos.Y);
@@ -630,10 +636,11 @@ namespace Fig.App.Views
 
             if (e.DataTransfer.Contains(TransitionFormat))
             {
+                e.Handled = true;
                 var entry = e.DataTransfer.TryGetValue(TransitionFormat);
                 var pos = e.GetPosition(this);
                 var track = HitTestTrack(pos.Y);
-                var cut = track is not null ? FindCutNear(track, XToTime(pos.X)) : null;
+                var cut = track is not null ? FindTransitionCut(track, XToTime(pos.X)) : null;
                 if (entry is not null && cut is not null)
                 {
                     if (Editor.ApplyTransitionAtCut(cut.Value.Left.Id, cut.Value.Right.Id, entry.CreateRef()))
@@ -647,23 +654,46 @@ namespace Fig.App.Views
         }
 
         /// <summary>
-        /// Finds an abutting cut on <paramref name="track"/> near <paramref name="timeSec"/>.
-        /// Tolerance scales with zoom (~16px).
+        /// Resolves a transition target on a video track. A precise drop near a cut wins;
+        /// dropping anywhere on a clip targets that clip's nearest abutting video edge.
+        /// This keeps edit-point precision without making the cut a tiny drop target.
         /// </summary>
-        private (Clip Left, Clip Right)? FindCutNear(Track track, double timeSec)
+        private (Clip Left, Clip Right)? FindTransitionCut(Track track, double timeSec)
         {
-            var tolSec = Math.Max(0.08, 16.0 / Math.Max(1, Viewport.PixelsPerSecond));
+            if (track.Kind != TrackKind.Video)
+                return null;
+
             var clips = track.Clips.OrderBy(c => c.StartSec).ToList();
+            var candidates = new List<(Clip Left, Clip Right, double Cut)>();
             for (var i = 0; i < clips.Count - 1; i++)
             {
                 var left = clips[i];
                 var right = clips[i + 1];
                 var cut = left.StartSec + left.DurSec;
-                if (Math.Abs(right.StartSec - cut) > 1e-3)
+                if (left is not VideoClip || right is not VideoClip || Math.Abs(right.StartSec - cut) > 1e-3)
                     continue;
-                if (Math.Abs(timeSec - cut) <= tolSec)
-                    return (left, right);
+                candidates.Add((left, right, cut));
             }
+
+            var nearest = candidates.OrderBy(candidate => Math.Abs(timeSec - candidate.Cut)).FirstOrDefault();
+            if (nearest.Left is null)
+                return null;
+
+            var preciseToleranceSec = Math.Max(0.12, 24.0 / Math.Max(1, Viewport.PixelsPerSecond));
+            if (Math.Abs(timeSec - nearest.Cut) <= preciseToleranceSec)
+                return (nearest.Left, nearest.Right);
+
+            var clipUnderPointer = clips.FirstOrDefault(clip =>
+                clip is VideoClip && timeSec >= clip.StartSec && timeSec <= clip.StartSec + clip.DurSec);
+            if (clipUnderPointer is null)
+                return null;
+
+            var connected = candidates
+                .Where(candidate => candidate.Left.Id == clipUnderPointer.Id || candidate.Right.Id == clipUnderPointer.Id)
+                .OrderBy(candidate => Math.Abs(timeSec - candidate.Cut))
+                .FirstOrDefault();
+            if (connected.Left is not null)
+                return (connected.Left, connected.Right);
             return null;
         }
 
@@ -1201,7 +1231,7 @@ namespace Fig.App.Views
         private void DrawHeaderIcon(DrawingContext context, string key, Rect rect, bool dimmed)
         {
             var brush = dimmed ? HeaderIconDimBrush : TrackHeaderTextBrush;
-            IconService.DrawStroked(context, key, rect.Inflate(-4), brush, 1.8);
+            IconService.DrawStroked(context, key, rect.Inflate(-5), brush, 1.5);
         }
 
         private void DrawHeaderToggle(DrawingContext context, Track track, Rect rect)
@@ -2039,6 +2069,7 @@ namespace Fig.App.Views
                 var rowRect = new Rect(0, top, Bounds.Width, height);
                 var laneBrush = i % 2 == 0 ? TrackLaneBrush : TrackLaneAltBrush;
                 context.DrawRectangle(laneBrush, null, rowRect);
+                context.DrawRectangle(TrackHeaderBrush, null, new Rect(0, top, TrackHeaderWidth, height));
                 if (isTrackSelected)
                 {
                     context.DrawRectangle(SelectedLaneTintBrush, null, rowRect);
@@ -2046,6 +2077,7 @@ namespace Fig.App.Views
                 }
                 context.DrawLine(new Pen(BorderBrush, 1), new Point(TrackHeaderWidth, top), new Point(TrackHeaderWidth, top + height));
                 context.DrawLine(new Pen(BorderBrush, 1), new Point(0, top + height), new Point(Bounds.Width, top + height));
+                DrawTrackGrid(context, top, height);
 
                 var trackLabel = track.Name ?? track.Kind.ToString();
                 var trackText = new FormattedText(
@@ -2058,7 +2090,10 @@ namespace Fig.App.Views
                 context.DrawText(trackText, new Point(HeaderLabelX(), top + (height - trackText.Height) / 2));
 
                 DrawHeaderToggle(context, track, HeaderButtonRect(track, HeaderToggleColumn));
-                DrawHeaderDelete(context, track, HeaderButtonRect(track, HeaderDeleteColumn));
+                var deleteHovered = _hoverHeaderButton is (string tid, int col)
+                    && tid == track.Id && col == HeaderDeleteColumn;
+                if (isTrackSelected || deleteHovered)
+                    DrawHeaderDelete(context, track, HeaderButtonRect(track, HeaderDeleteColumn));
 
                 // clip area, offset by header + viewport scroll
                 using (context.PushClip(clipArea))
@@ -2083,7 +2118,7 @@ namespace Fig.App.Views
 
                         // clip widget = label strip (name) on top + body (filmstrip/waveform).
                         // top inset leaves room for marker tabs inside the lane.
-                        var clipTop = top + 10;
+                        var clipTop = top + 5;
                         var totalHeight = TimelineGeometry.ClipTotalHeight;
                         var labelHeight = TimelineGeometry.ClipLabelHeight;
                         var bodyHeight = TimelineGeometry.ClipHeight;
@@ -2110,14 +2145,14 @@ namespace Fig.App.Views
                         var isClipSelected = _selectedClipId is not null
                             && Editor.Selection.IsSelected(clip.Id);
                         var isEffectDropTarget = _dropEffectClipId == clip.Id;
-                        var outline = isClipSelected || isEffectDropTarget ? SelectionBrush : border;
+                        var outline = isEffectDropTarget
+                            ? SelectionBrush
+                            : isClipSelected ? ClipSelectionBrush : border;
                         var outlineWidth = isEffectDropTarget ? 3 : (isClipSelected ? 2 : 1);
 
                         // --- name strip above the clip body ---
                         var labelRect = new Rect(x, clipTop, w, labelHeight);
-                        var labelBrush = isClipSelected
-                            ? new SolidColorBrush(Color.FromArgb(80, 0x4d, 0xa3, 0xff))
-                            : new SolidColorBrush(Color.Parse("#1c1c1e"));
+                        var labelBrush = fill;
                         context.DrawRectangle(labelBrush, null, new RoundedRect(labelRect, new CornerRadius(topLeft, topRight, 0, 0)));
 
                         using (context.PushClip(labelRect))
@@ -2133,7 +2168,7 @@ namespace Fig.App.Views
                                     FlowDirection.LeftToRight,
                                     Typeface.Default,
                                     10,
-                                    TrackHeaderTextBrush);
+                                    Brushes.White);
                                 context.DrawText(labelText, new Point(x + 4 + bookmarkWidth,
                                     labelRect.Y + (labelHeight - labelText.Height) / 2));
                             }
@@ -2285,6 +2320,21 @@ namespace Fig.App.Views
                     gc.EndFigure(true);
                 }
                 context.DrawGeometry(EditorTheme.PlayheadBrush, null, cap);
+            }
+        }
+
+        private void DrawTrackGrid(DrawingContext context, double top, double height)
+        {
+            var interval = RulerCalculator.PickInterval(Viewport.PixelsPerSecond);
+            var visibleEnd = Viewport.VisibleEndTime(Bounds.Width - TrackHeaderWidth);
+            var pen = new Pen(GridLineBrush, 1);
+            foreach (var tick in RulerCalculator.GetTicks(Viewport.ScrollTime, visibleEnd, interval))
+            {
+                if (!tick.IsMajor)
+                    continue;
+                var x = TrackHeaderWidth + Viewport.TimeToX(tick.Time);
+                if (x >= TrackHeaderWidth && x <= Bounds.Width)
+                    context.DrawLine(pen, new Point(x, top), new Point(x, top + height));
             }
         }
 

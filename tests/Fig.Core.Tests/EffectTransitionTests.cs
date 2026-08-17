@@ -490,7 +490,7 @@ public class EffectTransitionTests
     }
 
     [Fact]
-    public void ApplyTransitionAtCut_ClampsToAvailableSourceHandles()
+    public void ApplyTransitionAtCut_UsesRequestedDurationWhenEdgeFramesCanExtendHandles()
     {
         var timeline = new TimelineModel { Rate = FrameRate.Common(30) };
         var track = new Track { Kind = TrackKind.Video, Index = 0 };
@@ -526,12 +526,12 @@ public class EffectTransitionTests
             TransitionCatalog.Find(TransitionCatalog.CrossDissolve)!.CreateRef(1));
 
         Assert.True(applied);
-        Assert.Equal(0.5, left.TransitionOut!.DurationSec, 3);
-        Assert.Equal(0.5, right.TransitionIn!.DurationSec, 3);
+        Assert.Equal(1, left.TransitionOut!.DurationSec, 3);
+        Assert.Equal(1, right.TransitionIn!.DurationSec, 3);
     }
 
     [Fact]
-    public void ApplyTransitionAtCut_RejectsMissingIncomingHandle()
+    public void ApplyTransitionAtCut_AcceptsFreshClipsWithoutTrimmedHandles()
     {
         var timeline = new TimelineModel { Rate = FrameRate.Common(30) };
         var track = new Track { Kind = TrackKind.Video, Index = 0 };
@@ -543,10 +543,10 @@ public class EffectTransitionTests
             MediaResolver = id => new MediaAsset { Id = id, DurationSec = 5 },
         };
 
-        Assert.False(editor.ApplyTransitionAtCut("a", "b",
+        Assert.True(editor.ApplyTransitionAtCut("a", "b",
             TransitionCatalog.Find(TransitionCatalog.CrossDissolve)!.CreateRef(0.5)));
-        Assert.Null(track.Clips[0].TransitionOut);
-        Assert.Null(track.Clips[1].TransitionIn);
+        Assert.Equal(0.5, track.Clips[0].TransitionOut!.DurationSec, 3);
+        Assert.Equal(0.5, track.Clips[1].TransitionIn!.DurationSec, 3);
     }
 
     [Fact]

@@ -839,7 +839,7 @@ namespace Fig.Core.Timeline
             var duration = ClampTransitionDuration(left, right, requestedDuration);
             if (duration < 2.0 / Math.Max(1, Document.Rate.Fps))
             {
-                TransitionValidationMessage = "The cut does not have enough trimmed media for a transition.";
+                TransitionValidationMessage = "The neighboring clips are too short for a transition.";
                 return false;
             }
             transition = transition.Clone();
@@ -847,7 +847,7 @@ namespace Fig.Core.Timeline
             History.Execute(new ApplyTransitionAtCutCommand(this, outgoingClipId, incomingClipId, transition));
             RaiseChanged();
             TransitionValidationMessage = duration + 1e-6 < requestedDuration
-                ? "Transition duration was limited by available media handles."
+                ? "Transition duration was limited by neighboring clip length."
                 : null;
             return true;
         }
@@ -967,26 +967,9 @@ namespace Fig.Core.Timeline
         private double ClampTransitionDuration(VideoClip left, VideoClip right, double requested)
         {
             var visibleLimit = 2 * Math.Min(left.DurSec, right.DurSec);
-            if (MediaResolver is null)
-                return Math.Clamp(requested, 0, visibleLimit);
-
-            var leftAsset = MediaResolver(left.SourceId);
-            var rightAsset = MediaResolver(right.SourceId);
-            if (leftAsset is null || rightAsset is null)
-                return 0;
-
-            var timelineFps = Math.Max(1, Document.Rate.Fps);
-            var leftFactor = Math.Max(1e-9, left.Speed * (left.SourceRate?.Fps ?? timelineFps) / timelineFps);
-            var rightFactor = Math.Max(1e-9, right.Speed * (right.SourceRate?.Fps ?? timelineFps) / timelineFps);
-            var leftVisibleOut = left.SrcOutSec > left.SrcInSec
-                ? left.SrcOutSec
-                : left.SrcInSec + left.DurSec * leftFactor;
-            var rightVisibleIn = right.SrcInSec;
-            var leftSourceEnd = leftAsset.SourceStartSec + leftAsset.DurationSec;
-            var outgoingHandle = Math.Max(0, leftSourceEnd - leftVisibleOut) / leftFactor;
-            var incomingHandle = Math.Max(0, rightVisibleIn - rightAsset.SourceStartSec) / rightFactor;
-            var handleLimit = 2 * Math.Min(outgoingHandle, incomingHandle);
-            return Math.Clamp(requested, 0, Math.Min(visibleLimit, handleLimit));
+            // Transitions remain usable on fresh, untrimmed clips. Rendering samples real
+            // source handles when present and repeats the nearest edge frame when absent.
+            return Math.Clamp(requested, 0, visibleLimit);
         }
 
         /// <summary>Resizes a cut transition identified by its selection key ("{left}|{right}").</summary>

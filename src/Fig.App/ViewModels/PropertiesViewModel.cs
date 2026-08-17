@@ -248,8 +248,8 @@ public partial class PropertiesViewModel : ViewModelBase
     {
         _suppressApply = true;
         Kind = PropertiesContextKind.Empty;
-        Title = "Properties";
-        Subtitle = "Select a clip, track, or media item.";
+        Title = "Inspector";
+        Subtitle = "No selection";
         ClearSections();
         _clipId = null;
         _proxyTarget = null;
@@ -308,7 +308,6 @@ public partial class PropertiesViewModel : ViewModelBase
             ClipKind.Text => "Text Clip",
             _ => "Clip",
         };
-        Subtitle = ShortId(clip.Id);
         if (!sameClip)
             ClearSections();
         _clipId = clip.Id;
@@ -317,6 +316,7 @@ public partial class PropertiesViewModel : ViewModelBase
         ShowAudioControls = clip is AudioClip || clip is VideoClip; // video often has linked volume
         ShowFadeControls = clip is VideoClip || clip is AudioClip;
         ClipTimingLabel = $"{FormatTime(clip.StartSec)} → {FormatTime(clip.StartSec + clip.DurSec)}  ({FormatTime(clip.DurSec)})";
+        Subtitle = ClipTimingLabel;
         BuildEffectStack(clip);
         ShowEffectsSection = true;
 

@@ -222,6 +222,17 @@ The primary user is a solo creator (hobbyist to semi-professional) who edits sho
 | FR-121 | Gesture bindings SHALL be stored as editable configuration. | P0 | X |
 | FR-122 | Core keyboard shortcuts SHALL exist for common actions (undo/redo, split, ripple delete, add/delete marker, enable/disable clip, save, save-as). | P0 | X |
 
+### 3.12 Templates
+| ID | Requirement | Priority | Status |
+| --- | --- | --- | --- |
+| FR-130 | The application SHALL expose Templates as a primary editor-library destination with search and category filtering. | P1 | O |
+| FR-131 | A template SHALL persist a timeline blueprint plus typed, named media replacement slots. | P1 | X |
+| FR-132 | The user SHALL be able to save the current timeline as a local reusable template. | P1 | X |
+| FR-133 | Applying a template SHALL validate required media and compatible media kind, treat slot duration as authored timeline timing rather than an import requirement, create fresh timeline/track/clip identities, and preserve effects, transitions, markers, and automation. | P1 | O |
+| FR-134 | The template workflow SHALL provide explicit per-slot media assignment, preview, trim/fill behavior, and a non-destructive choice of new sequence or new project. | P1 | - |
+| FR-135 | Templates SHALL support author-exposed text, color, font, and optional media variables. | P2 | - |
+| FR-136 | Templates SHALL be importable/exportable as portable packages with dependency and licensing metadata. | P2 | - |
+
 ---
 
 ## 4. Non-functional requirements

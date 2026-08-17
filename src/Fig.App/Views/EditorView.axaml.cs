@@ -27,9 +27,6 @@ public partial class EditorView : UserControl
     {
         InitializeComponent();
         DataContextChanged += OnDataContextChanged;
-        DragDrop.SetAllowDrop(this, true);
-        DragDrop.AddDragOverHandler(this, OnFileDragOver);
-        DragDrop.AddDropHandler(this, OnFileDrop);
         Timeline.PlayheadChanged += OnTimelinePlayheadChanged;
     }
 
@@ -175,6 +172,9 @@ public partial class EditorView : UserControl
         var files = e.DataTransfer.TryGetFiles();
         if (files is null)
             return;
+        // This is the editor's single routed file-drop owner. Stop the event here so a
+        // nested drop surface cannot cause the same files to be imported again.
+        e.Handled = true;
         foreach (var file in files)
         {
             var path = file.TryGetLocalPath();

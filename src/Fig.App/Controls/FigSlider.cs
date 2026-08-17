@@ -1,4 +1,3 @@
-using System;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
@@ -7,15 +6,12 @@ using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Fig.App.Services;
-using Path = Avalonia.Controls.Shapes.Path;
 
 namespace Fig.App.Controls;
 
 /// <summary>
-/// Modern thin-track slider (no mobile thumb): a rounded track with an accent value fill and
-/// a small triangle marker below. Click anywhere on the track to jump; drag to scrub. Value
-/// API matches <see cref="RangeBase"/>, so existing <c>Value="{Binding ...}"</c> bindings
-/// work unchanged.
+/// Compact editor slider with a thin value rail and a small circular thumb. The generous
+/// transparent hit area keeps it easy to grab without making the control visually heavy.
 /// </summary>
 public sealed class FigSlider : Border
 {
@@ -23,20 +19,16 @@ public sealed class FigSlider : Border
     public static readonly StyledProperty<double> MaximumProperty = RangeBase.MaximumProperty.AddOwner<FigSlider>();
     public static readonly StyledProperty<double> ValueProperty = RangeBase.ValueProperty.AddOwner<FigSlider>();
 
-    private const double TrackHeight = 8;
-    private const double MarkerHalfWidth = 4;
-    private const double MarkerHeight = 6;
+    private const double TrackHeight = 3;
+    private const double ThumbSize = 10;
 
     private readonly Border _track;
     private readonly Border _fill;
-    private readonly Path _marker;
-    private readonly Border _hitPlate;
+    private readonly Ellipse _thumb;
+    private readonly Grid _hitArea;
     private readonly ScaleTransform _fillScale = new(0, 1);
-    private readonly TranslateTransform _markerTranslate = new(0, 0);
-
+    private readonly TranslateTransform _thumbTranslate = new(0, 0);
     private bool _dragging;
-    private double _pointerLeft;
-    private double _pointerWidth;
 
     static FigSlider()
     {
@@ -65,96 +57,76 @@ public sealed class FigSlider : Border
 
     public FigSlider()
     {
+        MinHeight = 18;
         Background = Brushes.Transparent;
         BorderThickness = new Thickness(0);
-        MinHeight = TrackHeight + MarkerHeight + 2;
         Focusable = true;
         Cursor = new Cursor(StandardCursorType.Hand);
 
         _fill = new Border
         {
+            Background = EditorTheme.AccentBrush,
+            CornerRadius = new CornerRadius(2),
             HorizontalAlignment = HorizontalAlignment.Stretch,
-            VerticalAlignment = VerticalAlignment.Stretch,
-            Background = new SolidColorBrush(EditorTheme.Accent),
-            CornerRadius = new CornerRadius(2, 0, 0, 2),
-            IsHitTestVisible = false,
             RenderTransform = _fillScale,
             RenderTransformOrigin = new RelativePoint(0, 0.5, RelativeUnit.Relative),
+            IsHitTestVisible = false,
         };
-
         _track = new Border
         {
             Height = TrackHeight,
+            Background = new SolidColorBrush(Color.Parse("#44474d")),
             CornerRadius = new CornerRadius(2),
-            Background = new SolidColorBrush(Color.Parse("#38383a")),
-            BorderBrush = EditorTheme.BorderBrush,
-            BorderThickness = new Thickness(1),
+            VerticalAlignment = VerticalAlignment.Center,
             ClipToBounds = true,
             Child = _fill,
-        };
-
-        _marker = new Path
-        {
-            Fill = new SolidColorBrush(Color.Parse("#d4d4d4")),
             IsHitTestVisible = false,
-            Data = MarkerGeometry(),
-            RenderTransform = _markerTranslate,
+        };
+        _thumb = new Ellipse
+        {
+            Width = ThumbSize,
+            Height = ThumbSize,
+            Fill = new SolidColorBrush(Color.Parse("#d9dce1")),
+            Stroke = new SolidColorBrush(Color.Parse("#17181a")),
+            StrokeThickness = 1,
+            HorizontalAlignment = HorizontalAlignment.Left,
+            VerticalAlignment = VerticalAlignment.Center,
+            RenderTransform = _thumbTranslate,
+            IsHitTestVisible = false,
         };
 
-        var grid = new Grid
-        {
-            RowDefinitions = [new(GridLength.Auto), new(GridLength.Auto)],
-        };
-        Grid.SetRow(_track, 0);
-        Grid.SetRow(_marker, 1);
-        grid.Children.Add(_track);
-        grid.Children.Add(_marker);
+        _hitArea = new Grid { Background = Brushes.Transparent };
+        _hitArea.Children.Add(_track);
+        _hitArea.Children.Add(_thumb);
+        _hitArea.PointerPressed += OnPressed;
+        _hitArea.PointerMoved += OnMoved;
+        _hitArea.PointerReleased += OnReleased;
+        _hitArea.PointerCaptureLost += (_, _) => _dragging = false;
+        Child = _hitArea;
 
-        _hitPlate = new Border { Background = Brushes.Transparent, Child = grid };
-        _hitPlate.PointerPressed += OnPressed;
-        _hitPlate.PointerMoved += OnMoved;
-        _hitPlate.PointerReleased += OnReleased;
-        _hitPlate.PointerCaptureLost += (_, _) => _dragging = false;
-        Child = _hitPlate;
-
-        AttachedToVisualTree += (_, _) => ApplyVisuals(ComputeT());
-    }
-
-    private static StreamGeometry MarkerGeometry()
-    {
-        var geometry = new StreamGeometry();
-        using (var ctx = geometry.Open())
-        {
-            ctx.BeginFigure(new Point(MarkerHalfWidth, 0), true);
-            ctx.LineTo(new Point(0, MarkerHeight));
-            ctx.LineTo(new Point(MarkerHalfWidth * 2, MarkerHeight));
-            ctx.EndFigure(true);
-        }
-        return geometry;
+        AttachedToVisualTree += (_, _) => ApplyVisuals();
     }
 
     protected override void OnSizeChanged(SizeChangedEventArgs e)
     {
         base.OnSizeChanged(e);
-        if (Math.Abs(e.NewSize.Width - e.PreviousSize.Width) >= 0.5)
-            ApplyVisuals(ComputeT());
+        ApplyVisuals();
     }
 
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
         base.OnPropertyChanged(change);
         if (change.Property == ValueProperty || change.Property == MinimumProperty || change.Property == MaximumProperty)
-            ApplyVisuals(ComputeT());
+            ApplyVisuals();
     }
 
     private void OnPressed(object? sender, PointerPressedEventArgs e)
     {
-        if (!e.GetCurrentPoint(_hitPlate).Properties.IsLeftButtonPressed)
+        if (!e.GetCurrentPoint(_hitArea).Properties.IsLeftButtonPressed)
             return;
         _dragging = true;
-        CachePointer();
-        SetFromPointer(e.GetPosition(_hitPlate));
-        e.Pointer.Capture(_hitPlate);
+        SetFromPointer(e.GetPosition(_hitArea).X);
+        e.Pointer.Capture(_hitArea);
         e.Handled = true;
     }
 
@@ -162,7 +134,7 @@ public sealed class FigSlider : Border
     {
         if (!_dragging)
             return;
-        SetFromPointer(e.GetPosition(_hitPlate));
+        SetFromPointer(e.GetPosition(_hitArea).X);
         e.Handled = true;
     }
 
@@ -175,43 +147,20 @@ public sealed class FigSlider : Border
         e.Handled = true;
     }
 
-    private void CachePointer()
+    private void SetFromPointer(double x)
     {
-        _pointerWidth = _track.Bounds.Width;
-        _pointerLeft = (_track.TranslatePoint(new Point(0, 0), _hitPlate) ?? new Point(0, 0)).X;
-    }
-
-    private void SetFromPointer(Point pos)
-    {
-        var trackW = _pointerWidth > 0 ? _pointerWidth : _track.Bounds.Width;
-        if (trackW <= 0)
-            return;
-        var t = Math.Clamp((pos.X - _pointerLeft) / trackW, 0, 1);
-        ApplyVisuals(t);
+        var width = Math.Max(1, _hitArea.Bounds.Width - ThumbSize);
+        var t = Math.Clamp((x - ThumbSize / 2) / width, 0, 1);
         var next = Minimum + t * (Maximum - Minimum);
-        next = Math.Clamp(next, Minimum, Maximum);
-        var epsilon = Math.Max(Maximum - Minimum, double.Epsilon) * 1e-4;
-        if (Math.Abs(next - Value) < epsilon)
-            return;
-        SetCurrentValue(ValueProperty, next);
+        SetCurrentValue(ValueProperty, Math.Clamp(next, Minimum, Maximum));
     }
 
-    private double ComputeT()
-        => Math.Clamp((Value - Minimum) / Math.Max(0.0001, Maximum - Minimum), 0, 1);
-
-    private double TrackWidth()
-        => _track.Bounds.Width > 0 ? _track.Bounds.Width : Bounds.Width;
-
-    private void ApplyVisuals(double t)
+    private void ApplyVisuals()
     {
-        t = Math.Clamp(t, 0, 1);
+        var range = Math.Max(0.0001, Maximum - Minimum);
+        var t = Math.Clamp((Value - Minimum) / range, 0, 1);
         _fillScale.ScaleX = t;
-        var w = TrackWidth();
-        if (w <= 0)
-            return;
-        var cxMin = Math.Min(MarkerHalfWidth, w - MarkerHalfWidth);
-        var cxMax = Math.Max(MarkerHalfWidth, w - MarkerHalfWidth);
-        var cx = Math.Clamp(t * w, cxMin, cxMax);
-        _markerTranslate.X = cx - MarkerHalfWidth;
+        var travel = Math.Max(0, _hitArea.Bounds.Width - ThumbSize);
+        _thumbTranslate.X = t * travel;
     }
 }

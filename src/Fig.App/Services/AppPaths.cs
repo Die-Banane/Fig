@@ -9,11 +9,14 @@ public static class AppPaths
 
     public static string ProjectsDir { get; } = Path.Combine(DataDir, "projects");
 
+    public static string TemplatesDir { get; } = Path.Combine(DataDir, "templates");
+
     public static string GestureConfigPath { get; } = Path.Combine(ConfigDir, "gestures.json");
 
     public static void EnsureDirectories()
     {
         Directory.CreateDirectory(ConfigDir);
         Directory.CreateDirectory(ProjectsDir);
+        Directory.CreateDirectory(TemplatesDir);
     }
 }
