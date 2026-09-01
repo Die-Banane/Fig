@@ -88,11 +88,3 @@ AI generated pull requests are not accepted. This project stays clean because it
 AI is welcome as an assistant. If you architect a change yourself, understand every line of it, and review it like it was your own, that pull request can be discussed. Use the AI as an assistant/reference aggregator, not an agent that just spaghettifies code. Write your own code. On open source projects, it's difficult to verify the legitimacy of AI generated code. I, as the sole maintainer of this project have the sole authority to accept or reject AI generated pull requests.
 
 I reserve the right to use AI in this project as it aligns with my development philosophy. Documented architecture -> fully human-directed micro-edits.
-
-# Rust transition
-
-As a Rust developer, I will be trying to transition this project to Rust using gpui and ffmpeg_next. This is a viability study.
-Rust 2024 edition.
-## License
-
-Not yet licensed.
