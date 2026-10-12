@@ -32,19 +32,48 @@ namespace Fig.Core.Media
             // side: at t01=0 no pixel is incoming (center starts at mix 0), at t01=1 even the
             // corners are fully incoming. (Midpoint radius stays maxR/2.)
             var radius = t01 * (maxR + 2 * edge) - edge;
-
+            var inner = radius - edge;   // inside this distance: fully incoming
+            var outer = radius + edge;   // beyond this distance: fully outgoing
             PixelOps.Rows(h, y =>
             {
-                for (var x = 0; x < w; x++)
+                var dy = y - cy;
+                var row = y * w * 4;
+                if (outer <= Math.Abs(dy))
                 {
-                    var dist = Math.Sqrt((x - cx) * (x - cx) + (y - cy) * (y - cy));
-                    // mix = 1 (incoming) inside the expanding circle, 0 (outgoing) outside
-                    var mix = Math.Clamp((radius - dist) / (2 * edge) + 0.5, 0, 1);
-                    var i = (y * w + x) * 4;
-                    dst[i] = (byte)Math.Round(a[i] + (b[i] - a[i]) * mix);
-                    dst[i + 1] = (byte)Math.Round(a[i + 1] + (b[i + 1] - a[i + 1]) * mix);
-                    dst[i + 2] = (byte)Math.Round(a[i + 2] + (b[i + 2] - a[i + 2]) * mix);
-                    dst[i + 3] = 255;
+                    PixelOps.LerpBytes(dst, a, b, row, w * 4, 0);   // the whole row is outside the circle
+                    return;
+                }
+
+                // x ranges that need no maths: fully outgoing at the ends, fully incoming in the middle
+                var outHalf = Math.Sqrt(outer * outer - dy * dy);
+                var outL = Math.Clamp((int)Math.Floor(cx - outHalf) + 1, 0, w);   // x < outL: outgoing
+                var outR = Math.Clamp((int)Math.Ceiling(cx + outHalf), 0, w);      // x >= outR: outgoing
+                var inL = outR;
+                var inR = outR;
+                if (inner > Math.Abs(dy))
+                {
+                    var inHalf = Math.Sqrt(inner * inner - dy * dy);
+                    inL = Math.Clamp((int)Math.Ceiling(cx - inHalf), outL, outR);
+                    inR = Math.Clamp((int)Math.Floor(cx + inHalf) + 1, inL, outR);
+                }
+                else
+                {
+                    inL = inR = (outL + outR) / 2;   // no fully-incoming stretch: just the soft band
+                }
+
+                PixelOps.LerpBytes(dst, a, b, row, outL * 4, 0);
+                for (var x = outL; x < inL; x++)
+                    SoftPixel(x);
+                PixelOps.LerpBytes(dst, a, b, row + inL * 4, (inR - inL) * 4, 256);
+                for (var x = inR; x < outR; x++)
+                    SoftPixel(x);
+                PixelOps.LerpBytes(dst, a, b, row + outR * 4, (w - outR) * 4, 0);
+
+                void SoftPixel(int x)
+                {
+                    var dist = Math.Sqrt((x - cx) * (x - cx) + dy * dy);
+                    var weight = PixelOps.Weight256(Math.Clamp((radius - dist) / (2 * edge) + 0.5, 0, 1));
+                    PixelOps.LerpBytes(dst, a, b, row + x * 4, 4, weight);
                 }
             });
             return new DecodedFrame { Width = w, Height = h, Pixels = dst };

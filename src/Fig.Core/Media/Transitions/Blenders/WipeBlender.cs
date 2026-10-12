@@ -39,28 +39,18 @@ namespace Fig.Core.Media
             // -edge to w+edge so the band fully exits the frame: at t01=0 nothing is incoming
             // yet, at t01=1 the whole frame is incoming. (Midpoint boundary stays at w/2.)
             var boundary = t01 * (w + 2 * edge) - edge;
-            PixelOps.Rows(h, y =>
+            var weights = new int[w];
+            for (var x = 0; x < w; x++)
             {
-                var row = y * w * 4;
-                for (var x = 0; x < w; x++)
-                {
-                    // mix = 0 -> outgoing (a), mix = 1 -> incoming (b); columns left of the
-                    // sweep boundary have been taken over by the incoming clip, columns right
-                    // of it are still showing the outgoing one. soft=0 is a hard edge.
-                    double mix = edge <= 0.5
-                        ? (x < incomingCols ? 1 : 0)
-                        : Math.Clamp((boundary - x) / (2 * edge) + 0.5, 0, 1);
-                    var i = row + x * 4;
-                    dst[i] = Lerp(a[i], b[i], mix);
-                    dst[i + 1] = Lerp(a[i + 1], b[i + 1], mix);
-                    dst[i + 2] = Lerp(a[i + 2], b[i + 2], mix);
-                    dst[i + 3] = 255;
-                }
-            });
+                // mix = 0 -> outgoing (a), mix = 1 -> incoming (b); columns left of the sweep
+                // boundary have been taken over by the incoming clip. soft=0 is a hard edge.
+                var mix = edge <= 0.5
+                    ? (x < incomingCols ? 1.0 : 0.0)
+                    : Math.Clamp((boundary - x) / (2 * edge) + 0.5, 0, 1);
+                weights[x] = PixelOps.Weight256(mix);
+            }
+            PixelOps.ColumnBlend(dst, a, b, w, h, weights);
             return new DecodedFrame { Width = w, Height = h, Pixels = dst };
         }
-
-        private static byte Lerp(byte from, byte to, double t)
-            => (byte)Math.Clamp((int)Math.Round(from + (to - from) * t), 0, 255);
     }
 }

@@ -25,16 +25,8 @@ namespace Fig.Core.Media
             var w = outgoing.Width;
             var h = outgoing.Height;
             var dst = FramePool.Rent(w * h * 4);
-            var inv = 1.0 - t01;
-            PixelOps.Rows(h, y =>
-            {
-                var row = y * w * 4;
-                for (var x = 0; x < w * 4; x++)
-                {
-                    var i = row + x;
-                    dst[i] = (byte)Math.Clamp((int)Math.Round(a[i] * inv + b[i] * t01), 0, 255);
-                }
-            });
+            var weight = PixelOps.Weight256(t01);
+            PixelOps.Rows(h, y => PixelOps.LerpBytes(dst, a, b, y * w * 4, w * 4, weight));
             return new DecodedFrame { Width = w, Height = h, Pixels = dst };
         }
     }

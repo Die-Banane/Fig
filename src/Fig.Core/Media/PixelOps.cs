@@ -13,7 +13,8 @@ namespace Fig.Core.Media
     internal static class PixelOps
     {
         // Parallelize only once the frame is large enough to amortize the thread-pool overhead.
-        private const int ParallelMinRows = 160;
+        // (kernels are SIMD now, so a 360p frame is faster on one core than the thread-pool round trip)
+        private const int ParallelMinRows = 480;
 
         /// <summary>Benchmark/debug switch: force the scalar paths (disables SIMD).</summary>
         public static bool ForceScalar;
@@ -165,6 +166,119 @@ namespace Fig.Core.Media
                 }
             }
         }
+
+        /// <summary>
+        /// dst = (a * (256 - w) + b * w + 128) >> 8 over <paramref name="count"/> bytes from <paramref name="offset"/>
+        /// (w in 0..256). Whole segments at 0 or 256 are plain copies. Within one level of the exact blend.
+        /// </summary>
+        public static unsafe void LerpBytes(byte[] dst, byte[] a, byte[] b, int offset, int count, int w256)
+        {
+            if (count <= 0)
+                return;
+            if (w256 <= 0)
+            {
+                Buffer.BlockCopy(a, offset, dst, offset, count);
+                return;
+            }
+            if (w256 >= 256)
+            {
+                Buffer.BlockCopy(b, offset, dst, offset, count);
+                return;
+            }
+
+            var inv = 256 - w256;
+            fixed (byte* pd = dst)
+            fixed (byte* pa = a)
+            fixed (byte* pb = b)
+            {
+                var i = offset;
+                var end = offset + count;
+                if (Avx2.IsSupported && !ForceScalar)
+                {
+                    var zero = Vector256<byte>.Zero;
+                    var wa = Vector256.Create((ushort)inv);
+                    var wb = Vector256.Create((ushort)w256);
+                    var round = Vector256.Create((ushort)128);
+                    for (; i + 32 <= end; i += 32)
+                    {
+                        var av = Avx.LoadDquVector256(pa + i);
+                        var bv = Avx.LoadDquVector256(pb + i);
+                        var lo = Avx2.ShiftRightLogical(Avx2.Add(Avx2.Add(
+                            Avx2.MultiplyLow(Avx2.UnpackLow(av, zero).AsUInt16(), wa),
+                            Avx2.MultiplyLow(Avx2.UnpackLow(bv, zero).AsUInt16(), wb)), round), 8);
+                        var hi = Avx2.ShiftRightLogical(Avx2.Add(Avx2.Add(
+                            Avx2.MultiplyLow(Avx2.UnpackHigh(av, zero).AsUInt16(), wa),
+                            Avx2.MultiplyLow(Avx2.UnpackHigh(bv, zero).AsUInt16(), wb)), round), 8);
+                        Avx.Store(pd + i, Avx2.PackUnsignedSaturate(lo.AsInt16(), hi.AsInt16()));
+                    }
+                }
+                for (; i < end; i++)
+                    pd[i] = (byte)((pa[i] * inv + pb[i] * w256 + 128) >> 8);
+            }
+        }
+
+        /// <summary>dst = (src * k + 128) >> 8 over the whole buffer (k in 0..256): a brightness fade.</summary>
+        public static unsafe void ScaleBytes(byte[] dst, byte[] src, int length, int k256)
+        {
+            if (k256 >= 256)
+            {
+                Buffer.BlockCopy(src, 0, dst, 0, length);
+                return;
+            }
+            if (k256 <= 0)
+            {
+                Array.Clear(dst, 0, length);
+                return;
+            }
+            fixed (byte* pd = dst)
+            fixed (byte* ps = src)
+            {
+                var i = 0;
+                if (Avx2.IsSupported && !ForceScalar)
+                {
+                    var zero = Vector256<byte>.Zero;
+                    var k = Vector256.Create((ushort)k256);
+                    var round = Vector256.Create((ushort)128);
+                    for (; i + 32 <= length; i += 32)
+                    {
+                        var v = Avx.LoadDquVector256(ps + i);
+                        var lo = Avx2.ShiftRightLogical(Avx2.Add(Avx2.MultiplyLow(Avx2.UnpackLow(v, zero).AsUInt16(), k), round), 8);
+                        var hi = Avx2.ShiftRightLogical(Avx2.Add(Avx2.MultiplyLow(Avx2.UnpackHigh(v, zero).AsUInt16(), k), round), 8);
+                        Avx.Store(pd + i, Avx2.PackUnsignedSaturate(lo.AsInt16(), hi.AsInt16()));
+                    }
+                }
+                for (; i < length; i++)
+                    pd[i] = (byte)((ps[i] * k256 + 128) >> 8);
+            }
+        }
+
+        /// <summary>
+        /// Blends two frames with a different weight per column (wipe, curtains): the same weights apply to
+        /// every row, so columns are grouped into runs of equal weight and each run is one kernel call.
+        /// </summary>
+        public static void ColumnBlend(byte[] dst, byte[] a, byte[] b, int width, int height, int[] weight256)
+        {
+            var runs = new System.Collections.Generic.List<(int X0, int X1, int W)>();
+            var start = 0;
+            for (var x = 1; x <= width; x++)
+            {
+                if (x == width || weight256[x] != weight256[start])
+                {
+                    runs.Add((start, x, weight256[start]));
+                    start = x;
+                }
+            }
+
+            Rows(height, y =>
+            {
+                var row = y * width * 4;
+                foreach (var (x0, x1, w) in runs)
+                    LerpBytes(dst, a, b, row + x0 * 4, (x1 - x0) * 4, w);
+            });
+        }
+
+        /// <summary>Weight (0..256) for a mix in 0..1.</summary>
+        public static int Weight256(double mix) => (int)Math.Clamp(Math.Round(mix * 256), 0, 256);
 
         private static byte ClampByte(int v) => (byte)Math.Clamp(v, 0, 255);
     }

@@ -28,28 +28,20 @@ namespace Fig.Core.Media
 
             var panelW = w / (double)panels;
             var edge = Math.Max(0.5, soft * panelW);
-
-            PixelOps.Rows(h, y =>
+            var weights = new int[w];
+            for (var x = 0; x < w; x++)
             {
-                for (var x = 0; x < w; x++)
-                {
-                    var panel = (int)(x / panelW);
-                    var local = x - panel * panelW;
-                    var center = panelW / 2;
-                    var sweep = panel % 2 == 0 ? -1 : 1;
-                    // Sweep past each panel's far edge by the edge width so the soft band fully
-                    // exits: at t01=0 the whole frame is outgoing, at t01=1 fully incoming.
-                    var boundary = center + sweep * (panelW / 2 + edge) * (2 * t01 - 1);
-                    // mix = 1 (incoming) on the side the curtain has already opened past the
-                    // boundary
-                    var mix = Math.Clamp((sweep * (boundary - local)) / (2 * edge) + 0.5, 0, 1);
-                    var i = (y * w + x) * 4;
-                    dst[i] = (byte)Math.Round(a[i] + (b[i] - a[i]) * mix);
-                    dst[i + 1] = (byte)Math.Round(a[i + 1] + (b[i + 1] - a[i + 1]) * mix);
-                    dst[i + 2] = (byte)Math.Round(a[i + 2] + (b[i + 2] - a[i + 2]) * mix);
-                    dst[i + 3] = 255;
-                }
-            });
+                var panel = (int)(x / panelW);
+                var local = x - panel * panelW;
+                var center = panelW / 2;
+                var sweep = panel % 2 == 0 ? -1 : 1;
+                // Sweep past each panel's far edge by the edge width so the soft band fully
+                // exits: at t01=0 the whole frame is outgoing, at t01=1 fully incoming.
+                var boundary = center + sweep * (panelW / 2 + edge) * (2 * t01 - 1);
+                // mix = 1 (incoming) on the side the curtain has already opened past the boundary
+                weights[x] = PixelOps.Weight256(Math.Clamp((sweep * (boundary - local)) / (2 * edge) + 0.5, 0, 1));
+            }
+            PixelOps.ColumnBlend(dst, a, b, w, h, weights);
             return new DecodedFrame { Width = w, Height = h, Pixels = dst };
         }
     }
