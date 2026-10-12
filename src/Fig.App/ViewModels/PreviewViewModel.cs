@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using Avalonia.Threading;
+using Fig.App.Rendering;
 using CommunityToolkit.Mvvm.ComponentModel;
 using Fig.Core.Media;
 using Fig.Core.Timeline;
@@ -81,7 +82,7 @@ public partial class PreviewViewModel : ViewModelBase
     // from presentation, so slow decode drops frames instead of making video lag the audio).
     private const int PresentQueueDepth = 5;
     private readonly object _presentLock = new();
-    private readonly List<(double TimeSec, int Width, int Height, byte[] Pixels)> _presentQueue = new();
+    private readonly List<(double TimeSec, int Width, int Height, byte[]? Pixels, GpuScene? Scene)> _presentQueue = new();
     private double _nextPlaybackDecodeSec = -1;
     private int _playbackDrops;
     private readonly HashSet<string> _failedPaths = new();
@@ -90,8 +91,32 @@ public partial class PreviewViewModel : ViewModelBase
     private bool _composeApproximate;   // the last compose used a stand-in keyframe
     private volatile bool _exactPass;   // an exact settle decode is running (may be abandoned)
 
-    /// <summary>Invoked on the UI thread with a freshly composited BGRA frame to present.</summary>
+    /// <summary>Invoked on the UI thread with a freshly composited BGRA frame to present (CPU canvas).</summary>
     public event Action<int, int, byte[]>? FrameReady;
+
+    /// <summary>
+    /// Invoked on the UI thread with the scene to draw (GPU canvas). The receiver must <see cref="GpuScene.Retain"/>
+    /// it if it keeps it past the call.
+    /// </summary>
+    public event Action<GpuScene>? SceneReady;
+
+    private volatile bool _gpuCanvas = true;
+
+    /// <summary>
+    /// True when the preview is drawn by the GPU from a scene; false when frames are composited on the CPU.
+    /// Starts true and is switched off by the view if the canvas turns out not to be GPU-backed.
+    /// </summary>
+    public bool UseGpuCanvas => _gpuCanvas;
+
+    /// <summary>Chooses the GPU scene path or the CPU compositor and re-renders the current frame.</summary>
+    public void SetGpuCanvas(bool enabled)
+    {
+        if (_gpuCanvas == enabled)
+            return;
+        _gpuCanvas = enabled;
+        ClearPresentQueue();
+        RequestFrame();
+    }
 
     public PreviewViewModel(IMediaService media, Func<double, IReadOnlyList<PreviewLayer>> resolver)
     {
@@ -452,8 +477,7 @@ public partial class PreviewViewModel : ViewModelBase
                     || playhead < _nextPlaybackDecodeSec - frameDur * (PresentQueueDepth + 1)
                     || playhead > _nextPlaybackDecodeSec + frameDur * (PresentQueueDepth + 1))
                 {
-                    foreach (var f in _presentQueue)
-                        FramePool.Return(f.Pixels);
+                    ReleaseQueued(_presentQueue);
                     _presentQueue.Clear();
                     // first frame boundary at or after the playhead
                     _nextPlaybackDecodeSec = Math.Ceiling(playhead / frameDur - 1e-9) * frameDur;
@@ -466,17 +490,32 @@ public partial class PreviewViewModel : ViewModelBase
             }
 
             // decode outside the lock so presentation on the UI thread never blocks on it
-            var size = _targetWidth * _targetHeight * 4;
-            var buffer = FramePool.Rent(size);
-            if (ComposeFrame(target, buffer, fast: false, out _))
+            if (_gpuCanvas)
             {
-                lock (_presentLock)
-                    _presentQueue.Add((target, _targetWidth, _targetHeight, buffer));
+                if (ComposeScene(target, fast: false, out var scene, out _) && scene is not null)
+                {
+                    lock (_presentLock)
+                        _presentQueue.Add((target, scene.Width, scene.Height, null, scene));
+                }
+                else
+                {
+                    return;
+                }
             }
             else
             {
-                FramePool.Return(buffer);
-                return;
+                var size = _targetWidth * _targetHeight * 4;
+                var buffer = FramePool.Rent(size);
+                if (ComposeFrame(target, buffer, fast: false, out _))
+                {
+                    lock (_presentLock)
+                        _presentQueue.Add((target, _targetWidth, _targetHeight, buffer, null));
+                }
+                else
+                {
+                    FramePool.Return(buffer);
+                    return;
+                }
             }
 
             // a newer position arrived while decoding -> let the loop restart at it
@@ -497,6 +536,7 @@ public partial class PreviewViewModel : ViewModelBase
     private void PresentDueFrames(double sec)
     {
         byte[]? present = null;
+        GpuScene? scene = null;
         int w = 0, h = 0;
         lock (_presentLock)
         {
@@ -512,21 +552,37 @@ public partial class PreviewViewModel : ViewModelBase
             {
                 // frames between the oldest and newest due are skipped (decode couldn't keep up)
                 _playbackDrops += lastDue;
-                for (var i = 0; i < lastDue; i++)
-                    FramePool.Return(_presentQueue[i].Pixels);
+                ReleaseQueued(_presentQueue.GetRange(0, lastDue));
                 _presentQueue.RemoveRange(0, lastDue);
                 var due = _presentQueue[0];
                 _presentQueue.RemoveAt(0);
                 present = due.Pixels;
+                scene = due.Scene;
                 w = due.Width;
                 h = due.Height;
             }
         }
 
-        if (present is not null)
+        if (scene is not null)
+        {
+            SceneReady?.Invoke(scene);
+            scene.Dispose();
+        }
+        else if (present is not null)
         {
             FrameReady?.Invoke(w, h, present);
             FramePool.Return(present);
+        }
+    }
+
+    /// <summary>Returns queued pixel buffers to the pool and releases queued scenes.</summary>
+    private static void ReleaseQueued(List<(double TimeSec, int Width, int Height, byte[]? Pixels, GpuScene? Scene)> items)
+    {
+        foreach (var item in items)
+        {
+            if (item.Pixels is not null)
+                FramePool.Return(item.Pixels);
+            item.Scene?.Dispose();
         }
     }
 
@@ -534,8 +590,7 @@ public partial class PreviewViewModel : ViewModelBase
     {
         lock (_presentLock)
         {
-            foreach (var f in _presentQueue)
-                FramePool.Return(f.Pixels);
+            ReleaseQueued(_presentQueue);
             _presentQueue.Clear();
             _nextPlaybackDecodeSec = -1;
         }
@@ -553,6 +608,12 @@ public partial class PreviewViewModel : ViewModelBase
         try
         {
             _exactPass = !fast;
+            if (_gpuCanvas)
+            {
+                await PresentSceneAsync(target, fast);
+                return;
+            }
+
             var size = _targetWidth * _targetHeight * 4;
             var pixels = _composeBuffer;
             if (pixels is null || pixels.Length < size)
@@ -587,6 +648,174 @@ public partial class PreviewViewModel : ViewModelBase
         {
             _exactPass = false;
         }
+    }
+
+    private async Task PresentSceneAsync(double target, bool fast)
+    {
+        if (!ComposeScene(target, fast, out var scene, out var status) || scene is null)
+        {
+            SetDecodeStatus(status);
+            return;
+        }
+
+        // an exact pass abandoned for a newer position holds a stale picture: don't show it
+        if (!fast && HasNewerRequest())
+        {
+            scene.Dispose();
+            return;
+        }
+
+        try
+        {
+            if (Dispatcher.UIThread.CheckAccess())
+                SceneReady?.Invoke(scene);
+            else
+                await Dispatcher.UIThread.InvokeAsync(() => SceneReady?.Invoke(scene));
+        }
+        finally
+        {
+            scene.Dispose();
+        }
+        SetDecodeStatus(status);
+    }
+
+    /// <summary>
+    /// Decodes the layers at a timeline time and describes how to draw them (effects, crops, transitions,
+    /// opacity) as a <see cref="GpuScene"/>; the GPU does the actual compositing. Returns false and sets a
+    /// status when there is nothing to show. Counterpart of <see cref="ComposeFrame"/>.
+    /// </summary>
+    private bool ComposeScene(double target, bool fast, out GpuScene? scene, out string status)
+    {
+        scene = null;
+        status = "";
+        _composeApproximate = false;
+        var ordered = new List<(int TrackIndex, GpuLayer? Layer)>();
+        try
+        {
+            var needsSeek = target < _lastRequestSec - 0.05;
+            var scrubbing = _editor is not { IsPlaying: true };
+            var decodeMode = scrubbing && fast ? PreviewDecodeMode.Scrub : PreviewDecodeMode.Playback;
+            _lastRequestSec = target;
+
+            var document = _editor?.Editor.Document;
+            var layers = _resolver(target);
+            if ((document is null || document.Tracks.Count == 0) && layers.Count == 0)
+            {
+                status = "No video at playhead";
+                return false;
+            }
+
+            var activeByTrack = new Dictionary<int, ActiveTransition>();
+            if (document is not null)
+            {
+                for (var i = 0; i < document.Tracks.Count; i++)
+                {
+                    if (TransitionResolver.FindActive(document.Tracks[i], target) is { } active)
+                        activeByTrack[i] = active;
+                }
+            }
+
+            var cacheHits = 0;
+            var transitionCount = 0;
+            foreach (var layer in layers)
+            {
+                if (activeByTrack.TryGetValue(layer.TrackIndex, out var active)
+                    && (layer.Clip.Id == active.Outgoing.Id || layer.Clip.Id == active.Incoming.Id))
+                    continue;
+
+                GpuLayer? built = null;
+                try
+                {
+                    var frame = DecodeLayerFrame(layer, needsSeek, decodeMode, out var fromCache);
+                    if (fromCache)
+                        cacheHits++;
+                    if (frame is not null && frame.Width == _targetWidth && frame.Height == _targetHeight)
+                    {
+                        built = new GpuLayer
+                        {
+                            Source = GpuSceneBuilder.SourceFor(layer.Clip, frame, target - layer.Clip.StartSec),
+                            Opacity = layer.Opacity,
+                        };
+                    }
+                }
+                catch
+                {
+                    built = null;
+                }
+                ordered.Add((layer.TrackIndex, built));
+            }
+
+            foreach (var (trackIndex, active) in activeByTrack)
+            {
+                if (TryBuildTransitionScene(active, target, needsSeek, decodeMode, out var txLayer))
+                {
+                    ordered.Add((trackIndex, txLayer));
+                    transitionCount++;
+                }
+            }
+
+            if (ordered.Count == 0)
+            {
+                status = "No video at playhead";
+                return false;
+            }
+
+            // bottom of the stack first: a higher track index is drawn on top
+            var paintOrder = ordered
+                .OrderBy(o => o.TrackIndex)
+                .Where(o => o.Layer is not null)
+                .Select(o => o.Layer!)
+                .ToList();
+            scene = new GpuScene { Width = _targetWidth, Height = _targetHeight, Layers = paintOrder };
+
+            var modeTag = scrubbing ? "scrub" : "play";
+            var cacheTag = cacheHits > 0 ? $" · cache {cacheHits}/{layers.Count}" : "";
+            var dropsTag = _playbackDrops > 30 ? " · dropping" : "";
+            var txTag = transitionCount > 0 ? $" · {transitionCount} transition(s)" : "";
+            status = $"{_targetWidth}x{_targetHeight} · {ordered.Count} layer(s) · {modeTag}{txTag}{cacheTag}{dropsTag} · GPU";
+            return true;
+        }
+        catch (Exception)
+        {
+            // pictures already copied for this frame would otherwise wait for the finalizer
+            foreach (var (_, layer) in ordered)
+            {
+                layer?.Source.Image.Dispose();
+                layer?.Incoming?.Image.Dispose();
+            }
+            scene = null;
+            status = "Decode failed";
+            return false;
+        }
+    }
+
+    private bool TryBuildTransitionScene(
+        ActiveTransition active, double target, bool needsSeek, PreviewDecodeMode mode, out GpuLayer? layer)
+    {
+        layer = null;
+        if (active.Outgoing is not VideoClip outgoing
+            || active.Incoming is not VideoClip incoming
+            || TransitionCatalog.Resolve(active.TypeId) is null
+            || !TryDecodeClipFrame(outgoing, target, needsSeek, mode, out var outFrame, out var outLocal)
+            || outFrame is null
+            || !TryDecodeClipFrame(incoming, target, needsSeek, mode, out var inFrame, out var inLocal)
+            || inFrame is null
+            || outFrame.Width != _targetWidth || outFrame.Height != _targetHeight
+            || inFrame.Width != _targetWidth || inFrame.Height != _targetHeight)
+            return false;
+
+        var outOpacity = ClipFade.EffectiveOpacity(outgoing, Math.Clamp(outLocal, 0, outgoing.DurSec));
+        var inOpacity = ClipFade.EffectiveOpacity(incoming, Math.Clamp(inLocal, 0, incoming.DurSec));
+        layer = new GpuLayer
+        {
+            Source = GpuSceneBuilder.SourceFor(outgoing, outFrame, outLocal),
+            Incoming = GpuSceneBuilder.SourceFor(incoming, inFrame, inLocal),
+            TransitionTypeId = active.TypeId,
+            Progress = active.Progress01,
+            TransitionParams = active.Params,
+            Opacity = outOpacity + (inOpacity - outOpacity) * active.Progress01,
+        };
+        return true;
     }
 
     /// <summary>

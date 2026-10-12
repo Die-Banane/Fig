@@ -60,6 +60,30 @@ Animating is an explicit switch (the stopwatch): `TimelineEditor.SetEffectAnimat
 
 Zoom, pan and rotate are one primitive, the **Transform** effect (`centerX`, `centerY`, `zoom`, `rotation`). Named behaviours ("Zoom in", "Pan", …) are **presets**: plain data (`EffectPreset`) that `EffectPresetInstantiator.Create` turns into a Transform with keyframes. Built-ins live in `BuiltInEffectPresets`; users save their own from a bar's right-click menu (JSON in `~/.fig/presets`, see `EffectPresetStore`). To add a built-in behaviour, add an entry to `BuiltInEffectPresets` — no new effect code is needed.
 
+## The GPU preview canvas
+
+The preview is drawn by the GPU. The decode worker no longer composites a picture: it decodes each layer's
+frame (still on the CPU, at the preview resolution) and describes how to draw them as a `GpuScene`
+(`src/Fig.App/Rendering`): the frames, each clip's resolved effect stack and crop, the active transition
+and its progress, and layer opacity. `PreviewSurface` hands the scene to Skia's GPU canvas through a custom
+draw operation, and every effect, crop, transition and layer blend runs in a fragment shader (SkSL).
+Nothing is composited or copied on the CPU, so a transition no longer competes with the decoders for cores.
+
+* **Shaders live in `GpuEffects.cs`** and are one-to-one ports of the CPU processors and blenders in
+  `Fig.Core`, which export still uses. Preview and export must agree, so `GpuRenderingTests` renders every
+  effect and transition both ways and fails when they drift. Match the CPU maths, including its rounding
+  and integer pixel mapping, rather than "improving" one side.
+* **Adding an effect needs no GPU work to be correct.** An effect without a shader is not skipped: the
+  scene builder runs that clip's whole stack on the CPU before upload (`GpuEffects.Supports`). Add an SkSL
+  port and list its id in `GpuEffectIds` to move it onto the GPU; the catalog-wide test checks either way.
+* **Frames are top-down BGRA, canvas-sized, with alpha 0 in letterbox bars.** The CPU compositor ignores
+  per-pixel alpha, so the shaders force sources opaque. Crop insets are top-down too (a top inset removes
+  the top of the picture).
+* **CPU fallback.** The surface reports whether Skia is really GPU-backed after the first frame. On a
+  software canvas (and in headless tests) the view model switches to the SIMD CPU compositor, which is
+  faster there. `PreviewViewModel.SetGpuCanvas` flips the mode; the status bar shows `GPU` in scene mode.
+* Export is unchanged and still composites on the CPU (`TimelineRender`).
+
 ## Playback, scrubbing and proxies
 
 **Scrubbing the picture** is two passes (`PreviewViewModel.DecodeWorkerAsync`). A fast pass shows the nearest keyframe at or before the playhead (`PreviewDecodeMode.Scrub`; frames from it report `LastFrameApproximate` and are never cached). When the playhead stops, an exact pass settles on the real frame, and gives way (`AbortRequested`) the moment the playhead moves again. Small steps forward just keep decoding.
@@ -71,6 +95,8 @@ Zoom, pan and rotate are one primitive, the **Transform** effect (`centerX`, `ce
 **Keyboard transport** (`EditorViewModel.Shuttle.cs`): Space plays at 1x; L / J shuttle forward / backward at 1x, 2x, 4x, 8x (press again to go faster); K stops; Left / Right step a frame (Shift: a second). Any knob or jog controller (TourBox, Stream Deck, ...) can be mapped to these keys, or to Left / Right for continuous jogging, and gets scrub audio for free.
 
 **Ruler and grid**: `RulerCalculator.PickScale` chooses the labelled ticks and the small ticks between them. The small ticks are the snap grid, so what you read is what snaps. The grid only shows through the lanes while dragging.
+
+**Transitions** (`Media/Transitions/Blenders`) are CPU pixel kernels, not GPU. Everything between decode and display (effects, transitions, compositing) runs in managed code with AVX2 where it pays; Avalonia/Skia only draws the finished bitmap. To keep a transition cheap: use `PixelOps.LerpBytes` (SIMD blend of a byte range), `PixelOps.ColumnBlend` (same weights on every row: wipe, curtains), and plain `Buffer.BlockCopy` for the parts of a row that are entirely one picture or the other. Only compute per pixel where the picture really changes (the soft band of a wipe, the inside of a swirl).
 
 ## UI smoke tests and screenshots
 

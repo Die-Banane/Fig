@@ -12,16 +12,35 @@ public partial class PreviewView : UserControl
     public PreviewView()
     {
         InitializeComponent();
+        Surface.GpuBackingDetected += OnGpuBackingDetected;
         DataContextChanged += OnDataContextChanged;
     }
 
     private void OnDataContextChanged(object? sender, System.EventArgs e)
     {
         if (_vm is not null)
+        {
             _vm.FrameReady -= OnFrameReady;
+            _vm.SceneReady -= OnSceneReady;
+        }
         _vm = DataContext as PreviewViewModel;
         if (_vm is not null)
+        {
             _vm.FrameReady += OnFrameReady;
+            _vm.SceneReady += OnSceneReady;
+        }
+    }
+
+    private void OnSceneReady(Fig.App.Rendering.GpuScene scene)
+    {
+        Surface.PresentScene(scene);
+    }
+
+    private void OnGpuBackingDetected(bool gpu)
+    {
+        // a software canvas runs the shaders on the CPU; the SIMD compositor is faster there
+        if (!gpu)
+            _vm?.SetGpuCanvas(false);
     }
 
     private void OnFrameReady(int width, int height, byte[] bgra)

@@ -5,7 +5,7 @@ using System.Runtime.Intrinsics.X86;
 
 namespace Fig.Core.Media
 {
-    /// <summary>A single image layer to composite, in BGRA32 bottom-up pixel order.</summary>
+    /// <summary>A single image layer to composite, in BGRA32 top-down pixel order.</summary>
     public sealed class CompositeLayer
     {
         public DecodedFrame? Frame { get; set; }
@@ -101,7 +101,7 @@ namespace Fig.Core.Media
 
         /// <summary>
         /// Scales the cropped source region into a full-size BGRA buffer (nearest-neighbor).
-        /// Source/dest are bottom-up row order.
+        /// Frames are top-down (row 0 is the top of the picture), and so is the crop rectangle.
         /// </summary>
         private static void CropScaleNearest(byte[] src, int width, int height, RectI crop, byte[] dst)
         {
@@ -113,9 +113,8 @@ namespace Fig.Core.Media
             PixelOps.Rows(height, y =>
             {
                 var srcY = cy + y * ch / height;
-                // bottom-up: row 0 is the bottom of the image
-                var srcRow = (height - 1 - srcY) * width * 4;
-                var dstRow = (height - 1 - y) * width * 4;
+                var srcRow = srcY * width * 4;
+                var dstRow = y * width * 4;
                 for (var x = 0; x < width; x++)
                 {
                     var srcX = cx + x * cw / width;

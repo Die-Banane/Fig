@@ -30,6 +30,7 @@ namespace Fig.Core.Media
         public const string Posterize = "posterize";
         public const string CropWithPadding = "cropWithPadding";
         public const string Transform = "transform";
+        public const string ChromaticAberration = "chromaticAberration";
 
         private sealed record EffectEntry(Type Implementation, EffectCatalogEntry Metadata);
 

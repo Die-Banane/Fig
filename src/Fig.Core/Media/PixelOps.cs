@@ -13,8 +13,7 @@ namespace Fig.Core.Media
     internal static class PixelOps
     {
         // Parallelize only once the frame is large enough to amortize the thread-pool overhead.
-        // (kernels are SIMD now, so a 360p frame is faster on one core than the thread-pool round trip)
-        private const int ParallelMinRows = 480;
+        private const int ParallelMinRows = 160;
 
         /// <summary>Benchmark/debug switch: force the scalar paths (disables SIMD).</summary>
         public static bool ForceScalar;
