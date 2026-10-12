@@ -52,20 +52,35 @@ namespace Fig.Core.Media
             var b = incoming.Pixels;
             var dst = FramePool.Rent(w * h * 4);
 
+            var weight = PixelOps.Weight256(p);
+            var radiusSq = radius * radius;
             PixelOps.Rows(h, y =>
             {
                 var dy = y + 0.5 - cy;
-                for (var x = 0; x < w; x++)
+                var row = y * w * 4;
+                // the twist only exists inside the circle; everywhere else this is a plain dissolve
+                int x0 = w, x1 = w;
+                if (radiusSq > dy * dy)
+                {
+                    var half = Math.Sqrt(radiusSq - dy * dy);
+                    x0 = Math.Clamp((int)Math.Floor(cx - half - 0.5), 0, w);
+                    x1 = Math.Clamp((int)Math.Ceiling(cx + half - 0.5) + 1, x0, w);
+                }
+                PixelOps.LerpBytes(dst, a, b, row, x0 * 4, weight);
+                PixelOps.LerpBytes(dst, a, b, row + x1 * 4, (w - x1) * 4, weight);
+
+                for (var x = x0; x < x1; x++)
                 {
                     var dx = x + 0.5 - cx;
                     var dist = Math.Sqrt(dx * dx + dy * dy);
-                    var falloff = dist >= radius ? 0 : Math.Pow(1 - dist / radius, 2);
+                    var t = dist >= radius ? 0 : 1 - dist / radius;
+                    var falloff = t * t;
 
                     // the outgoing clip winds up as the transition goes on; the incoming unwinds
                     var angleOut = direction * rotation * p * falloff;
                     var angleIn = -direction * rotation * (1 - p) * falloff;
 
-                    var i = (y * w + x) * 4;
+                    var i = row + x * 4;
                     Sample(a, w, h, cx, cy, dx, dy, angleOut, out var ob, out var og, out var or);
                     Sample(b, w, h, cx, cy, dx, dy, angleIn, out var ib, out var ig, out var ir);
                     dst[i] = (byte)Math.Round(ob + (ib - ob) * p);
@@ -90,15 +105,17 @@ namespace Fig.Core.Media
             var y1 = Math.Min(h - 1, y0 + 1);
             var fx = sx - x0;
             var fy = sy - y0;
-            double Mix(int channel)
-            {
-                var top = src[(y0 * w + x0) * 4 + channel] * (1 - fx) + src[(y0 * w + x1) * 4 + channel] * fx;
-                var bottom = src[(y1 * w + x0) * 4 + channel] * (1 - fx) + src[(y1 * w + x1) * 4 + channel] * fx;
-                return top * (1 - fy) + bottom * fy;
-            }
-            blue = Mix(0);
-            green = Mix(1);
-            red = Mix(2);
+            var i00 = (y0 * w + x0) * 4;
+            var i10 = (y0 * w + x1) * 4;
+            var i01 = (y1 * w + x0) * 4;
+            var i11 = (y1 * w + x1) * 4;
+            var w00 = (1 - fx) * (1 - fy);
+            var w10 = fx * (1 - fy);
+            var w01 = (1 - fx) * fy;
+            var w11 = fx * fy;
+            blue = src[i00] * w00 + src[i10] * w10 + src[i01] * w01 + src[i11] * w11;
+            green = src[i00 + 1] * w00 + src[i10 + 1] * w10 + src[i01 + 1] * w01 + src[i11 + 1] * w11;
+            red = src[i00 + 2] * w00 + src[i10 + 2] * w10 + src[i01 + 2] * w01 + src[i11 + 2] * w11;
         }
 
         private static double Ease(double t, int mode) => mode switch

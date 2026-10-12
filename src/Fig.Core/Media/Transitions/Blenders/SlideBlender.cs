@@ -33,27 +33,19 @@ namespace Fig.Core.Media
 
             PixelOps.Rows(h, y =>
             {
+                var row = y * w * 4;
                 var by = y - offY;
-                for (var x = 0; x < w; x++)
+                if (by < 0 || by >= h)
                 {
-                    var bx = x - offX;
-                    var i = (y * w + x) * 4;
-                    if (bx >= 0 && bx < w && by >= 0 && by < h)
-                    {
-                        var s = (by * w + bx) * 4;
-                        dst[i] = b[s];
-                        dst[i + 1] = b[s + 1];
-                        dst[i + 2] = b[s + 2];
-                        dst[i + 3] = b[s + 3];
-                    }
-                    else
-                    {
-                        dst[i] = a[i];
-                        dst[i + 1] = a[i + 1];
-                        dst[i + 2] = a[i + 2];
-                        dst[i + 3] = a[i + 3];
-                    }
+                    Buffer.BlockCopy(a, row, dst, row, w * 4);
+                    return;
                 }
+                // incoming covers destination x in [offX, offX + w) clipped to the frame
+                var x0 = Math.Clamp(offX, 0, w);
+                var x1 = Math.Clamp(offX + w, 0, w);
+                Buffer.BlockCopy(a, row, dst, row, x0 * 4);
+                Buffer.BlockCopy(b, by * w * 4 + (x0 - offX) * 4, dst, row + x0 * 4, (x1 - x0) * 4);
+                Buffer.BlockCopy(a, row + x1 * 4, dst, row + x1 * 4, (w - x1) * 4);
             });
             return new DecodedFrame { Width = w, Height = h, Pixels = dst };
         }

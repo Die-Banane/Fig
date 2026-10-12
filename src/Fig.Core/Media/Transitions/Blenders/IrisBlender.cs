@@ -47,7 +47,7 @@ namespace Fig.Core.Media
                 // x ranges that need no maths: fully outgoing at the ends, fully incoming in the middle
                 var outHalf = Math.Sqrt(outer * outer - dy * dy);
                 var outL = Math.Clamp((int)Math.Floor(cx - outHalf) + 1, 0, w);   // x < outL: outgoing
-                var outR = Math.Clamp((int)Math.Ceiling(cx + outHalf), 0, w);      // x >= outR: outgoing
+                var outR = Math.Max(outL, Math.Clamp((int)Math.Ceiling(cx + outHalf), 0, w));   // x >= outR: outgoing
                 var inL = outR;
                 var inR = outR;
                 if (inner > Math.Abs(dy))

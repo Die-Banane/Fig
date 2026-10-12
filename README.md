@@ -93,7 +93,3 @@ AI generated code is allowed as long as you mention:
 Being able to understand what you added or built is of utmost importance. 
 
 AI generated output will not be accepted if it's generated slop. I couldn't care less if you use AI as long as the code is good and you understand it, but I have a vision for this project, and feature bloat isn't one of them.
-
-## License
-
-Not yet licensed.
