@@ -18,6 +18,19 @@ namespace Fig.Core.Timeline
         public double DurSec { get; set; }
         public string Color { get; set; } = "#ffd60a";
 
+        /// <summary>A range marker spans time (it has a duration); a point marker (bookmark) does not.</summary>
+        [System.Text.Json.Serialization.JsonIgnore]
+        public bool IsRange => DurSec > 0;
+
+        [System.Text.Json.Serialization.JsonIgnore]
+        public double EndSec => StartSec + DurSec;
+
+        /// <summary>For range markers: whether "Export marked ranges" offers this range.</summary>
+        public bool IncludeInExport { get; set; } = true;
+
+        /// <summary>For range markers: the output file name to use when exporting (null = derived from the name).</summary>
+        public string? OutputName { get; set; }
+
         /// <summary>Optional source-format provenance (e.g. cmx_3600 reel / color).</summary>
         public Dictionary<string, JsonElement>? Metadata { get; set; }
 
@@ -30,6 +43,8 @@ namespace Fig.Core.Timeline
                 StartSec = StartSec,
                 DurSec = DurSec,
                 Color = Color,
+                IncludeInExport = IncludeInExport,
+                OutputName = OutputName,
                 Metadata = Metadata is null ? null : new Dictionary<string, JsonElement>(Metadata),
             };
         }

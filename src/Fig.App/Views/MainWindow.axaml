@@ -18,6 +18,17 @@
         <KeyBinding Gesture="Ctrl+K" Command="{Binding Editor.SplitAtPlayheadCommand}"/>
         <KeyBinding Gesture="Ctrl+W" Command="{Binding CloseProjectCommand}"/>
         <KeyBinding Gesture="Space" Command="{Binding Editor.TogglePlaybackCommand}"/>
+        <KeyBinding Gesture="L" Command="{Binding Editor.ShuttleForwardCommand}"/>
+        <KeyBinding Gesture="J" Command="{Binding Editor.ShuttleBackCommand}"/>
+        <KeyBinding Gesture="K" Command="{Binding Editor.ShuttleStopCommand}"/>
+        <KeyBinding Gesture="Left" Command="{Binding Editor.StepBackFrameCommand}"/>
+        <KeyBinding Gesture="Right" Command="{Binding Editor.StepForwardFrameCommand}"/>
+        <KeyBinding Gesture="Shift+Left" Command="{Binding Editor.StepBackSecondCommand}"/>
+        <KeyBinding Gesture="Shift+Right" Command="{Binding Editor.StepForwardSecondCommand}"/>
+        <KeyBinding Gesture="Shift+S" Command="{Binding Editor.ToggleAudioScrubCommand}"/>
+        <KeyBinding Gesture="Ctrl+1" Command="{Binding Editor.Layout.ToggleLeftCommand}"/>
+        <KeyBinding Gesture="Ctrl+2" Command="{Binding Editor.Layout.ToggleRightCommand}"/>
+        <KeyBinding Gesture="Ctrl+Shift+F" Command="{Binding Editor.Layout.ToggleFocusCommand}"/>
     </Window.KeyBindings>
 
     <Grid>

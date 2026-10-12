@@ -94,9 +94,28 @@ namespace Fig.Core.Project
                     UpdatedAt = project.UpdatedAt,
                     MediaCount = project.Media.Count,
                     Thumbnail = project.Thumbnail,
+                    DurationSec = project.Timelines.Count == 0 ? 0 : project.Timelines.Max(DurationOf),
+                    Folder = dir,
                 });
             }
             return summaries.OrderByDescending(s => s.UpdatedAt).ToList();
+        }
+
+        private static double DurationOf(Fig.Core.Timeline.Timeline timeline)
+            => timeline.Tracks.SelectMany(t => t.Clips).Select(c => c.StartSec + c.DurSec).DefaultIfEmpty(0).Max();
+
+        /// <summary>Renames a project (the folder id is kept so media caches stay valid).</summary>
+        public bool RenameProject(string id, string newName)
+        {
+            newName = newName?.Trim() ?? "";
+            if (newName.Length == 0)
+                return false;
+            var project = LoadProject(id);
+            if (project is null)
+                return false;
+            project.Name = newName;
+            SaveProject(project);
+            return true;
         }
 
         public Project? LoadProject(string id)
@@ -104,7 +123,10 @@ namespace Fig.Core.Project
             var jsonPath = ProjectPath(id);
             if (!File.Exists(jsonPath))
                 return null;
-            return JsonSerializer.Deserialize<Project>(File.ReadAllText(jsonPath), Options);
+            var project = JsonSerializer.Deserialize<Project>(File.ReadAllText(jsonPath), Options);
+            if (project is not null)
+                EffectMigration.Migrate(project);
+            return project;
         }
 
         public string ProjectDirectory(string id)
@@ -139,5 +161,7 @@ namespace Fig.Core.Project
         public DateTime UpdatedAt { get; set; }
         public int MediaCount { get; set; }
         public string? Thumbnail { get; set; }
+        public double DurationSec { get; set; }
+        public string Folder { get; set; } = "";
     }
 }

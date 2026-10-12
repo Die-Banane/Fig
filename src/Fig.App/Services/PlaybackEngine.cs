@@ -39,7 +39,9 @@ namespace Fig.App.Services
         }
         protected override void GenerateAudio(Span<float> buffer, int sampleRate)
         {
-            _queue.ReadBytes(buffer);
+            var read = _queue.ReadBytes(buffer);
+            if (read < buffer.Length)
+                buffer.Slice(Math.Max(0, read)).Clear();   // an empty queue is silence, never stale samples
         }
     }
 
@@ -49,7 +51,7 @@ namespace Fig.App.Services
     /// A producer loop keeps the queue well ahead by decoding+mixing active clips through
     /// persistent audio sources (no per-chunk re-seek).
     /// </summary>
-    public class PlaybackEngine : IDisposable
+    public partial class PlaybackEngine : IDisposable
     {
         private const int ChunkFrames = 4096;             // ~85ms per decode chunk
         private const int TargetBufferedFrames = 24000;   // keep ~500ms buffered
@@ -211,12 +213,18 @@ namespace Fig.App.Services
             try
             {
                 var wasPlaying = IsPlaying;
-                await StopProducerAsync();
-                _device?.Stop();
-                IsPlaying = false;
-                _seekBaseSec = Math.Clamp(timelineSec, 0, TimelineEnd(_editor.Document));
+                if (wasPlaying)
+                {
+                    await StopProducerAsync();
+                    _device?.Stop();
+                    IsPlaying = false;
+                }
+                // the playhead may sit anywhere (past the last clip, on an empty timeline); only playback stops at the end
+                _seekBaseSec = Math.Max(0, timelineSec);
                 _queue.Reset();
-                await Task.Run(_mixer.ResetSources);
+                // while paused the decoders stay open: scrubbing mixes through them and they re-seek on their own
+                if (wasPlaying)
+                    await Task.Run(_mixer.ResetSources);
 
                 if (wasPlaying && _device is not null && _seekBaseSec < TimelineEnd(_editor.Document) - 1e-6)
                 {
@@ -226,15 +234,13 @@ namespace Fig.App.Services
                 }
                 else
                 {
-                    SetState(_seekBaseSec >= TimelineEnd(_editor.Document) - 1e-6
-                        ? PlaybackState.Ended
-                        : PlaybackState.Paused);
+                    SetState(PlaybackState.Paused);
                 }
                 RaisePositionChanged();
             }
             catch (Exception ex)
             {
-                Error = ex.Message;
+                Error = DescribeFailure("seek", ex);
                 SetState(PlaybackState.Faulted);
             }
             finally
@@ -256,6 +262,7 @@ namespace Fig.App.Services
                 if (IsPlaying)
                     return;
 
+                await EndScrubAsync();
                 await StopProducerAsync();
                 Error = null;
 
@@ -275,7 +282,7 @@ namespace Fig.App.Services
             }
             catch (Exception ex)
             {
-                Error = ex.Message;
+                Error = DescribeFailure("play", ex);
                 IsPlaying = false;
                 SetState(PlaybackState.Faulted);
             }
@@ -285,12 +292,19 @@ namespace Fig.App.Services
             }
         }
 
+        /// <summary>A message that says where it went wrong; the full trace goes to the log.</summary>
+        private static string DescribeFailure(string what, Exception ex) =>
+            $"Playback stopped ({what}: {CrashLog.Write("playback-" + what, ex)}). Press Space to try again.";
+
         private void StartDeviceAndProducer()
         {
             IsPlaying = true;
             _device!.Start();
-            _cts = new CancellationTokenSource();
-            _producerTask = Task.Run(() => ProducerLoop(_cts.Token));
+            // the token is captured here: by the time the task runs, a seek may already have cleared _cts
+            var cts = new CancellationTokenSource();
+            _cts = cts;
+            var token = cts.Token;
+            _producerTask = Task.Run(() => ProducerLoop(token));
             SetState(PlaybackState.Playing);
         }
 
@@ -305,7 +319,7 @@ namespace Fig.App.Services
                 IsPlaying = false;
                 await StopProducerAsync();
                 _device?.Stop();
-                _seekBaseSec = Math.Clamp(position, 0, TimelineEnd(_editor.Document));
+                _seekBaseSec = Math.Max(0, position);
                 _queue.Reset();
                 await Task.Run(_mixer.ResetSources);
                 SetState(PlaybackState.Paused);
@@ -392,6 +406,11 @@ namespace Fig.App.Services
             {
                 try { await producer; }
                 catch (OperationCanceledException) { }
+                catch (Exception ex)
+                {
+                    // the producer is being torn down anyway; a seek must not fail because of how it ended
+                    CrashLog.Write("playback-producer", ex);
+                }
             }
             cts.Dispose();
         }
@@ -442,6 +461,7 @@ namespace Fig.App.Services
                 return;
             _disposed = true;
             IsPlaying = false;
+            StopScrubSession();
             _cts?.Cancel();
             _queue.Reset();
             try { _producerTask?.Wait(TimeSpan.FromSeconds(2)); } catch { }

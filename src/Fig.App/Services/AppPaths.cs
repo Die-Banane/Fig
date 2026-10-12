@@ -11,6 +11,12 @@ public static class AppPaths
 
     public static string TemplatesDir { get; } = Path.Combine(DataDir, "templates");
 
+    public static string LogDir { get; } = Path.Combine(DataDir, "logs");
+
+    public static string PresetsDir { get; } = Path.Combine(DataDir, "presets");
+
+    public static string WorkspaceLayoutPath { get; } = Path.Combine(ConfigDir, "workspace.json");
+
     public static string GestureConfigPath { get; } = Path.Combine(ConfigDir, "gestures.json");
 
     public static void EnsureDirectories()
@@ -18,5 +24,6 @@ public static class AppPaths
         Directory.CreateDirectory(ConfigDir);
         Directory.CreateDirectory(ProjectsDir);
         Directory.CreateDirectory(TemplatesDir);
+        Directory.CreateDirectory(PresetsDir);
     }
 }

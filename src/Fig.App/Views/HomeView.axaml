@@ -3,81 +3,240 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:vm="using:Fig.App.ViewModels"
              xmlns:conv="using:Fig.App.Converters"
+             xmlns:local="using:Fig.App.Views"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-             mc:Ignorable="d" d:DesignWidth="900" d:DesignHeight="600"
+             mc:Ignorable="d" d:DesignWidth="1100" d:DesignHeight="730"
+             x:Name="Root"
              x:Class="Fig.App.Views.HomeView"
              x:DataType="vm:HomeViewModel">
 
     <UserControl.Resources>
         <conv:PathToBitmapConverter x:Key="PathToBitmap"/>
+        <SolidColorBrush x:Key="Muted" Color="#8A8A8A"/>
+        <SolidColorBrush x:Key="CardBg" Color="#232427"/>
+        <SolidColorBrush x:Key="CardBorder" Color="#3A3C42"/>
+        <SolidColorBrush x:Key="Hairline" Color="#2B2D31"/>
+        <SolidColorBrush x:Key="Danger" Color="#FF6B6B"/>
     </UserControl.Resources>
 
-    <DockPanel Background="#1e1e1e">
+    <UserControl.KeyBindings>
+        <KeyBinding Gesture="Ctrl+N" Command="{Binding CreateProjectCommand}"/>
+    </UserControl.KeyBindings>
 
-        <!-- header -->
-        <Border DockPanel.Dock="Top" Padding="24,20" Background="#252526">
-            <DockPanel>
-              
-                <Button DockPanel.Dock="Right" Content="+ New Project"
-                        Command="{Binding CreateProjectCommand}"
-                        CommandParameter="{Binding $parent[Window]}"
-                        Padding="12,6"/>
+    <UserControl.Styles>
+        <Style Selector="Button.card">
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="HorizontalAlignment" Value="Stretch"/>
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+            <Setter Property="Cursor" Value="Hand"/>
+        </Style>
+        <Style Selector="Button.card:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent"/>
+        </Style>
+        <Style Selector="Button.card:pointerover Border.thumb">
+            <Setter Property="BorderBrush" Value="#5F9CF8"/>
+        </Style>
+        <Style Selector="Button.card:focus-visible Border.thumb">
+            <Setter Property="BorderBrush" Value="#91BAFF"/>
+            <Setter Property="BorderThickness" Value="2"/>
+        </Style>
+        <Style Selector="Button.row">
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="Background" Value="#202124"/>
+            <Setter Property="CornerRadius" Value="6"/>
+            <Setter Property="HorizontalAlignment" Value="Stretch"/>
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+            <Setter Property="Cursor" Value="Hand"/>
+        </Style>
+        <Style Selector="Button.row:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="#26272B"/>
+        </Style>
+        <Style Selector="Button.more">
+            <Setter Property="Width" Value="28"/>
+            <Setter Property="Height" Value="28"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="#C8C8C8"/>
+            <Setter Property="ToolTip.Tip" Value="Project actions"/>
+        </Style>
+        <Style Selector="Button.more:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="#333335"/>
+        </Style>
+        <Style Selector="TextBlock.meta"><Setter Property="Foreground" Value="#8A8A8A"/><Setter Property="FontSize" Value="12"/></Style>
+        <Style Selector="TextBlock.kbd"><Setter Property="Foreground" Value="#8A8A8A"/><Setter Property="FontSize" Value="12"/></Style>
+        <Style Selector="TextBlock.kbdkey"><Setter Property="Foreground" Value="#C8C8C8"/><Setter Property="FontSize" Value="12"/></Style>
+    </UserControl.Styles>
 
-                <Button DockPanel.Dock="Right" Content="Import OTIO Project..."
-                        Command="{Binding ImportOtioCommand}"
-                        CommandParameter="{Binding $parent[Window]}"
-                        Margin="0,0,10,0"
-                        Padding="12,6"/>
+    <Grid Background="#17181A" RowDefinitions="Auto,Auto,*,Auto" Margin="0">
 
-            </DockPanel>
-        </Border>
+        <!-- Header: title and primary actions -->
+        <Grid Grid.Row="0" Margin="24,18,24,16" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="16">
+            <TextBlock Text="Projects" FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center"/>
+            <Button Grid.Column="1" Classes="fig" Width="148" Content="Import Project…"
+                    Command="{Binding ImportOtioCommand}"
+                    ToolTip.Tip="Import an OpenTimelineIO (.otio) timeline as a new project"/>
+            <Button Grid.Column="2" Classes="fig primary" Width="148" Content="+ New Project"
+                    Command="{Binding CreateProjectCommand}"
+                    ToolTip.Tip="Create a new project (Ctrl+N)"/>
+        </Grid>
+        <Border Grid.Row="0" Height="1" Background="{StaticResource Hairline}" VerticalAlignment="Bottom" Margin="24,0"/>
 
-        <!-- project list -->
-        <ItemsControl x:Name="ProjectList" Margin="24,20" ItemsSource="{Binding Projects}">
-            <ItemsControl.ItemsPanel>
-                <ItemsPanelTemplate>
-                    <WrapPanel/>
-                </ItemsPanelTemplate>
-            </ItemsControl.ItemsPanel>
-            <ItemsControl.ItemTemplate>
-                <DataTemplate>
-                    <Button Margin="0,0,16,16" Padding="0" HorizontalAlignment="Left"
-                            Background="Transparent" BorderThickness="0"
-                            Command="{Binding $parent[ItemsControl].DataContext.OpenProjectCommand}"
-                            CommandParameter="{Binding}">
-                        <Button.ContextMenu>
-                            <ContextMenu>
-                                <MenuItem Header="Delete Project"
-                                          Command="{Binding #ProjectList.DataContext.DeleteProjectCommand}"
-                                          CommandParameter="{Binding}"/>
-                            </ContextMenu>
-                        </Button.ContextMenu>
-                        <Button.Template>
-                            <ControlTemplate TargetType="Button">
-                                <StackPanel>
-                                    <Border Width="220" Height="140"
-                                            Background="#252526" CornerRadius="8"
-                                            BorderBrush="#333333" BorderThickness="1"
-                                            ClipToBounds="True">
-                                        <Grid>
-                                            <Image Source="{Binding Thumbnail, Converter={StaticResource PathToBitmap}}"
-                                                   Stretch="UniformToFill"/>
-                                        </Grid>
-                                    </Border>
-                                    <TextBlock Text="{Binding Name}" FontSize="13"
-                                               Foreground="#cccccc"
-                                               Margin="4,6,4,0"
-                                               MaxWidth="220"
-                                               TextWrapping="Wrap"
-                                               TextTrimming="CharacterEllipsis"/>
+        <!-- Toolbar: only when there is something to browse -->
+        <Grid Grid.Row="1" Margin="24,20,24,16" ColumnDefinitions="*,Auto,Auto,Auto,Auto"
+              IsVisible="{Binding HasProjects}">
+            <StackPanel Spacing="6" VerticalAlignment="Center">
+                <TextBlock Text="Recent projects" FontSize="13" FontWeight="SemiBold"/>
+                <TextBlock Classes="meta" Text="{Binding CountText}"/>
+            </StackPanel>
+            <TextBox x:Name="SearchBox" Grid.Column="1" Width="260" Margin="0,0,16,0"
+                     Watermark="Search projects" Text="{Binding SearchText}"
+                     AutomationProperties.Name="Search projects"/>
+            <ComboBox Grid.Column="2" Width="140" Margin="0,0,16,0"
+                      ItemsSource="{x:Static vm:HomeViewModel.SortOptions}"
+                      SelectedItem="{Binding SortBy}"
+                      AutomationProperties.Name="Sort projects"
+                      ToolTip.Tip="Sort projects"/>
+            <ToggleButton Grid.Column="3" Classes="fig" Width="60" Content="Grid" Margin="0,0,8,0"
+                          IsChecked="{Binding IsGrid, Mode=OneWay}"
+                          Command="{Binding ShowGridCommand}"/>
+            <ToggleButton Grid.Column="4" Classes="fig" Width="60" Content="List"
+                          IsChecked="{Binding IsList, Mode=OneWay}"
+                          Command="{Binding ShowListCommand}"/>
+        </Grid>
+
+        <!-- Content -->
+        <Grid Grid.Row="2">
+
+            <!-- First run -->
+            <StackPanel IsVisible="{Binding HasNoProjects}" VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="14">
+                <local:StrokeIcon Icon="clapperboard" Width="40" Height="40" HorizontalAlignment="Center"
+                                  IconBrush="{StaticResource Muted}"/>
+                <TextBlock Text="Create your first project" FontSize="14" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,8,0,0"/>
+                <TextBlock Classes="meta" Text="Start a new edit or import an existing timeline." HorizontalAlignment="Center"/>
+                <Button Classes="fig primary" Width="148" Content="+ New Project" HorizontalAlignment="Center" Margin="0,10,0,0"
+                        Command="{Binding CreateProjectCommand}"/>
+            </StackPanel>
+
+            <!-- Search matched nothing -->
+            <StackPanel IsVisible="{Binding NoSearchResults}" VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="10">
+                <TextBlock Text="No projects match your search" FontSize="14" FontWeight="SemiBold" HorizontalAlignment="Center"/>
+                <TextBlock Classes="meta" Text="Check the spelling or clear the search." HorizontalAlignment="Center"/>
+                <Button Classes="fig" Width="120" Content="Clear search" HorizontalAlignment="Center" Margin="0,6,0,0"
+                        Command="{Binding ClearSearchCommand}"/>
+            </StackPanel>
+
+            <!-- Grid view -->
+            <ScrollViewer IsVisible="{Binding ShowProjects}" HorizontalScrollBarVisibility="Disabled">
+                <Panel>
+                    <ItemsControl ItemsSource="{Binding Projects}" Margin="24,0,8,24" IsVisible="{Binding IsGrid}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:ProjectItemViewModel">
+                                <StackPanel Width="228" Margin="0,0,16,20">
+                                    <Button Classes="card" Command="{Binding OpenCommand}" AutomationProperties.Name="{Binding Name}">
+                                        <Button.ContextMenu>
+                                            <ContextMenu>
+                                                <MenuItem Header="Open project" Command="{Binding OpenCommand}"/>
+                                                <MenuItem Header="Rename" Command="{Binding RenameCommand}"/>
+                                                <MenuItem Header="Show in folder" Command="{Binding ShowInFolderCommand}"/>
+                                                <Separator/>
+                                                <MenuItem Header="Delete project…" Foreground="{StaticResource Danger}" Command="{Binding DeleteCommand}"/>
+                                            </ContextMenu>
+                                        </Button.ContextMenu>
+                                        <Border Classes="thumb" Height="128" Background="{StaticResource CardBg}" CornerRadius="6"
+                                                BorderBrush="{StaticResource CardBorder}" BorderThickness="1" ClipToBounds="True">
+                                            <Grid>
+                                                <Image Source="{Binding Thumbnail, Converter={StaticResource PathToBitmap}}" Stretch="UniformToFill"/>
+                                                <StackPanel VerticalAlignment="Center" Spacing="8" IsVisible="{Binding !HasThumbnail}">
+                                                    <local:StrokeIcon Icon="clapperboard" Width="22" Height="22" HorizontalAlignment="Center" IconBrush="{StaticResource Muted}"/>
+                                                    <TextBlock Classes="meta" Text="{Binding PlaceholderText}" HorizontalAlignment="Center"/>
+                                                </StackPanel>
+                                            </Grid>
+                                        </Border>
+                                    </Button>
+                                    <Grid ColumnDefinitions="*,Auto" Margin="4,10,0,2">
+                                        <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="13" VerticalAlignment="Center"
+                                                   TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Name}"/>
+                                        <Button Grid.Column="1" Classes="fig more" Content="⋯" AutomationProperties.Name="Project actions">
+                                            <Button.Flyout>
+                                            <MenuFlyout Placement="BottomEdgeAlignedRight">
+                                                <MenuItem Header="Open project" Command="{Binding OpenCommand}"/>
+                                                <MenuItem Header="Rename" Command="{Binding RenameCommand}"/>
+                                                <MenuItem Header="Show in folder" Command="{Binding ShowInFolderCommand}"/>
+                                                <Separator/>
+                                                <MenuItem Header="Delete project…" Foreground="{StaticResource Danger}" Command="{Binding DeleteCommand}"/>
+                                            </MenuFlyout>
+                                        </Button.Flyout>
+                                        </Button>
+                                    </Grid>
+                                    <TextBlock Classes="meta" Margin="4,0,0,0" Text="{Binding LastEditedText, StringFormat='Last edited · {0}'}"/>
+                                    <TextBlock Classes="meta" Margin="4,4,0,0" Text="{Binding DurationText, StringFormat='Duration · {0}'}"/>
                                 </StackPanel>
-                            </ControlTemplate>
-                        </Button.Template>
-                    </Button>
-                </DataTemplate>
-            </ItemsControl.ItemTemplate>
-        </ItemsControl>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
 
-      
-    </DockPanel>
+                    <!-- List view -->
+                    <StackPanel IsVisible="{Binding IsList}" Margin="24,0,24,24">
+                        <Grid ColumnDefinitions="*,200,120,40" Margin="16,4,16,10">
+                            <TextBlock Classes="meta" Text="Project"/>
+                            <TextBlock Classes="meta" Grid.Column="1" Text="Last edited"/>
+                            <TextBlock Classes="meta" Grid.Column="2" Text="Duration"/>
+                        </Grid>
+                        <ItemsControl ItemsSource="{Binding Projects}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:ProjectItemViewModel">
+                                    <Grid Margin="0,0,0,8">
+                                        <Button Classes="row" Height="60" Command="{Binding OpenCommand}" AutomationProperties.Name="{Binding Name}">
+                                            <Button.ContextMenu>
+                                            <ContextMenu>
+                                                <MenuItem Header="Open project" Command="{Binding OpenCommand}"/>
+                                                <MenuItem Header="Rename" Command="{Binding RenameCommand}"/>
+                                                <MenuItem Header="Show in folder" Command="{Binding ShowInFolderCommand}"/>
+                                                <Separator/>
+                                                <MenuItem Header="Delete project…" Foreground="{StaticResource Danger}" Command="{Binding DeleteCommand}"/>
+                                            </ContextMenu>
+                                        </Button.ContextMenu>
+                                            <Grid ColumnDefinitions="*,200,120,40" Margin="16,0">
+                                                <StackPanel Orientation="Horizontal" Spacing="14" VerticalAlignment="Center">
+                                                    <local:StrokeIcon Icon="clapperboard" Width="20" Height="20" IconBrush="{StaticResource Muted}"/>
+                                                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="13" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                                                </StackPanel>
+                                                <TextBlock Classes="meta" Grid.Column="1" VerticalAlignment="Center" Text="{Binding LastEditedText}"/>
+                                                <TextBlock Classes="meta" Grid.Column="2" VerticalAlignment="Center" Text="{Binding DurationText}"/>
+                                            </Grid>
+                                        </Button>
+                                        <Button Classes="fig more" HorizontalAlignment="Right" Margin="0,0,16,0" Content="⋯" AutomationProperties.Name="Project actions">
+                                            <Button.Flyout>
+                                            <MenuFlyout Placement="BottomEdgeAlignedRight">
+                                                <MenuItem Header="Open project" Command="{Binding OpenCommand}"/>
+                                                <MenuItem Header="Rename" Command="{Binding RenameCommand}"/>
+                                                <MenuItem Header="Show in folder" Command="{Binding ShowInFolderCommand}"/>
+                                                <Separator/>
+                                                <MenuItem Header="Delete project…" Foreground="{StaticResource Danger}" Command="{Binding DeleteCommand}"/>
+                                            </MenuFlyout>
+                                        </Button.Flyout>
+                                        </Button>
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </Panel>
+            </ScrollViewer>
+        </Grid>
+
+        <!-- Footer: shortcut hints -->
+        <Border Grid.Row="3" BorderBrush="{StaticResource Hairline}" BorderThickness="0,1,0,0" Margin="24,0" Padding="0,14,0,16">
+            <StackPanel Orientation="Horizontal" Spacing="18">
+                <StackPanel Orientation="Horizontal" Spacing="6"><TextBlock Classes="kbdkey" Text="Enter"/><TextBlock Classes="kbd" Text="Open project"/></StackPanel>
+                <StackPanel Orientation="Horizontal" Spacing="6"><TextBlock Classes="kbdkey" Text="/"/><TextBlock Classes="kbd" Text="Search"/></StackPanel>
+                <StackPanel Orientation="Horizontal" Spacing="6"><TextBlock Classes="kbdkey" Text="Ctrl+N"/><TextBlock Classes="kbd" Text="New project"/></StackPanel>
+            </StackPanel>
+        </Border>
+    </Grid>
 </UserControl>

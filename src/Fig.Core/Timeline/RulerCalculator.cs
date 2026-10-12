@@ -1,71 +1,39 @@
 using System;
-using System.Collections.Generic;
 
 namespace Fig.Core.Timeline
 {
-    public readonly record struct RulerTick(double Time, bool IsMajor);
-
+    /// <summary>Chooses the time ruler's scale for a zoom level.</summary>
     public static class RulerCalculator
     {
-        // "nice" time intervals, seconds. Powers/2/5 progression so labels stay round.
-        private static readonly double[] NiceIntervals =
-        {
-            0.001, 0.002, 0.005,
-            0.01, 0.02, 0.05,
-            0.1, 0.2, 0.5,
-            1, 2, 5,
-            10, 15, 30,
-            60, 120, 300,
-            600, 1200, 1800,
-            3600,
-        };
+        /// <summary>
+        /// A ruler scale: labelled major ticks, minor ticks between them. The minor step doubles as the
+        /// timeline's snap grid, so what you see on the ruler is what things snap to.
+        /// </summary>
+        public readonly record struct Scale(double MajorSec, double MinorSec, int Divisions);
 
-        /// <summary>Smallest nice interval that keeps labels at least minSpacing px apart.</summary>
-        public static double PickInterval(double pixelsPerSecond, double minLabelSpacing = 80)
+        /// <summary>
+        /// Picks the scale for a zoom level, like an NLE ruler: majors land on frames, seconds or minutes
+        /// (never awkward values), at least <paramref name="minMajorPx"/> apart so timecode labels fit.
+        /// </summary>
+        public static Scale PickScale(double pixelsPerSecond, double fps, double minMajorPx = 104)
         {
             if (pixelsPerSecond <= 0)
                 throw new ArgumentOutOfRangeException(nameof(pixelsPerSecond));
+            var frame = 1.0 / Math.Max(1, fps);
 
-            for (var i = 0; i < NiceIntervals.Length; i++)
+            // (major in seconds, divisions). Frame-based majors keep sub-second ticks on whole frames.
+            (double Major, int Div)[] steps =
             {
-                var interval = NiceIntervals[i];
-                if (interval * pixelsPerSecond >= minLabelSpacing)
-                    return interval;
-            }
-
-            return NiceIntervals[^1];
-        }
-
-        public static IReadOnlyList<RulerTick> GetTicks(
-            double scrollTime, double visibleEndTime, double interval, double majorEvery = 5)
-        {
-            var ticks = new List<RulerTick>();
-            if (interval <= 0)
-                return ticks;
-
-            var start = Math.Ceiling(scrollTime / interval) * interval;
-            for (var t = start; t <= visibleEndTime + interval * 0.001; t += interval)
+                (frame, 1), (2 * frame, 2), (5 * frame, 5), (10 * frame, 5), (15 * frame, 3),
+                (1, 5), (2, 4), (5, 5), (10, 5), (15, 3), (30, 6),
+                (60, 6), (120, 4), (300, 5), (600, 10), (1800, 6), (3600, 6),
+            };
+            foreach (var (major, div) in steps)
             {
-                var isMajor = Math.Abs(t / interval % majorEvery) < 0.0001;
-                ticks.Add(new RulerTick(t, isMajor));
+                if (major * pixelsPerSecond >= minMajorPx)
+                    return new Scale(major, major / div, div);
             }
-
-            return ticks;
-        }
-
-        public static string Format(double seconds, double interval)
-        {
-            if (interval >= 1)
-            {
-                var total = (int)Math.Round(seconds);
-                var h = total / 3600;
-                var m = (total % 3600) / 60;
-                var s = total % 60;
-                return h > 0 ? $"{h}:{m:00}:{s:00}" : $"{m:00}:{s:00}";
-            }
-
-            var decimals = interval < 0.001 ? 4 : interval < 0.01 ? 3 : interval < 0.1 ? 2 : interval < 1 ? 1 : 0;
-            return seconds.ToString("F" + decimals);
+            return new Scale(3600, 600, 6);
         }
     }
 }

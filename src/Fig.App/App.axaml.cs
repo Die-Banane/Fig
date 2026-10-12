@@ -35,9 +35,20 @@ public partial class App : Application
             if (!File.Exists(AppPaths.GestureConfigPath))
                 gestures.Save(AppPaths.GestureConfigPath);
 
-            desktop.MainWindow = new MainWindow
+            var app = new AppViewModel(store, gestures);
+            desktop.MainWindow = new MainWindow { DataContext = app };
+
+            // an unexpected error is logged and named in a toast; the app keeps running
+            Avalonia.Threading.Dispatcher.UIThread.UnhandledException += (_, e) =>
             {
-                DataContext = new AppViewModel(store, gestures),
+                var what = CrashLog.Write("ui", e.Exception);
+                app.Toasts.Show($"Something went wrong ({what}). Details are in the log folder.");
+                e.Handled = true;
+            };
+            System.Threading.Tasks.TaskScheduler.UnobservedTaskException += (_, e) =>
+            {
+                CrashLog.Write("background", e.Exception);
+                e.SetObserved();
             };
         }
 

@@ -4,79 +4,177 @@
         xmlns:vm="using:Fig.App.ViewModels"
         x:Class="Fig.App.Views.ExportDialog"
         x:DataType="vm:ExportDialogViewModel"
-        Title="Export Timeline"
-        Width="460" Height="420"
+        Title="Export"
+        Width="560" MinHeight="420"
+        SizeToContent="Height"
         CanResize="False"
         WindowStartupLocation="CenterOwner"
-        Background="#252526">
+        Background="#1D1E20">
 
-    <StackPanel Margin="20" Spacing="12">
+    <Window.Styles>
+        <Style Selector="TextBlock.label"><Setter Property="Foreground" Value="#8A8A8A"/><Setter Property="FontSize" Value="12"/></Style>
+        <Style Selector="TextBlock.section"><Setter Property="FontSize" Value="13"/><Setter Property="FontWeight" Value="SemiBold"/></Style>
+        <Style Selector="Border.rule"><Setter Property="Height" Value="1"/><Setter Property="Background" Value="#2B2D31"/><Setter Property="Margin" Value="0,2"/></Style>
+    </Window.Styles>
 
-        <TextBlock Text="Export Timeline" Foreground="#dddddd"
-                   FontSize="16" FontWeight="SemiBold"/>
+    <StackPanel Margin="24" Spacing="16">
 
+        <!-- Title -->
+        <Grid ColumnDefinitions="*,Auto">
         <StackPanel Spacing="4">
-            <TextBlock Text="Resolution" Foreground="#8a8a8a" FontSize="11"/>
-            <ComboBox ItemsSource="{Binding Presets}"
-                      SelectedItem="{Binding SelectedPreset}"
-                      FontSize="12"/>
-            <Grid ColumnDefinitions="*,12,*" Margin="0,6,0,0">
-                <StackPanel Grid.Column="0" Spacing="2">
-                    <TextBlock Text="Width" Foreground="#8a8a8a" FontSize="11"/>
-                    <TextBox Text="{Binding Width, StringFormat={}{0}}" FontSize="12"
-                             Foreground="#dddddd" Background="#1e1e1e"
-                             BorderBrush="#333333" Padding="6,4"/>
-                </StackPanel>
-                <StackPanel Grid.Column="2" Spacing="2">
-                    <TextBlock Text="Height" Foreground="#8a8a8a" FontSize="11"/>
-                    <TextBox Text="{Binding Height, StringFormat={}{0}}" FontSize="12"
-                             Foreground="#dddddd" Background="#1e1e1e"
-                             BorderBrush="#333333" Padding="6,4"/>
-                </StackPanel>
+            <TextBlock IsVisible="{Binding IsSingle}" Text="Export timeline" FontSize="15" FontWeight="SemiBold"/>
+            <TextBlock IsVisible="{Binding ChapterMode}" Text="Export marked ranges" FontSize="15" FontWeight="SemiBold"/>
+            <TextBlock IsVisible="{Binding IsSingle}" Classes="label" Text="{Binding Subtitle}"/>
+            <TextBlock IsVisible="{Binding ChapterMode}" Classes="label" Text="Each checked range becomes a separate video file."/>
+        </StackPanel>
+            <Button Grid.Column="1" Classes="fig ghost icon" VerticalAlignment="Top" Click="Cancel_Click"
+                    ToolTip.Tip="Close" AutomationProperties.Name="Close">
+                <TextBlock Text="✕" HorizontalAlignment="Center" Foreground="#C8C8C8"/>
+            </Button>
+        </Grid>
+
+        <!-- ================= Marked ranges: list ================= -->
+        <StackPanel IsVisible="{Binding ChapterMode}" Spacing="12">
+            <Grid ColumnDefinitions="28,*,110,70" Background="#26272B" Margin="0">
+                <TextBlock Grid.Column="1" Classes="label" Margin="0,8" Text="Range / output file"/>
+                <TextBlock Grid.Column="2" Classes="label" Margin="0,8" Text="Start → End"/>
+                <TextBlock Grid.Column="3" Classes="label" Margin="0,8" Text="Duration"/>
             </Grid>
-            <TextBlock Text="{Binding SizeLabel}" Foreground="#6a6a6a" FontSize="11"/>
+
+            <TextBlock IsVisible="{Binding !Chapters.Count}" Classes="label" TextWrapping="Wrap"
+                       Text="This timeline has no marked ranges yet. Add range markers in the Markers panel, or create ranges from your bookmarks below."/>
+
+            <ScrollViewer MaxHeight="300" VerticalScrollBarVisibility="Auto">
+                <ItemsControl ItemsSource="{Binding Chapters}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:ExportChapterItem">
+                            <Border Background="#202124" CornerRadius="6" Margin="0,0,0,8" Padding="0,10">
+                                <Grid ColumnDefinitions="28,6,*,110,70">
+                                    <CheckBox Grid.Column="0" IsChecked="{Binding IsIncluded}" Margin="6,0,0,0" MinWidth="0"
+                                              VerticalAlignment="Center" AutomationProperties.Name="{Binding Name}"/>
+                                    <Border Grid.Column="1" Width="4" CornerRadius="2" Margin="0,2" Background="{Binding Color}"/>
+                                    <StackPanel Grid.Column="2" Margin="12,0,8,0" Spacing="4">
+                                        <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+                                        <TextBox Text="{Binding FileName}" FontSize="12" MinHeight="26" Padding="6,3"
+                                                 IsEnabled="{Binding IsIncluded}" BorderThickness="0" Background="Transparent"
+                                                 ToolTip.Tip="File name for this range"/>
+                                        <TextBlock IsVisible="{Binding HasProblem}" Text="{Binding Problem}" Foreground="#FF6B6B" FontSize="11"/>
+                                    </StackPanel>
+                                    <TextBlock Grid.Column="3" Classes="label" VerticalAlignment="Center" Text="{Binding RangeText}" FontFamily="monospace"/>
+                                    <TextBlock Grid.Column="4" Classes="label" VerticalAlignment="Center" Text="{Binding DurationText}"/>
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+
+            <TextBlock Classes="label" Text="{Binding ChapterSummary}"/>
+
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <Button Classes="fig" Content="Create ranges from bookmarks…" HorizontalAlignment="Left"
+                        IsVisible="{Binding HasBookmarks}" Click="CreateRanges_Click"/>
+                <ComboBox IsVisible="{Binding MarkerColors.Count}" MinWidth="150" PlaceholderText="All colors"
+                          ItemsSource="{Binding MarkerColors}" SelectedItem="{Binding SelectedColor}"
+                          ToolTip.Tip="Only list ranges with this marker color"/>
+                <Button Classes="fig ghost" Content="Show all" IsVisible="{Binding SelectedColor, Converter={x:Static ObjectConverters.IsNotNull}}"
+                        Click="ClearColor_Click" HorizontalAlignment="Left"/>
+            </StackPanel>
+
+            <Border Classes="rule"/>
+            <Grid ColumnDefinitions="*,Auto">
+                <StackPanel Spacing="4">
+                    <TextBlock Classes="section" Text="Output settings"/>
+                    <TextBlock Classes="label" Text="{Binding SummaryText}"/>
+                </StackPanel>
+                <Button Grid.Column="1" Classes="fig" Width="148" Content="Change settings…" VerticalAlignment="Center"
+                        Click="ToggleSettings_Click"/>
+            </Grid>
         </StackPanel>
 
-        <StackPanel Spacing="4">
-            <TextBlock Text="Frame rate" Foreground="#8a8a8a" FontSize="11"/>
-            <TextBlock Text="{Binding FpsLabel}" Foreground="#dddddd" FontSize="12"/>
-        </StackPanel>
+        <!-- ================= Format / resolution / quality (single export, or "Change settings") ================= -->
+        <StackPanel Spacing="16">
+            <StackPanel.IsVisible>
+                <MultiBinding Converter="{x:Static BoolConverters.Or}">
+                    <Binding Path="IsSingle"/>
+                    <Binding Path="ShowSettings"/>
+                </MultiBinding>
+            </StackPanel.IsVisible>
 
-        <StackPanel Spacing="4">
-            <DockPanel>
-                <TextBlock DockPanel.Dock="Right" Foreground="#8a8a8a" FontSize="11">
-                    <TextBlock.Text>
-                        <MultiBinding StringFormat="CRF {0} (lower = better)">
-                            <Binding Path="Quality"/>
-                        </MultiBinding>
-                    </TextBlock.Text>
+            <Border Background="#232427" CornerRadius="6" Padding="16,12">
+                <Grid ColumnDefinitions="*,Auto">
+                    <StackPanel Spacing="4">
+                        <TextBlock Text="MP4 video" FontWeight="SemiBold"/>
+                        <TextBlock Classes="label" Text="H.264 / AAC"/>
+                    </StackPanel>
+                    <TextBlock Grid.Column="1" VerticalAlignment="Center" Classes="label" Text="{Binding FpsLabel}"/>
+                </Grid>
+            </Border>
+
+            <StackPanel Spacing="8">
+                <TextBlock Classes="section" Text="Resolution"/>
+                <ComboBox ItemsSource="{Binding Presets}" SelectedItem="{Binding SelectedPreset}" HorizontalAlignment="Stretch"
+                          AutomationProperties.Name="Resolution preset"/>
+                <Grid ColumnDefinitions="*,16,*">
+                    <StackPanel Spacing="4">
+                        <TextBlock Classes="label" Text="Width"/>
+                        <TextBox Text="{Binding Width}" AutomationProperties.Name="Width"/>
+                    </StackPanel>
+                    <StackPanel Grid.Column="2" Spacing="4">
+                        <TextBlock Classes="label" Text="Height"/>
+                        <TextBox Text="{Binding Height}" AutomationProperties.Name="Height"/>
+                    </StackPanel>
+                </Grid>
+                <TextBlock Classes="label">
+                    <Run Text="{Binding SizeLabel}"/><Run Text=" · "/><Run Text="{Binding SizeNote}"/>
                 </TextBlock>
-                <TextBlock Text="Quality" Foreground="#8a8a8a" FontSize="11"/>
-            </DockPanel>
-            <local:FigSlider Minimum="18" Maximum="28" Value="{Binding Quality}"/>
+            </StackPanel>
+
+            <Border Classes="rule"/>
+
+            <StackPanel Spacing="8">
+                <Grid ColumnDefinitions="*,Auto">
+                    <TextBlock Classes="section" Text="Quality"/>
+                    <TextBlock Grid.Column="1" Classes="label" Text="{Binding QualityLabel}"/>
+                </Grid>
+                <local:FigSlider Minimum="0" Maximum="10" Value="{Binding QualityStep}"/>
+                <Grid ColumnDefinitions="*,Auto">
+                    <TextBlock Classes="label" Text="Smaller file"/>
+                    <TextBlock Grid.Column="1" Classes="label" Text="Higher quality"/>
+                </Grid>
+                <ToggleButton Classes="fig ghost" HorizontalAlignment="Left" IsChecked="{Binding ShowAdvanced}" Padding="0" MinHeight="24">
+                    <TextBlock Classes="label">
+                        <Run Text="Advanced ▾ "/><Run Text="{Binding CrfLabel}"/>
+                    </TextBlock>
+                </ToggleButton>
+                <StackPanel IsVisible="{Binding ShowAdvanced}" Spacing="4">
+                    <TextBlock Classes="label" Text="CRF (18 = best, 28 = smallest)"/>
+                    <NumericUpDown Value="{Binding Quality}" Minimum="0" Maximum="51" FormatString="0" Width="120" HorizontalAlignment="Left"/>
+                </StackPanel>
+            </StackPanel>
         </StackPanel>
 
-        <StackPanel Spacing="4">
-            <TextBlock Text="Output file" Foreground="#8a8a8a" FontSize="11"/>
-            <DockPanel>
-                <Button DockPanel.Dock="Right" Content="Browse…"
-                        Click="Browse_Click" Padding="10,4" FontSize="11"
-                        Margin="8,0,0,0" Background="#333333" Foreground="#cccccc"
-                        BorderThickness="0" CornerRadius="3"/>
-                <TextBox Text="{Binding OutputPath}" FontSize="12"
-                         Foreground="#dddddd" Background="#1e1e1e"
-                         BorderBrush="#333333" Padding="6,4"/>
-            </DockPanel>
+        <Border Classes="rule" IsVisible="{Binding IsSingle}"/>
+
+        <!-- ================= Destination ================= -->
+        <StackPanel Spacing="8">
+            <TextBlock IsVisible="{Binding IsSingle}" Classes="section" Text="Output file"/>
+            <TextBlock IsVisible="{Binding ChapterMode}" Classes="label" Text="Destination folder"/>
+            <Grid ColumnDefinitions="*,8,Auto">
+                <TextBox Text="{Binding OutputPath}" Watermark="Choose where to save" AutomationProperties.Name="Destination"/>
+                <Button Grid.Column="2" Classes="fig" Width="110" Content="Browse…" Click="Browse_Click"/>
+            </Grid>
+            <TextBlock IsVisible="{Binding ChapterMode}" Classes="label" Text="Existing filenames are reviewed before export."/>
         </StackPanel>
 
-        <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right" Margin="0,12,0,0">
-            <Button Content="Cancel" Width="90" IsCancel="True"
-                    Click="Cancel_Click" Padding="10,6"
-                    Background="#333333" Foreground="#cccccc" BorderThickness="0" CornerRadius="3"/>
-            <Button Content="Export" Width="90" IsDefault="True"
-                    Click="Export_Click" Padding="10,6"
-                    Background="#2a4a7a" Foreground="#ffffff" BorderThickness="0" CornerRadius="3"/>
-        </StackPanel>
+        <Border Classes="rule"/>
 
+        <!-- ================= Footer ================= -->
+        <Grid ColumnDefinitions="*,Auto,8,Auto">
+            <TextBlock Text="{Binding ValidationMessage}" Classes="label" TextWrapping="Wrap" VerticalAlignment="Center" Margin="0,0,12,0"/>
+            <Button Grid.Column="1" Classes="fig" Width="110" Content="Cancel" IsCancel="True" Click="Cancel_Click"/>
+            <Button Grid.Column="3" Classes="fig primary" MinWidth="140" Content="{Binding ExportButtonText}" IsDefault="True"
+                    IsEnabled="{Binding CanExport}" Click="Export_Click"/>
+        </Grid>
     </StackPanel>
 </Window>

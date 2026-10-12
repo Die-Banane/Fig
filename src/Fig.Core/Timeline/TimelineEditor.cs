@@ -429,6 +429,71 @@ namespace Fig.Core.Timeline
             return false;
         }
 
+        /// <summary>
+        /// True when moving the given clips to the given start times would make any of them overlap a clip
+        /// that is not moving with them (on the track each currently sits on).
+        /// </summary>
+        public bool WouldOverlapMove(IReadOnlyDictionary<string, double> newStarts)
+        {
+            foreach (var (id, start) in newStarts)
+            {
+                var clip = FindClip(id);
+                var track = FindClipTrack(id);
+                if (clip is null || track is null)
+                    continue;
+                var end = start + clip.DurSec;
+                foreach (var other in track.Clips)
+                {
+                    if (newStarts.ContainsKey(other.Id))
+                        continue;
+                    if (other.StartSec < end - 1e-9 && other.StartSec + other.DurSec > start + 1e-9)
+                        return true;
+                }
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// Records a drag that moved or trimmed clips live as one undo step. <paramref name="before"/> is how the
+        /// clips looked when the drag began; their current state is the result. Does nothing if nothing changed.
+        /// </summary>
+        public void CommitClipGeometry(IReadOnlyList<ClipGeometry> before)
+        {
+            var after = before.Select(b => FindClip(b.ClipId)).Where(c => c is not null)
+                .Select(c => ClipGeometry.Capture(c!)).ToList();
+            var changed = false;
+            for (var i = 0; i < before.Count && i < after.Count; i++)
+                changed |= before[i] != after[i];
+            if (!changed)
+                return;
+            History.Execute(new SetClipGeometryCommand(this, before, after));
+            RaiseChanged();
+        }
+
+        /// <summary>Unlinks the given clips and everything linked to them (they then move and cut separately).</summary>
+        public void UnlinkClips(IEnumerable<string> clipIds)
+        {
+            var changes = new Dictionary<string, string?>();
+            foreach (var id in clipIds)
+                foreach (var member in LinkGroup(id))
+                    changes[member.Id] = null;
+            if (changes.Count == 0)
+                return;
+            History.Execute(new SetLinkGroupsCommand(this, changes));
+            RaiseChanged();
+        }
+
+        /// <summary>Links two or more clips so they move, trim and cut together.</summary>
+        public void LinkClips(IEnumerable<string> clipIds)
+        {
+            var members = clipIds.SelectMany(id => LinkGroup(id)).GroupBy(c => c.Id).Select(g => g.First()).ToList();
+            if (members.Count < 2)
+                return;
+            var group = Guid.NewGuid().ToString("N");
+            History.Execute(new SetLinkGroupsCommand(this, members.ToDictionary(c => c.Id, _ => (string?)group)));
+            RaiseChanged();
+        }
+
         public void RippleInsert(string trackId, Clip clip, double posSec)
         {
             History.Execute(new RippleInsertCommand(this, trackId, clip, posSec));
@@ -551,56 +616,98 @@ namespace Fig.Core.Timeline
         /// </summary>
         public bool MagneticSnap { get; set; }
 
-        /// <summary>Snap threshold in seconds; scales with how zoomed in you are is overkill, fixed value is fine.</summary>
-        public const double MagneticSnapWindowSec = 0.25;
+        /// <summary>Default snap reach in seconds, used until the view sets a zoom-aware value.</summary>
+        public const double DefaultSnapWindowSec = 0.25;
 
         /// <summary>
-        /// Snaps a timeline time to the frame grid and, when magnetic snapping is on,
-        /// to the edge of any clip within the snap window.
+        /// How far (seconds) something may be from a snap target and still snap to it. The timeline sets this
+        /// from the zoom so the reach stays the same number of pixels.
         /// </summary>
-        public double SnapTimeMagnetic(double sec)
-        {
-            return SnapTimeMagnetic(sec, excludeClipId: null);
-        }
+        public double SnapWindowSec { get; set; } = DefaultSnapWindowSec;
 
         /// <summary>
-        /// Snaps to the frame grid and nearby clip boundaries, ignoring the clip with
-        /// <paramref name="excludeClipId"/> (and its link group). Used when resizing so a
-        /// clip snaps to *other* clips' edges, not its own.
+        /// Spacing (seconds) of the snap grid, or null for none. The grid is the timeline's visible gridlines;
+        /// it is what you snap to when no clip edge, marker or playhead is closer.
         /// </summary>
-        public double SnapTimeMagnetic(double sec, string? excludeClipId)
+        public double? SnapGridSec { get; set; }
+
+        /// <summary>The playhead position, offered as a snap target (set by the application).</summary>
+        public double? SnapPlayheadSec { get; set; }
+
+        /// <summary>Snaps a time and returns what it snapped to. See <see cref="SnapMagnetic"/>.</summary>
+        public double SnapTimeMagnetic(double sec) => SnapMagnetic(sec).Time;
+
+        /// <summary>
+        /// Snaps to the frame grid and nearby targets, ignoring the clip with <paramref name="excludeClipId"/>
+        /// (and its link group) and the marker with <paramref name="excludeMarkerId"/>. Used when dragging so
+        /// something snaps to *other* things, not itself.
+        /// </summary>
+        public double SnapTimeMagnetic(double sec, string? excludeClipId, string? excludeMarkerId = null)
+            => SnapMagnetic(sec, excludeClipId, excludeMarkerId).Time;
+
+        /// <summary>
+        /// Snapping with a reason. When magnetic snapping is on, the closest of these within
+        /// <see cref="SnapWindowSec"/> wins: clip edges, markers (and range edges), the playhead, the start of
+        /// the timeline; failing those, the nearest grid line; failing that, the nearest frame.
+        /// </summary>
+        public SnapResult SnapMagnetic(double sec, string? excludeClipId = null, string? excludeMarkerId = null,
+            bool includePlayhead = true, IReadOnlySet<string>? excludeClips = null)
         {
             var frame = SnapTime(sec);
             if (!MagneticSnap)
-                return frame;
+                return new SnapResult(frame, SnapKind.Frame);
 
             var excludeGroup = excludeClipId is null ? null : FindClip(excludeClipId)?.LinkGroupId;
 
-            // find the nearest clip boundary across all tracks
             double? best = null;
+            var bestKind = SnapKind.Frame;
             var bestDelta = double.MaxValue;
+
             foreach (var track in Document.Tracks)
-            {
                 foreach (var clip in track.Clips)
                 {
-                    if (clip.Id == excludeClipId || (excludeGroup is not null && clip.LinkGroupId == excludeGroup))
+                    if (clip.Id == excludeClipId || (excludeGroup is not null && clip.LinkGroupId == excludeGroup)
+                        || excludeClips?.Contains(clip.Id) == true)
                         continue;
-                    Consider(clip.StartSec);
-                    Consider(clip.StartSec + clip.DurSec);
+                    Consider(clip.StartSec, SnapKind.ClipEdge);
+                    Consider(clip.StartSec + clip.DurSec, SnapKind.ClipEdge);
                 }
+
+            foreach (var marker in Document.Markers)
+            {
+                if (marker.Id == excludeMarkerId)
+                    continue;
+                Consider(marker.StartSec, SnapKind.Marker);
+                if (marker.IsRange)
+                    Consider(marker.EndSec, SnapKind.Marker);
             }
 
-            // if any clip boundary is within the snap window, prefer the closest one;
-            // otherwise fall back to the frame grid
-            return best is double b ? b : frame;
+            if (includePlayhead && SnapPlayheadSec is { } playhead)
+                Consider(playhead, SnapKind.Playhead);
+            // the start of the timeline is something to catch on, but only once there is something to line up with
+            if (Document.Tracks.Any(t => t.Clips.Count > 0))
+                Consider(0, SnapKind.ClipEdge);
 
-            void Consider(double boundary)
+            if (best is { } hit)
+                return new SnapResult(hit, bestKind);
+
+            if (SnapGridSec is { } grid && grid > 1e-6)
             {
-                var delta = Math.Abs(boundary - sec);
-                if (delta <= MagneticSnapWindowSec && delta < bestDelta)
+                var line = Math.Round(sec / grid) * grid;
+                if (Math.Abs(line - sec) <= SnapWindowSec)
+                    return new SnapResult(SnapTime(line), SnapKind.Grid);
+            }
+
+            return new SnapResult(frame, SnapKind.Frame);
+
+            void Consider(double target, SnapKind kind)
+            {
+                var delta = Math.Abs(target - sec);
+                if (delta <= SnapWindowSec && delta < bestDelta)
                 {
                     bestDelta = delta;
-                    best = boundary;
+                    best = target;
+                    bestKind = kind;
                 }
             }
         }
@@ -703,6 +810,213 @@ namespace Fig.Core.Timeline
                 return;
             History.Execute(new AddEffectCommand(this, clipId, effect));
             RaiseChanged();
+        }
+
+        /// <summary>
+        /// Limits an effect to part of the clip (or, with null start and length, puts it back on the whole
+        /// clip). Keyframes are not affected: they keep animating the effect's values along the clip.
+        /// </summary>
+        public void SetEffectRange(string clipId, string effectId, double? startSec, double? durSec)
+        {
+            var clip = FindClip(clipId);
+            if (clip is null)
+                return;
+            if (startSec is { } s && durSec is { } d)
+            {
+                const double minLength = 0.1;
+                d = Math.Clamp(d, minLength, clip.DurSec);
+                s = Math.Clamp(s, 0, Math.Max(0, clip.DurSec - d));
+                startSec = s;
+                durSec = d;
+            }
+
+            ExecuteEffectEdit(clipId, effectId, "Change effect range", $"range|{clipId}|{effectId}", fx =>
+            {
+                fx.StartSec = startSec;
+                fx.DurSec = durSec;
+            });
+        }
+
+        private void ExecuteEffectEdit(string clipId, string effectId, string description, string? coalesceKey,
+            Action<EffectInstance> mutate)
+        {
+            if (FindClip(clipId)?.Effects.Any(e => e.Id == effectId) != true)
+                return;
+            var command = new EffectEditCommand(this, clipId, effectId, description, coalesceKey, mutate);
+            if (coalesceKey is null)
+                History.Execute(command);
+            else
+                History.ExecuteCoalescing(command);
+            RaiseChanged();
+        }
+
+        /// <summary>
+        /// Sets (or adds) the keyframe of an effect at a clip-relative time for every given parameter at once.
+        /// Dragging a value coalesces into one undo step.
+        /// </summary>
+        public void SetEffectKeyframe(string clipId, string effectId, double timeSec,
+            IReadOnlyDictionary<string, double> values, KeyframeEasing? easing = null)
+        {
+            ExecuteEffectEdit(clipId, effectId, "Set keyframe", $"kf|{clipId}|{effectId}|{Math.Round(timeSec, 4)}",
+                fx => UpsertKeyframes(fx, timeSec, values, easing));
+        }
+
+        /// <summary>
+        /// Adds a keyframe at a clip-relative time holding the effect's current look there, so adding it
+        /// changes nothing visible. Keyframes hold their first and last values outside their range, so a
+        /// single keyframe is already a valid (constant) animation. Returns the time keyed.
+        /// </summary>
+        public double? AddEffectKeyframe(string clipId, string effectId, double localSec)
+        {
+            var clip = FindClip(clipId);
+            var effect = clip?.Effects.FirstOrDefault(e => e.Id == effectId);
+            if (clip is null || effect is null)
+                return null;
+
+            var time = Math.Clamp(localSec, 0, clip.DurSec);
+            ExecuteEffectEdit(clipId, effectId, "Add keyframe", null,
+                fx => UpsertKeyframes(fx, time, CurrentNumericValues(fx, time), null));
+            return time;
+        }
+
+        /// <summary>
+        /// Turns animation on or off for an effect (the stopwatch). On: a keyframe at the given time holds
+        /// the current look. Off: every keyframe is removed and the look at that time becomes the constant value.
+        /// </summary>
+        public void SetEffectAnimated(string clipId, string effectId, bool animated, double localSec)
+        {
+            var clip = FindClip(clipId);
+            if (clip is null)
+                return;
+            var time = Math.Clamp(localSec, 0, clip.DurSec);
+            ExecuteEffectEdit(clipId, effectId, animated ? "Animate effect" : "Stop animating effect", null, fx =>
+            {
+                if (animated)
+                {
+                    if (fx.Keyframes.Count == 0)
+                        UpsertKeyframes(fx, time, CurrentNumericValues(fx, time), null);
+                    return;
+                }
+                var frozen = CurrentNumericValues(fx, time);
+                fx.Keyframes.Clear();
+                var schema = Fig.Core.Media.EffectCatalog.Find(fx.TypeId)?.ParamSchema ?? Array.Empty<ParamDef>();
+                foreach (var (key, number) in frozen)
+                {
+                    var kind = schema.FirstOrDefault(p => p.Key == key)?.Kind ?? ParamKind.Double;
+                    fx.Params[key] = kind == ParamKind.Int ? ParamValue.OfInt((int)Math.Round(number)) : ParamValue.OfDouble(number);
+                }
+            });
+        }
+
+        /// <summary>Copies the keyframe at one time to another time (same values and easing).</summary>
+        public void DuplicateEffectKeyframe(string clipId, string effectId, double fromSec, double toSec)
+        {
+            var clip = FindClip(clipId);
+            if (clip is null)
+                return;
+            toSec = Math.Clamp(toSec, 0, clip.DurSec);
+            ExecuteEffectEdit(clipId, effectId, "Duplicate keyframe", null, fx =>
+            {
+                foreach (var track in fx.Keyframes.Values)
+                {
+                    var i = track.FindIndex(p => Math.Abs(p.TimeSec - fromSec) < 1e-6);
+                    if (i < 0)
+                        continue;
+                    var copy = track[i] with { TimeSec = toSec };
+                    track.RemoveAll(p => Math.Abs(p.TimeSec - toSec) < 1e-6);
+                    track.Add(copy);
+                    track.Sort((a, b) => a.TimeSec.CompareTo(b.TimeSec));
+                }
+            });
+        }
+
+        private static Dictionary<string, double> CurrentNumericValues(EffectInstance fx, double localT)
+        {
+            var schema = Fig.Core.Media.EffectCatalog.Find(fx.TypeId)?.ParamSchema ?? Array.Empty<ParamDef>();
+            var resolved = Fig.Core.Media.EffectPipeline.ResolveParams(fx, localT);
+            var values = new Dictionary<string, double>();
+            foreach (var def in schema)
+                if (def.Kind is ParamKind.Double or ParamKind.Int && resolved.TryGetValue(def.Key, out var v))
+                    values[def.Key] = v.AsNumber;
+            return values;
+        }
+
+        private static void UpsertKeyframes(EffectInstance fx, double timeSec,
+            IReadOnlyDictionary<string, double> values, KeyframeEasing? easing)
+        {
+            var schema = Fig.Core.Media.EffectCatalog.Find(fx.TypeId)?.ParamSchema;
+            foreach (var (key, number) in values)
+            {
+                var kind = schema?.FirstOrDefault(p => p.Key == key)?.Kind ?? ParamKind.Double;
+                if (kind is not (ParamKind.Double or ParamKind.Int))
+                    continue;
+                var value = kind == ParamKind.Int ? ParamValue.OfInt((int)Math.Round(number)) : ParamValue.OfDouble(number);
+                if (!fx.Keyframes.TryGetValue(key, out var track))
+                    fx.Keyframes[key] = track = new List<KeyframePoint>();
+                var i = track.FindIndex(p => Math.Abs(p.TimeSec - timeSec) < 1e-6);
+                if (i >= 0)
+                    track[i] = new KeyframePoint(timeSec, value, easing ?? track[i].Easing);
+                else
+                {
+                    track.Add(new KeyframePoint(timeSec, value, easing ?? KeyframeEasing.EaseInOut));
+                    track.Sort((a, b) => a.TimeSec.CompareTo(b.TimeSec));
+                }
+            }
+        }
+
+        /// <summary>Removes the keyframe at a clip-relative time from every parameter of an effect.</summary>
+        public void RemoveEffectKeyframe(string clipId, string effectId, double timeSec)
+        {
+            ExecuteEffectEdit(clipId, effectId, "Delete keyframe", null, fx =>
+            {
+                foreach (var key in fx.Keyframes.Keys.ToList())
+                {
+                    fx.Keyframes[key].RemoveAll(p => Math.Abs(p.TimeSec - timeSec) < 1e-6);
+                    if (fx.Keyframes[key].Count == 0)
+                        fx.Keyframes.Remove(key);
+                }
+            });
+        }
+
+        /// <summary>
+        /// Moves a keyframe to a new time on every parameter of an effect. Pass the same
+        /// <paramref name="gesture"/> for every step of one drag so it undoes in one go.
+        /// </summary>
+        public void MoveEffectKeyframe(string clipId, string effectId, double fromSec, double toSec, string gesture)
+        {
+            var clip = FindClip(clipId);
+            if (clip is null)
+                return;
+            toSec = Math.Clamp(toSec, 0, clip.DurSec);
+            ExecuteEffectEdit(clipId, effectId, "Move keyframe", $"mv|{gesture}", fx =>
+            {
+                foreach (var key in fx.Keyframes.Keys.ToList())
+                {
+                    var track = fx.Keyframes[key];
+                    var i = track.FindIndex(p => Math.Abs(p.TimeSec - fromSec) < 1e-6);
+                    if (i < 0)
+                        continue;
+                    var point = track[i];
+                    track.RemoveAt(i);
+                    track.RemoveAll(p => Math.Abs(p.TimeSec - toSec) < 1e-6);
+                    track.Add(point with { TimeSec = toSec });
+                    track.Sort((a, b) => a.TimeSec.CompareTo(b.TimeSec));
+                }
+            });
+        }
+
+        /// <summary>Changes how the effect eases from the keyframe at a time to the next one.</summary>
+        public void SetEffectKeyframeEasing(string clipId, string effectId, double timeSec, KeyframeEasing easing)
+        {
+            ExecuteEffectEdit(clipId, effectId, "Change easing", null, fx =>
+            {
+                foreach (var track in fx.Keyframes.Values)
+                {
+                    var i = track.FindIndex(p => Math.Abs(p.TimeSec - timeSec) < 1e-6);
+                    if (i >= 0)
+                        track[i] = track[i] with { Easing = easing };
+                }
+            });
         }
 
         public void RemoveEffect(string clipId, string effectId)
@@ -1034,6 +1348,9 @@ namespace Fig.Core.Timeline
             RaiseChanged();
         }
 
+        /// <summary>The clip with this id, or null.</summary>
+        public Clip? FindClipForView(string clipId) => FindClip(clipId);
+
         internal Clip? FindClip(string clipId)
         {
             foreach (var track in Document.Tracks)
@@ -1082,8 +1399,9 @@ namespace Fig.Core.Timeline
                 Kind = kind,
                 Name = kind == TrackKind.Video ? $"V{CountTracks(TrackKind.Video) + 1}" : $"A{CountTracks(TrackKind.Audio) + 1}",
             };
-            Document.Tracks.Add(track);
-            ReindexTracks();
+            var before = Document.Tracks.ToList();
+            var after = new List<Track>(before) { track };
+            History.Execute(new SetTrackListCommand(this, "Add track", before, after));
             RaiseChanged();
             return track;
         }
@@ -1094,10 +1412,39 @@ namespace Fig.Core.Timeline
             if (track is null)
                 return false;
 
-            Document.Tracks.Remove(track);
-            ReindexTracks();
+            var before = Document.Tracks.ToList();
+            var after = before.Where(t => t.Id != trackId).ToList();
+            History.Execute(new SetTrackListCommand(this, "Delete track", before, after));
+            Selection.Clear();
             RaiseChanged();
             return true;
+        }
+
+        /// <summary>Shows or hides a video track (undoable; the preview and autosave follow).</summary>
+        public void SetTrackVisible(string trackId, bool visible)
+        {
+            if (FindTrack(trackId) is not { } track || track.Visible == visible)
+                return;
+            History.Execute(new SetTrackFlagCommand(track, muted: false, value: visible));
+            RaiseChanged();
+        }
+
+        /// <summary>Mutes or unmutes an audio track (undoable).</summary>
+        public void SetTrackMuted(string trackId, bool muted)
+        {
+            if (FindTrack(trackId) is not { } track || track.Muted == muted)
+                return;
+            History.Execute(new SetTrackFlagCommand(track, muted: true, value: muted));
+            RaiseChanged();
+        }
+
+        /// <summary>Renames a track (an empty name goes back to the automatic V1 / A1 style label).</summary>
+        public void RenameTrack(string trackId, string? name)
+        {
+            if (FindTrack(trackId) is not { } track)
+                return;
+            History.Execute(new RenameTrackCommand(track, name));
+            RaiseChanged();
         }
 
         private int CountTracks(TrackKind kind)
@@ -1208,6 +1555,77 @@ namespace Fig.Core.Timeline
             if (Selection.SelectedMarkerId == markerId)
                 Selection.SelectedMarkerId = null;
             RaiseChanged();
+        }
+
+        /// <summary>Adds a range marker to the timeline (one undo step).</summary>
+        public Marker AddRangeMarker(double startSec, double durSec, string name = "", string color = "#5f9cf8")
+        {
+            var cmd = new AddRangeMarkerCommand(Document, startSec, durSec, name, color);
+            History.Execute(cmd);
+            RaiseChanged();
+            return cmd.Marker;
+        }
+
+        /// <summary>
+        /// Creates a range from a timeline bookmark: with <paramref name="asStart"/> it runs from the
+        /// bookmark to the next bookmark (or the end of the sequence); otherwise from the previous
+        /// bookmark (or the start) to this one. Returns null when the bookmark is not a timeline
+        /// point marker or there is no room for a range.
+        /// </summary>
+        public Marker? AddRangeFromBookmark(string markerId, bool asStart)
+        {
+            var bookmark = Document.Markers.FirstOrDefault(m => m.Id == markerId && !m.IsRange);
+            if (bookmark is null)
+                return null;
+            var others = Document.Markers.Where(m => !m.IsRange && m.Id != bookmark.Id).ToList();
+            string fromName, toName;
+            double from, to;
+            if (asStart)
+            {
+                var next = others.Where(m => m.StartSec > bookmark.StartSec + 1e-3).OrderBy(m => m.StartSec).FirstOrDefault();
+                from = bookmark.StartSec;
+                to = next?.StartSec ?? BookmarkRanges.SequenceEndSec(Document);
+                fromName = bookmark.Name;
+                toName = next?.Name ?? "Sequence end";
+            }
+            else
+            {
+                var previous = others.Where(m => m.StartSec < bookmark.StartSec - 1e-3).OrderByDescending(m => m.StartSec).FirstOrDefault();
+                from = previous?.StartSec ?? 0;
+                to = bookmark.StartSec;
+                fromName = previous?.Name ?? "Sequence start";
+                toName = bookmark.Name;
+            }
+            if (to - from < 1e-3)
+                return null;
+            var name = $"{(string.IsNullOrWhiteSpace(fromName) ? "Bookmark" : fromName)} \u2192 {(string.IsNullOrWhiteSpace(toName) ? "Bookmark" : toName)}";
+            return AddRangeMarker(from, to - from, name, bookmark.Color);
+        }
+
+        /// <summary>Changes several marker fields at once (drags coalesce into one undo step).</summary>
+        public void EditMarker(string markerId, MarkerEdit edit)
+        {
+            if (FindMarker(markerId) is null)
+                return;
+            History.ExecuteCoalescing(new EditMarkerCommand(this, markerId, edit));
+            RaiseChanged();
+        }
+
+        /// <summary>
+        /// Creates one range marker per section between bookmarks. Existing markers are kept.
+        /// All new ranges undo together. Returns the markers created.
+        /// </summary>
+        public IReadOnlyList<Marker> CreateRangesFromBookmarks(bool includeSequenceBounds)
+        {
+            var plan = BookmarkRanges.Plan(Document, includeSequenceBounds);
+            if (plan.Count == 0)
+                return Array.Empty<Marker>();
+            var commands = plan
+                .Select(r => new AddRangeMarkerCommand(Document, r.StartSec, r.EndSec - r.StartSec, r.Name, r.Color))
+                .ToList();
+            History.Execute(commands.Count == 1 ? commands[0] : new CompositeCommand(commands.ToArray<IEditCommand>()));
+            RaiseChanged();
+            return commands.Select(c => c.Marker).ToList();
         }
 
         public void MoveMarker(string markerId, double newSec)

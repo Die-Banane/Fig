@@ -171,8 +171,43 @@ namespace Fig.Core.Timeline
         }
     }
 
-    /// <summary>One keyframe on a parameter track, in seconds relative to the clip start.</summary>
-    public readonly record struct KeyframePoint(double TimeSec, ParamValue Value);
+    /// <summary>How a value moves from a keyframe to the next one.</summary>
+    public enum KeyframeEasing
+    {
+        /// <summary>Constant speed.</summary>
+        Linear,
+        /// <summary>Starts slowly.</summary>
+        EaseIn,
+        /// <summary>Ends slowly.</summary>
+        EaseOut,
+        /// <summary>Starts and ends slowly.</summary>
+        EaseInOut,
+        /// <summary>Stays put until the next keyframe, then jumps.</summary>
+        Hold,
+    }
+
+    public static class KeyframeEasingMath
+    {
+        /// <summary>Maps linear progress 0..1 through an easing curve (0..1 in, 0..1 out).</summary>
+        public static double Apply(KeyframeEasing easing, double t)
+        {
+            t = Math.Clamp(t, 0, 1);
+            return easing switch
+            {
+                KeyframeEasing.EaseIn => t * t,
+                KeyframeEasing.EaseOut => 1 - (1 - t) * (1 - t),
+                KeyframeEasing.EaseInOut => t < 0.5 ? 2 * t * t : 1 - Math.Pow(-2 * t + 2, 2) / 2,
+                KeyframeEasing.Hold => t >= 1 ? 1 : 0,
+                _ => t,
+            };
+        }
+    }
+
+    /// <summary>
+    /// One keyframe on a parameter track, in seconds relative to the clip start.
+    /// <see cref="Easing"/> shapes the movement from this keyframe to the next.
+    /// </summary>
+    public readonly record struct KeyframePoint(double TimeSec, ParamValue Value, KeyframeEasing Easing = KeyframeEasing.Linear);
 
     /// <summary>One effect in a clip's ordered filter stack.</summary>
     public sealed class EffectInstance
@@ -181,6 +216,21 @@ namespace Fig.Core.Timeline
         public string TypeId { get; set; } = "";
         public bool Enabled { get; set; } = true;
         public int Order { get; set; }
+
+        /// <summary>
+        /// Optionally limits the effect to part of the clip (seconds from the clip start). Both null,
+        /// the default, means the whole clip. Keyframes are separate from this: they animate the
+        /// effect's values along the clip, and hold their first and last values outside their range.
+        /// </summary>
+        public double? StartSec { get; set; }
+        public double? DurSec { get; set; }
+
+        [System.Text.Json.Serialization.JsonIgnore]
+        public bool HasRange => StartSec is not null && DurSec is > 0;
+
+        /// <summary>True when the effect is in force at a clip-relative time (always, unless it was limited to part of the clip).</summary>
+        public bool IsActiveAt(double localT)
+            => !HasRange || (localT >= StartSec!.Value - 1e-9 && localT <= StartSec.Value + DurSec!.Value + 1e-9);
 
         /// <summary>Typed parameters keyed by name (schema lives in the catalog).</summary>
         public Dictionary<string, ParamValue> Params { get; set; } = new();
@@ -199,6 +249,8 @@ namespace Fig.Core.Timeline
                 TypeId = TypeId,
                 Enabled = Enabled,
                 Order = Order,
+                StartSec = StartSec,
+                DurSec = DurSec,
                 Params = new Dictionary<string, ParamValue>(Params),
                 Keyframes = CloneKeyframes(Keyframes),
             };
@@ -213,6 +265,8 @@ namespace Fig.Core.Timeline
                 TypeId = TypeId,
                 Enabled = Enabled,
                 Order = Order,
+                StartSec = StartSec,
+                DurSec = DurSec,
                 Params = new Dictionary<string, ParamValue>(Params),
                 Keyframes = CloneKeyframes(Keyframes),
             };
@@ -281,6 +335,7 @@ namespace Fig.Core.Timeline
         public string DisplayName { get; init; } = "";
         public string Icon { get; init; } = "wand-sparkles";
         public string Description { get; init; } = "";
+
         public IReadOnlyList<ParamDef> ParamSchema { get; init; } = Array.Empty<ParamDef>();
 
         public Dictionary<string, ParamValue> DefaultParams()

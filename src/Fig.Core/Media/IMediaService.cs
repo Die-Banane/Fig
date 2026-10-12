@@ -80,8 +80,19 @@ namespace Fig.Core.Media
         /// <summary>Random-access seek (used when scrubbing backwards or jumping).</summary>
         void Seek(double timeSec);
 
-        /// <summary>Current decode mode (scrub skips non-ref frames).</summary>
+        /// <summary>Current decode mode.</summary>
         PreviewDecodeMode Mode { get; set; }
+
+        /// <summary>
+        /// True when the last <see cref="PreviewDecodeMode.Scrub"/> frame is the nearest earlier keyframe
+        /// rather than the exact frame asked for. Decode again in <see cref="PreviewDecodeMode.Playback"/> to settle on it.
+        /// </summary>
+        bool LastFrameApproximate { get; }
+
+        /// <summary>
+        /// Polled while decoding; returning true abandons the current decode (a newer position arrived).
+        /// </summary>
+        Func<bool>? AbortRequested { get; set; }
 
         double LastPresentedTimeSec { get; }
     }

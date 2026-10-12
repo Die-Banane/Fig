@@ -83,42 +83,16 @@ public class TimelineViewportTests
 
 public class RulerCalculatorTests
 {
-    [Fact]
-    public void PickInterval_AdaptsToZoom()
+    [Theory]
+    [InlineData(10, 30, 15, 3)]       // zoomed out: 15 s majors
+    [InlineData(100, 30, 2, 4)]       // 100 px/s: a label every 2 s, ticks every half second
+    [InlineData(2000, 30, 2 / 30.0, 2)] // zoomed in: majors land on whole frames
+    public void PickScale_AdaptsToZoom_AndLandsOnNiceValues(double pps, double fps, double major, int divisions)
     {
-        // wide zoom -> larger interval so labels don't collide
-        Assert.Equal(10, RulerCalculator.PickInterval(10));
-        // tight zoom -> fine interval
-        Assert.Equal(1, RulerCalculator.PickInterval(100));
-        Assert.Equal(0.1, RulerCalculator.PickInterval(1000));
-    }
-
-    [Fact]
-    public void GetTicks_StartsAtOrAfterScroll()
-    {
-        var ticks = RulerCalculator.GetTicks(2.5, 12.5, 1, 5);
-        Assert.Equal(3, ticks[0].Time);
-        Assert.Equal(12, ticks[^1].Time);
-    }
-
-    [Fact]
-    public void GetTicks_MarksMajorEveryFive()
-    {
-        var ticks = RulerCalculator.GetTicks(0, 15, 1, 5);
-        var majors = ticks.Where(t => t.IsMajor).Select(t => t.Time).ToList();
-        Assert.Equal(new[] { 0.0, 5, 10, 15 }, majors);
-    }
-
-    [Fact]
-    public void Format_LargeInterval_UsesClock()
-    {
-        Assert.Equal("01:05", RulerCalculator.Format(65, 1));
-        Assert.Equal("00:00", RulerCalculator.Format(0, 1));
-    }
-
-    [Fact]
-    public void Format_SmallInterval_UsesDecimals()
-    {
-        Assert.Equal("1.5", RulerCalculator.Format(1.5, 0.1));
+        var scale = RulerCalculator.PickScale(pps, fps);
+        Assert.Equal(major, scale.MajorSec, 6);
+        Assert.Equal(divisions, scale.Divisions);
+        Assert.Equal(scale.MajorSec / divisions, scale.MinorSec, 9);
+        Assert.True(scale.MajorSec * pps >= 104);   // room for a timecode label
     }
 }

@@ -43,17 +43,11 @@ public static class IconService
         @"<path\b[^>]*\bd\s*=\s*[""'](?<d>[^""']*)[""']",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
-    private static readonly Regex CircleRegex = new(
-        @"<circle\b[^>]*\bcx\s*=\s*[""'](?<cx>[^""']*)[""'][^>]*\bcy\s*=\s*[""'](?<cy>[^""']*)[""'][^>]*\br\s*=\s*[""'](?<r>[^""']*)[""']",
-        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private static readonly Regex CircleRegex = new(@"<circle\b[^>]*>", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
-    private static readonly Regex LineRegex = new(
-        @"<line\b[^>]*\bx1\s*=\s*[""'](?<x1>[^""']*)[""'][^>]*\by1\s*=\s*[""'](?<y1>[^""']*)[""'][^>]*\bx2\s*=\s*[""'](?<x2>[^""']*)[""'][^>]*\by2\s*=\s*[""'](?<y2>[^""']*)[""']",
-        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private static readonly Regex LineRegex = new(@"<line\b[^>]*>", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
-    private static readonly Regex RectRegex = new(
-        @"<rect\b[^>]*\bx\s*=\s*[""'](?<x>[^""']*)[""'][^>]*\by\s*=\s*[""'](?<y>[^""']*)[""'][^>]*\bwidth\s*=\s*[""'](?<w>[^""']*)[""'][^>]*\bheight\s*=\s*[""'](?<h>[^""']*)[""']",
-        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private static readonly Regex RectRegex = new(@"<rect\b[^>]*>", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     private static readonly Regex PolylineRegex = new(
         @"<(?:polyline|polygon)\b[^>]*\bpoints\s*=\s*[""'](?<pts>[^""']*)[""']",
@@ -77,31 +71,29 @@ public static class IconService
             foreach (Match match in PathDataRegex.Matches(svg))
                 paths.Add(StreamGeometry.Parse(match.Groups["d"].Value));
 
+            // read attributes by name, so the order they appear in the SVG doesn't matter
             foreach (Match match in CircleRegex.Matches(svg))
             {
-                var cx = double.Parse(match.Groups["cx"].Value, System.Globalization.CultureInfo.InvariantCulture);
-                var cy = double.Parse(match.Groups["cy"].Value, System.Globalization.CultureInfo.InvariantCulture);
-                var r = double.Parse(match.Groups["r"].Value, System.Globalization.CultureInfo.InvariantCulture);
-                paths.Add(StreamGeometry.Parse(CirclePath(cx, cy, r)));
+                if (GetAttr(match.Value, "cx", out var cx) && GetAttr(match.Value, "cy", out var cy) && GetAttr(match.Value, "r", out var r))
+                    paths.Add(StreamGeometry.Parse(CirclePath(cx, cy, r)));
             }
 
             foreach (Match match in LineRegex.Matches(svg))
             {
-                var x1 = double.Parse(match.Groups["x1"].Value, System.Globalization.CultureInfo.InvariantCulture);
-                var y1 = double.Parse(match.Groups["y1"].Value, System.Globalization.CultureInfo.InvariantCulture);
-                var x2 = double.Parse(match.Groups["x2"].Value, System.Globalization.CultureInfo.InvariantCulture);
-                var y2 = double.Parse(match.Groups["y2"].Value, System.Globalization.CultureInfo.InvariantCulture);
-                paths.Add(StreamGeometry.Parse($"M{x1},{y1}L{x2},{y2}"));
+                if (GetAttr(match.Value, "x1", out var x1) && GetAttr(match.Value, "y1", out var y1)
+                    && GetAttr(match.Value, "x2", out var x2) && GetAttr(match.Value, "y2", out var y2))
+                    paths.Add(StreamGeometry.Parse($"M{x1.ToString(System.Globalization.CultureInfo.InvariantCulture)},{y1.ToString(System.Globalization.CultureInfo.InvariantCulture)}L{x2.ToString(System.Globalization.CultureInfo.InvariantCulture)},{y2.ToString(System.Globalization.CultureInfo.InvariantCulture)}"));
             }
 
             foreach (Match match in RectRegex.Matches(svg))
             {
-                var x = double.Parse(match.Groups["x"].Value, System.Globalization.CultureInfo.InvariantCulture);
-                var y = double.Parse(match.Groups["y"].Value, System.Globalization.CultureInfo.InvariantCulture);
-                var w = double.Parse(match.Groups["w"].Value, System.Globalization.CultureInfo.InvariantCulture);
-                var h = double.Parse(match.Groups["h"].Value, System.Globalization.CultureInfo.InvariantCulture);
-                var rx = GetAttr(match.Value, "rx", out var rxV) ? rxV : 0;
-                paths.Add(StreamGeometry.Parse(RectPath(x, y, w, h, rx)));
+                GetAttr(match.Value, "x", out var x);
+                GetAttr(match.Value, "y", out var y);
+                if (GetAttr(match.Value, "width", out var w) && GetAttr(match.Value, "height", out var h))
+                {
+                    var rx = GetAttr(match.Value, "rx", out var rxV) ? rxV : 0;
+                    paths.Add(StreamGeometry.Parse(RectPath(x, y, w, h, rx)));
+                }
             }
 
             foreach (Match match in PolylineRegex.Matches(svg))

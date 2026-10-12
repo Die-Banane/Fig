@@ -87,9 +87,14 @@ namespace Fig.Core.Media
                 encCtx->width = outW;
                 encCtx->height = outH;
                 encCtx->pix_fmt = AVPixelFormat.AV_PIX_FMT_YUV420P;
-                encCtx->time_base = new AVRational { num = 1, den = 30 };
-                encCtx->framerate = new AVRational { num = 30, den = 1 };
-                encCtx->gop_size = 30;
+                // keep the source's frame rate and frame times: a proxy must be the same length as its source
+                var fps = inStream->avg_frame_rate.num > 0 && inStream->avg_frame_rate.den > 0
+                    ? inStream->avg_frame_rate
+                    : new AVRational { num = 30, den = 1 };
+                encCtx->framerate = fps;
+                encCtx->time_base = new AVRational { num = fps.den, den = fps.num };
+                // every frame a keyframe: any frame decodes on its own, so scrubbing is instant
+                encCtx->gop_size = 1;
                 encCtx->max_b_frames = 0;
                 // mp4 needs global headers
                 if ((outCtx->oformat->flags & ffmpeg.AVFMT_GLOBALHEADER) != 0)
@@ -123,6 +128,7 @@ namespace Fig.Core.Media
                 packet = ffmpeg.av_packet_alloc();
 
                 long outPts = 0;
+                long firstTs = long.MinValue;
                 AVPixelFormat swsFmt = AVPixelFormat.AV_PIX_FMT_NONE;
                 var swsSrcW = 0;
                 var swsSrcH = 0;
@@ -145,7 +151,7 @@ namespace Fig.Core.Media
 
                             ffmpeg.sws_scale(sws, inFrame->data, inFrame->linesize, 0, inFrame->height,
                                 outFrame->data, outFrame->linesize);
-                            outPts = EncodeFrame(encCtx, outCtx, outStream, outFrame, outPts);
+                            outPts = EncodeFrame(encCtx, outCtx, outStream, outFrame, ProxyPts(inFrame, ref firstTs, outPts, inStream->time_base, encCtx->time_base));
                         }
                     }
                     finally
@@ -163,7 +169,7 @@ namespace Fig.Core.Media
                         continue;
                     ffmpeg.sws_scale(sws, inFrame->data, inFrame->linesize, 0, inFrame->height,
                         outFrame->data, outFrame->linesize);
-                    outPts = EncodeFrame(encCtx, outCtx, outStream, outFrame, outPts);
+                    outPts = EncodeFrame(encCtx, outCtx, outStream, outFrame, ProxyPts(inFrame, ref firstTs, outPts, inStream->time_base, encCtx->time_base));
                 }
 
                 EncodeFrame(encCtx, outCtx, outStream, null, outPts);
@@ -232,6 +238,20 @@ namespace Fig.Core.Media
                     ffmpeg.avformat_free_context(outCtx);
                 }
             }
+        }
+
+        /// <summary>
+        /// The frame's number on the proxy's clock, from the source frame's own timestamp (never backwards,
+        /// so odd timestamps can't upset the encoder).
+        /// </summary>
+        private static unsafe long ProxyPts(AVFrame* frame, ref long firstTs, long minPts, AVRational srcBase, AVRational dstBase)
+        {
+            var ts = frame->best_effort_timestamp;
+            if (ts == ffmpeg.AV_NOPTS_VALUE)
+                return minPts;
+            if (firstTs == long.MinValue)
+                firstTs = ts;
+            return Math.Max(minPts, ffmpeg.av_rescale_q(ts - firstTs, srcBase, dstBase));
         }
 
         private static void TryDelete(string path)

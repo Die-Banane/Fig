@@ -18,13 +18,20 @@ namespace Fig.Core.Media
         /// painters-algorithm compositor), so the export matches what the preview shows.
         /// </summary>
         public unsafe void RenderTimeline(ProjectModel project, TimelineModel timeline,
-            string outputPath, int width, int height, int crf = 23, Action<double>? progress = null)
+            string outputPath, int width, int height, int crf = 23, Action<double>? progress = null,
+            double? rangeStartSec = null, double? rangeEndSec = null)
         {
             if (timeline.Tracks.Count == 0)
                 throw new InvalidOperationException("Timeline has no tracks");
             var end = TimelineEndSec(timeline);
             if (end <= 0)
                 throw new InvalidOperationException("Timeline is empty");
+            // optional sub-range (e.g. one marked section); the output always starts at 0
+            var start = Math.Clamp(rangeStartSec ?? 0, 0, end);
+            end = Math.Clamp(rangeEndSec ?? end, start, end);
+            if (end - start <= 0)
+                throw new InvalidOperationException("The selected range is empty");
+            var length = end - start;
             if (timeline.Rate.Fps <= 0)
                 throw new InvalidOperationException("Timeline has no frame rate");
 
@@ -111,10 +118,10 @@ namespace Fig.Core.Media
                     // ---- video frames ----
                     var canvas = new byte[width * height * 4];
                     var srcStride = width * 4;
-                    var totalFrames = (long)Math.Round(end * fps);
+                    var totalFrames = Math.Max(1, (long)Math.Round(length * fps));
                     for (var f = 0L; f < totalFrames; f++)
                     {
-                        var t = f / (double)fps;
+                        var t = start + f / (double)fps;
                         ComposeCanvas(project, timeline, sources, t, width, height, canvas);
 
                         fixed (byte* pCanvas = canvas)
@@ -130,7 +137,7 @@ namespace Fig.Core.Media
                         ffmpeg.sws_scale(sws, bgra->data, bgra->linesize, 0, height, yuv->data, yuv->linesize);
                         yuv->pts = f;
                         EncodeFrame(vEnc, outCtx, vStream, yuv, f);
-                        progress?.Invoke(Math.Min(1, t / end));
+                        progress?.Invoke(Math.Min(1, (t - start) / length));
                     }
                     EncodeFrame(vEnc, outCtx, vStream, null, totalFrames);
 
@@ -138,7 +145,7 @@ namespace Fig.Core.Media
                     var mixer = new AudioMixer(this, id => project.Media.FirstOrDefault(m => m.Id == id));
                     var aPts = 0L;
                     const int chunkFrames = 1024;
-                    var pos = 0.0;
+                    var pos = start;
                     while (pos < end - 1e-6)
                     {
                         var dur = Math.Min(chunkFrames / (double)AudioMixer.SampleRate, end - pos);
@@ -308,7 +315,7 @@ namespace Fig.Core.Media
             var sourceEnd = sourceStart + Math.Max(0, asset.DurationSec - 1e-4);
             srcTime = Math.Clamp(srcTime, sourceStart, Math.Max(sourceStart, sourceEnd));
 
-            var path = asset.PlaybackVideoPath;
+            var path = asset.Url;   // exports always read the original, never the preview proxy
             var decoderKey = $"{clip.Id}|{path}";
             if (!sources.TryGetValue(decoderKey, out var source))
             {

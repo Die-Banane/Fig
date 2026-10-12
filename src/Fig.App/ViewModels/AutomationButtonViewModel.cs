@@ -31,12 +31,17 @@ public sealed class AutomationButtonViewModel : ViewModelBase
 
     public ICommand ToggleCommand { get; }
 
+    /// <summary>Jumps to the previous (parameter "False") or next ("True") keyframe.</summary>
+    public ICommand StepCommand { get; }
+
     public AutomationButtonViewModel(PropertiesViewModel host, string key, Func<double> value)
     {
         _host = host;
         _key = key;
         _value = value;
         ToggleCommand = new RelayCommand(Toggle);
+        StepCommand = new RelayCommand<object?>(forward =>
+            _host.StepAutomation(_key, string.Equals(forward?.ToString(), "True", StringComparison.OrdinalIgnoreCase)));
     }
 
     /// <summary>Recomputes <see cref="IsKeyframed"/> against the current playhead.</summary>

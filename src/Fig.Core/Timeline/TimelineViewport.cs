@@ -11,6 +11,9 @@ namespace Fig.Core.Timeline
         private double _scrollTime;
         private double _pixelsPerSecond = DefaultPixelsPerSecond;
 
+        /// <summary>Raised when the zoom level or scroll position changes.</summary>
+        public event Action? Changed;
+
         public double ScrollTime => _scrollTime;
 
         public double PixelsPerSecond => _pixelsPerSecond;
@@ -38,6 +41,7 @@ namespace Fig.Core.Timeline
         public void SetScrollTime(double time)
         {
             _scrollTime = Math.Max(0, time);
+            Changed?.Invoke();
         }
 
         public void ScrollBy(double seconds)
@@ -48,6 +52,7 @@ namespace Fig.Core.Timeline
         public void SetPixelsPerSecond(double pps)
         {
             _pixelsPerSecond = Math.Clamp(pps, MinPixelsPerSecond, MaxPixelsPerSecond);
+            Changed?.Invoke();
         }
 
         /// <summary>
@@ -63,6 +68,7 @@ namespace Fig.Core.Timeline
 
             _pixelsPerSecond = newPps;
             _scrollTime = Math.Max(0, timeAtCursor - cursorX / newPps);
+            Changed?.Invoke();
         }
     }
 }

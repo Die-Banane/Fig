@@ -48,6 +48,7 @@ namespace Fig.Core.Timeline
                 {
                     var span = b.TimeSec - a.TimeSec;
                     var u = span <= 1e-9 ? 0 : (t - a.TimeSec) / span;
+                    u = KeyframeEasingMath.Apply(a.Easing, u);
                     return a.Value.AsNumber + (b.Value.AsNumber - a.Value.AsNumber) * u;
                 }
             }

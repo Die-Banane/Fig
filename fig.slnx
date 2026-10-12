@@ -4,6 +4,7 @@
     <Project Path="src/Fig.Core/Fig.Core.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/Fig.App.Tests/Fig.App.Tests.csproj" />
     <Project Path="tests/Fig.Core.Tests/Fig.Core.Tests.csproj" />
   </Folder>
   <Folder Name="/tools/">

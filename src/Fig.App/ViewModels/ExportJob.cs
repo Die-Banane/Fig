@@ -24,9 +24,11 @@ public partial class ExportJob : ViewModelBase
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(StatusLabel))]
     [NotifyPropertyChangedFor(nameof(IsActive))]
+    [NotifyPropertyChangedFor(nameof(IsDone))]
     private ExportJobStatus _status = ExportJobStatus.Queued;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(StatusLabel))]
     private double _progress;
 
     [ObservableProperty]
@@ -46,11 +48,12 @@ public partial class ExportJob : ViewModelBase
     public string StatusLabel => Status switch
     {
         ExportJobStatus.Queued => "Queued",
-        ExportJobStatus.Running => "Exporting…",
-        ExportJobStatus.Done => "Done",
+        ExportJobStatus.Running => $"Exporting \u00b7 {Math.Clamp(Progress, 0, 1) * 100:0}%",
+        ExportJobStatus.Done => "Complete",
         ExportJobStatus.Failed => "Failed",
         _ => "",
     };
+    public bool IsDone => Status == ExportJobStatus.Done;
     public bool IsActive => Status is ExportJobStatus.Queued or ExportJobStatus.Running;
     public bool HasError => Error is not null;
 }

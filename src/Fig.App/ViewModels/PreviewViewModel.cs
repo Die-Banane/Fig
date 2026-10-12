@@ -58,6 +58,13 @@ public partial class PreviewViewModel : ViewModelBase
     // The preview canvas follows the project's dominant video aspect instead of being
     // hardcoded 16:9. Set from the first video asset; layers that don't match are
     // letterboxed by the decoder, never stretched.
+    /// <summary>The zoom-region controls drawn over the picture (null until an editor is attached).</summary>
+    public TransformControlsViewModel? Transform => _editor?.Properties?.Transform;
+    public SwirlControlsViewModel? Swirl => _editor?.Properties?.Swirl;
+
+    /// <summary>Width ÷ height of the preview picture.</summary>
+    public double CanvasAspect => _baseCanvasW / (double)Math.Max(1, _baseCanvasH);
+
     private int _baseCanvasW = 640;
     private int _baseCanvasH = 360;
 
@@ -72,7 +79,7 @@ public partial class PreviewViewModel : ViewModelBase
     // ahead of the playhead, and the UI thread presents each frame at its scheduled time on the
     // audio clock (mirrors the audio ring-buffer producer/consumer model — decode is decoupled
     // from presentation, so slow decode drops frames instead of making video lag the audio).
-    private const int PresentQueueDepth = 3;
+    private const int PresentQueueDepth = 5;
     private readonly object _presentLock = new();
     private readonly List<(double TimeSec, int Width, int Height, byte[] Pixels)> _presentQueue = new();
     private double _nextPlaybackDecodeSec = -1;
@@ -80,6 +87,8 @@ public partial class PreviewViewModel : ViewModelBase
     private readonly HashSet<string> _failedPaths = new();
     private readonly PreviewFrameCache _frameCache = new(capacity: 64, bucketSec: 1.0 / 30.0);
     private double _lastRequestSec = -1;
+    private bool _composeApproximate;   // the last compose used a stand-in keyframe
+    private volatile bool _exactPass;   // an exact settle decode is running (may be abandoned)
 
     /// <summary>Invoked on the UI thread with a freshly composited BGRA frame to present.</summary>
     public event Action<int, int, byte[]>? FrameReady;
@@ -119,6 +128,8 @@ public partial class PreviewViewModel : ViewModelBase
     /// </summary>
     partial void OnPreviewScaleChanged(PreviewScaleOption value)
     {
+        if (value is null)
+            return;   // a ComboBox briefly reports "nothing selected" while its list refreshes
         var height = Math.Clamp(value.Height, 90, 2160);
         _targetHeight = height;
         _targetWidth = Math.Max(1, (int)Math.Round(_baseCanvasW * height / (double)_baseCanvasH));
@@ -349,7 +360,29 @@ public partial class PreviewViewModel : ViewModelBase
         _ = System.Threading.Tasks.Task.Run(DecodeWorkerAsync);
     }
 
+    /// <summary>
+    /// Runs the decode loop. Whatever goes wrong inside it, the worker must end cleanly: a worker that dies
+    /// while still marked running would leave the preview frozen until the app restarts.
+    /// </summary>
     private async Task DecodeWorkerAsync()
+    {
+        try
+        {
+            await DecodeWorkerLoopAsync();
+        }
+        catch (Exception ex)
+        {
+            var what = Fig.App.Services.CrashLog.Write("preview-decode", ex);
+            SetDecodeStatus($"Preview stopped: {what}");
+            lock (_decodeLock)
+            {
+                _pendingPlayhead = null;
+                _decodeRunning = false;
+            }
+        }
+    }
+
+    private async Task DecodeWorkerLoopAsync()
     {
         while (true)
         {
@@ -374,9 +407,17 @@ public partial class PreviewViewModel : ViewModelBase
             }
 
             if (_editor is { IsPlaying: true })
+            {
                 FillPlaybackQueue(target);
+            }
             else
-                await DecodeOneFrameAsync(target);
+            {
+                // Scrubbing: show the nearest keyframe at once so the picture keeps up with the hand,
+                // then settle on the exact frame if the playhead has stopped moving.
+                await DecodeOneFrameAsync(target, fast: true);
+                if (_composeApproximate && !HasNewerRequest())
+                    await DecodeOneFrameAsync(target, fast: false);
+            }
 
             lock (_decodeLock)
             {
@@ -427,7 +468,7 @@ public partial class PreviewViewModel : ViewModelBase
             // decode outside the lock so presentation on the UI thread never blocks on it
             var size = _targetWidth * _targetHeight * 4;
             var buffer = FramePool.Rent(size);
-            if (ComposeFrame(target, buffer, out _))
+            if (ComposeFrame(target, buffer, fast: false, out _))
             {
                 lock (_presentLock)
                     _presentQueue.Add((target, _targetWidth, _targetHeight, buffer));
@@ -500,10 +541,18 @@ public partial class PreviewViewModel : ViewModelBase
         }
     }
 
-    private async Task DecodeOneFrameAsync(double target)
+    /// <summary>True when the playhead moved (or a reset arrived) since the current decode began.</summary>
+    private bool HasNewerRequest()
+    {
+        lock (_decodeLock)
+            return _pendingPlayhead is not null || _pendingReset;
+    }
+
+    private async Task DecodeOneFrameAsync(double target, bool fast)
     {
         try
         {
+            _exactPass = !fast;
             var size = _targetWidth * _targetHeight * 4;
             var pixels = _composeBuffer;
             if (pixels is null || pixels.Length < size)
@@ -512,11 +561,15 @@ public partial class PreviewViewModel : ViewModelBase
                 _composeBuffer = pixels;
             }
 
-            if (!ComposeFrame(target, pixels, out var status))
+            if (!ComposeFrame(target, pixels, fast, out var status))
             {
                 SetDecodeStatus(status);
                 return;
             }
+
+            // an exact pass abandoned for a newer position holds a stale picture: don't show it
+            if (!fast && HasNewerRequest())
+                return;
 
             if (Dispatcher.UIThread.CheckAccess())
                 FrameReady?.Invoke(_targetWidth, _targetHeight, pixels);
@@ -530,6 +583,10 @@ public partial class PreviewViewModel : ViewModelBase
         {
             SetDecodeStatus("Decode failed");
         }
+        finally
+        {
+            _exactPass = false;
+        }
     }
 
     /// <summary>
@@ -538,15 +595,16 @@ public partial class PreviewViewModel : ViewModelBase
     /// is nothing to show. Used by both the scrub path (into the reused compose buffer, then
     /// presented immediately) and the playback FIFO (into fresh pooled buffers).
     /// </summary>
-    private bool ComposeFrame(double target, byte[] pixels, out string status)
+    private bool ComposeFrame(double target, byte[] pixels, bool fast, out string status)
     {
         status = "";
+        _composeApproximate = false;
         try
         {
             // Runs on the decode worker's thread pool thread.
             var needsSeek = target < _lastRequestSec - 0.05;
             var scrubbing = _editor is not { IsPlaying: true };
-            var decodeMode = scrubbing ? PreviewDecodeMode.Scrub : PreviewDecodeMode.Playback;
+            var decodeMode = scrubbing && fast ? PreviewDecodeMode.Scrub : PreviewDecodeMode.Playback;
             _lastRequestSec = target;
 
             var document = _editor?.Editor.Document;
@@ -671,7 +729,9 @@ public partial class PreviewViewModel : ViewModelBase
         }
 
         var frame = source.DecodeForward(layer.TimeSec, mode);
-        if (frame is not null)
+        if (source.LastFrameApproximate)
+            _composeApproximate = true;   // a stand-in keyframe: never cache it under this time
+        else if (frame is not null)
             _frameCache.Put(layer.SourcePath, layer.TimeSec, _targetWidth, _targetHeight, frame);
         return frame;
     }
@@ -726,7 +786,9 @@ public partial class PreviewViewModel : ViewModelBase
                 source.Seek(srcTime);
             }
             frame = source.DecodeForward(srcTime, mode);
-            if (frame is not null)
+            if (source.LastFrameApproximate)
+                _composeApproximate = true;
+            else if (frame is not null)
                 _frameCache.Put(path, srcTime, _targetWidth, _targetHeight, frame);
             return frame is not null;
         }
@@ -749,6 +811,8 @@ public partial class PreviewViewModel : ViewModelBase
             try
             {
                 source = _media.OpenVideoSource(path, _targetWidth, _targetHeight);
+                // an exact settle pass gives way as soon as the playhead moves again
+                source.AbortRequested = () => _exactPass && HasNewerRequest();
                 _sources[decoderKey] = source;
                 return true;
             }

@@ -1,0 +1,451 @@
+using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.Linq;
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
+using Fig.Core.Media;
+using Fig.Core.Timeline;
+
+namespace Fig.App.ViewModels;
+
+/// <summary>
+/// Controls for the selected Transform effect (zoom, pan, rotate). The effect covers the whole clip.
+/// While <see cref="IsAnimated"/> is off, the frame you set is the same everywhere. Turn animating on
+/// (the stopwatch) and changes at the playhead become keyframes; values hold before the first and
+/// after the last keyframe.
+/// </summary>
+public sealed partial class TransformControlsViewModel : ViewModelBase
+{
+    private readonly PropertiesViewModel _host;
+    private readonly EditorViewModel _editor;
+    private bool _refreshing;
+
+    /// <summary>Names in the same order as <see cref="KeyframeEasing"/>.</summary>
+    public static readonly string[] EasingNames = ["Linear", "Ease in", "Ease out", "Ease in & out", "Hold"];
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowOverlay))]
+    private bool _isActive;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowOverlay))]
+    private bool _effectsTabOpen;
+
+    // the camera at the playhead
+    [ObservableProperty] private double _centerX = 0.5;
+    [ObservableProperty] private double _centerY = 0.5;
+    [ObservableProperty] private double _zoom = 1;
+    [ObservableProperty] private double _rotation;
+
+    [ObservableProperty] private double _frameAspect = 16.0 / 9.0;
+
+    [ObservableProperty] private string _clipLabel = "";
+    [ObservableProperty] private string _timeText = "";
+    [ObservableProperty] private string _zoomText = "1.00";
+    [ObservableProperty] private string _rotationText = "0";
+    [ObservableProperty] private string _limitLengthText = "";
+    [ObservableProperty] private string _summary = "";
+    [ObservableProperty] private string _hint = "";
+    [ObservableProperty] private bool _isOnKeyframe;
+    [ObservableProperty] private int _easingIndex = 3;
+
+    /// <summary>The stopwatch: changes at the playhead make keyframes. Off means one look for the whole clip.</summary>
+    [ObservableProperty] private bool _isAnimated;
+
+    /// <summary>The effect is limited to part of the clip (otherwise it covers all of it).</summary>
+    [ObservableProperty] private bool _hasLimit;
+
+    // what the keyframe ruler draws
+    [ObservableProperty] private double _clipDurationSec = 1;
+    [ObservableProperty] private double _playheadLocal;
+    [ObservableProperty] private double? _selectedKeyframe;
+    [ObservableProperty] private double? _limitStart;
+    [ObservableProperty] private double? _limitEnd;
+    public IReadOnlyList<double> KeyTimes { get; private set; } = Array.Empty<double>();
+
+    /// <summary>Where the camera looks at each keyframe, in order (the path drawn on the preview).</summary>
+    public IReadOnlyList<(double X, double Y)> Path { get; private set; } = Array.Empty<(double, double)>();
+
+    public string AspectText { get; private set; } = "16:9 · Locked";
+
+    public bool ShowOverlay => IsActive && EffectsTabOpen && _host.ShowPreviewControls;
+
+    public TransformControlsViewModel(PropertiesViewModel host, EditorViewModel editor)
+    {
+        _host = host;
+        _editor = editor;
+    }
+
+    public void NotifyControlsVisibilityChanged() => OnPropertyChanged(nameof(ShowOverlay));
+
+    private (Clip Clip, EffectInstance Effect)? Selected()
+        => _host.SelectedEffectInstance() is { Effect.TypeId: EffectCatalog.Transform } sel ? sel : null;
+
+    private static List<double> TimesOf(EffectInstance fx)
+        => fx.Keyframes.Values.SelectMany(tr => tr.Select(k => Math.Round(k.TimeSec, 6))).Distinct().OrderBy(t => t).ToList();
+
+    /// <summary>Clip-relative time being edited: the playhead, snapped onto a keyframe when it is on one.</summary>
+    private double EditTime(Clip clip, EffectInstance fx)
+    {
+        var t = Math.Clamp(_editor.PlayheadTimeSec - clip.StartSec, 0, clip.DurSec);
+        var tolerance = 0.5 / Math.Max(1, _editor.Editor.Document.Rate.Fps);
+        foreach (var k in TimesOf(fx))
+            if (Math.Abs(k - t) <= tolerance)
+                return k;
+        return t;
+    }
+
+    /// <summary>Re-reads everything from the selected effect (called whenever the inspector refreshes or the playhead moves).</summary>
+    public void Refresh()
+    {
+        var sel = Selected();
+        _refreshing = true;
+        try
+        {
+            IsActive = sel is not null;
+            EffectsTabOpen = _host.SelectedTabIndex == 4;
+            _host.NotifyGenericParamsChanged();
+            _host.NotifyPreviewControlsChanged();
+            if (sel is not { } s)
+                return;
+
+            var (clip, fx) = s;
+            var times = TimesOf(fx);
+            var t = EditTime(clip, fx);
+            var view = TransformMath.ViewAt(fx, t);
+            var rate = _editor.Editor.Document.Rate;
+
+            CenterX = view.CenterX;
+            CenterY = view.CenterY;
+            Zoom = view.Zoom;
+            Rotation = view.RotationDegrees;
+            ZoomText = $"{view.Zoom:0.00}";
+            RotationText = $"{view.RotationDegrees:0.#}";
+            IsAnimated = times.Count > 0;
+            IsOnKeyframe = times.Any(k => Math.Abs(k - t) < 1e-6);
+            TimeText = Timecode.Format(clip.StartSec + t, rate);
+            ClipLabel = $"Selected clip · {_host.SelectedClipFileName ?? "clip"}";
+
+            ClipDurationSec = Math.Max(0.01, clip.DurSec);
+            PlayheadLocal = Math.Clamp(_editor.PlayheadTimeSec - clip.StartSec, 0, clip.DurSec);
+            SelectedKeyframe = _host.SelectedKeyframeSec is { } sk && times.Any(k => Math.Abs(k - sk) < 1e-4) ? sk : null;
+            HasLimit = fx.HasRange;
+            LimitStart = fx.HasRange ? fx.StartSec : null;
+            LimitEnd = fx.HasRange ? fx.StartSec + fx.DurSec : null;
+            LimitLengthText = fx.HasRange ? $"{fx.DurSec:0.0} seconds" : "";
+            KeyTimes = times;
+            OnPropertyChanged(nameof(KeyTimes));
+
+            Path = times.Select(k => TransformMath.ViewAt(fx, k)).Select(v => (v.CenterX, v.CenterY)).ToList();
+            OnPropertyChanged(nameof(Path));
+
+            var easing = fx.Keyframes.Values.SelectMany(tr => tr).FirstOrDefault(k => Math.Abs(k.TimeSec - t) < 1e-6).Easing;
+            EasingIndex = (int)easing;
+
+            Summary = times.Count switch
+            {
+                0 => "Not animated",
+                1 => "1 keyframe",
+                _ => $"{times.Count} keyframes",
+            };
+            Hint = !IsAnimated
+                ? "The same look all the way through the clip. Press the stopwatch to animate it."
+                : IsOnKeyframe
+                    ? "Editing this keyframe. Drag the frame or change a value."
+                    : "Move the playhead and drag the frame on the preview to add a keyframe there.";
+
+            FrameAspect = _editor.Preview.CanvasAspect;
+            AspectText = DescribeAspect(FrameAspect) + " · Locked";
+            OnPropertyChanged(nameof(AspectText));
+        }
+        finally
+        {
+            _refreshing = false;
+        }
+    }
+
+    private static string DescribeAspect(double r)
+    {
+        (double Ratio, string Name)[] known =
+            [(16.0 / 9, "16:9"), (4.0 / 3, "4:3"), (9.0 / 16, "9:16"), (1, "1:1"), (21.0 / 9, "21:9"), (3.0 / 2, "3:2")];
+        foreach (var (ratio, name) in known)
+            if (Math.Abs(r - ratio) < 0.02)
+                return name;
+        return $"{r:0.00}:1";
+    }
+
+    // ---- camera edits ---------------------------------------------------------------------
+
+    /// <summary>Sets the camera: a keyframe at the playhead while animated, otherwise the one look for the whole clip.</summary>
+    public void SetCamera(double centerX, double centerY, double zoom, double? rotation = null)
+    {
+        if (Selected() is not { } s)
+            return;
+        var (clip, fx) = s;
+        zoom = Math.Clamp(zoom, 1, 8);
+        var half = 0.5 / zoom;
+        centerX = Math.Clamp(centerX, half, 1 - half);
+        centerY = Math.Clamp(centerY, half, 1 - half);
+        var turn = Math.Clamp(rotation ?? Rotation, -180, 180);
+
+        if (fx.Keyframes.Count == 0)
+        {
+            _host.WriteSelectedEffectParam("centerX", ParamValue.OfDouble(centerX));
+            _host.WriteSelectedEffectParam("centerY", ParamValue.OfDouble(centerY));
+            _host.WriteSelectedEffectParam("zoom", ParamValue.OfDouble(zoom));
+            _host.WriteSelectedEffectParam("rotation", ParamValue.OfDouble(turn));
+            return;
+        }
+
+        var t = EditTime(clip, fx);
+        _editor.Editor.SetEffectKeyframe(clip.Id, fx.Id, t, new Dictionary<string, double>
+        {
+            ["centerX"] = centerX, ["centerY"] = centerY, ["zoom"] = zoom, ["rotation"] = turn,
+        });
+        _host.SelectKeyframe(t);
+    }
+
+    partial void OnZoomTextChanged(string value)
+    {
+        if (_refreshing)
+            return;
+        var text = value.Replace("×", "").Replace("x", "", StringComparison.OrdinalIgnoreCase).Trim();
+        if (double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var zoom) && zoom >= 1)
+            SetCamera(CenterX, CenterY, zoom);
+        else
+            Refresh();
+    }
+
+    partial void OnRotationTextChanged(string value)
+    {
+        if (_refreshing)
+            return;
+        var text = value.Replace("°", "").Trim();
+        if (double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var degrees))
+            SetCamera(CenterX, CenterY, Zoom, degrees);
+        else
+            Refresh();
+    }
+
+    partial void OnEasingIndexChanged(int value)
+    {
+        if (_refreshing || !IsOnKeyframe || Selected() is not { } s)
+            return;
+        var t = EditTime(s.Clip, s.Effect);
+        _editor.Editor.SetEffectKeyframeEasing(s.Clip.Id, s.Effect.Id, t, (KeyframeEasing)Math.Clamp(value, 0, EasingNames.Length - 1));
+    }
+
+    /// <summary>Typing a time moves the keyframe there, or just jumps the playhead when it is not on one.</summary>
+    partial void OnTimeTextChanged(string value)
+    {
+        if (_refreshing || Selected() is not { } s)
+            return;
+        var (clip, fx) = s;
+        var rate = _editor.Editor.Document.Rate;
+        if (!Timecode.TryParse(value, rate, out var absolute))
+        {
+            Refresh();
+            return;
+        }
+        var local = absolute - clip.StartSec;
+        var t = EditTime(clip, fx);
+        if (IsOnKeyframe)
+            _editor.Editor.MoveEffectKeyframe(clip.Id, fx.Id, t, local, Guid.NewGuid().ToString("N"));
+        _editor.SeekFromUser(absolute);
+        Refresh();
+    }
+
+    // ---- limiting to part of the clip ------------------------------------------------------
+
+    partial void OnHasLimitChanged(bool value)
+    {
+        if (_refreshing || Selected() is not { } s)
+            return;
+        var (clip, fx) = s;
+        if (value && !fx.HasRange)
+        {
+            var from = Math.Clamp(_editor.PlayheadTimeSec - clip.StartSec, 0, Math.Max(0, clip.DurSec - 0.5));
+            _editor.Editor.SetEffectRange(clip.Id, fx.Id, from, Math.Min(3, clip.DurSec - from));
+        }
+        else if (!value && fx.HasRange)
+        {
+            _editor.Editor.SetEffectRange(clip.Id, fx.Id, null, null);
+        }
+    }
+
+    partial void OnLimitLengthTextChanged(string value)
+    {
+        if (_refreshing || Selected() is not { } s || !s.Effect.HasRange)
+            return;
+        var text = value.Replace("seconds", "", StringComparison.OrdinalIgnoreCase).Replace("s", "", StringComparison.OrdinalIgnoreCase).Trim();
+        if (!double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var seconds) || seconds < 0.1)
+        {
+            Refresh();
+            return;
+        }
+        _editor.Editor.SetEffectRange(s.Clip.Id, s.Effect.Id, s.Effect.StartSec ?? 0, seconds);
+        Refresh();
+    }
+
+    // ---- animating -------------------------------------------------------------------------
+
+    /// <summary>The stopwatch. On: one keyframe at the playhead holding the current look. Off: keyframes go, the look at the playhead stays.</summary>
+    [RelayCommand]
+    private void ToggleAnimate()
+    {
+        if (Selected() is not { } s)
+            return;
+        var (clip, fx) = s;
+        var t = Math.Clamp(_editor.PlayheadTimeSec - clip.StartSec, 0, clip.DurSec);
+        _editor.Editor.SetEffectAnimated(clip.Id, fx.Id, fx.Keyframes.Count == 0, t);
+        _host.SelectedKeyframeSec = fx.Keyframes.Count > 0 ? t : null;
+    }
+
+    /// <summary>The ◆ button: add a keyframe at the playhead, or remove the one already there.</summary>
+    [RelayCommand]
+    private void ToggleKeyframe()
+    {
+        if (Selected() is not { } s)
+            return;
+        var (clip, fx) = s;
+        var t = EditTime(clip, fx);
+        if (fx.Keyframes.Count == 0)
+        {
+            ToggleAnimate();
+            return;
+        }
+        if (IsOnKeyframe)
+        {
+            _editor.Editor.RemoveEffectKeyframe(clip.Id, fx.Id, t);
+            _host.SelectedKeyframeSec = null;
+        }
+        else if (_editor.Editor.AddEffectKeyframe(clip.Id, fx.Id, t) is { } added)
+        {
+            _host.SelectKeyframe(added);
+        }
+    }
+
+    [RelayCommand]
+    private void PreviousKeyframe() => StepKeyframe(forward: false);
+
+    [RelayCommand]
+    private void NextKeyframe() => StepKeyframe(forward: true);
+
+    private void StepKeyframe(bool forward)
+    {
+        if (Selected() is not { } s)
+            return;
+        var (clip, fx) = s;
+        var t = EditTime(clip, fx);
+        var times = TimesOf(fx);
+        var target = forward
+            ? times.Where(k => k > t + 1e-6).Cast<double?>().FirstOrDefault()
+            : times.Where(k => k < t - 1e-6).Cast<double?>().LastOrDefault();
+        if (target is { } k2)
+        {
+            _host.SelectKeyframe(k2);
+            _editor.SeekFromUser(clip.StartSec + k2);
+        }
+    }
+
+    /// <summary>Keys the camera back to the whole picture at the playhead: the "zoom back out" step.</summary>
+    [RelayCommand]
+    private void BackToFullFrame()
+    {
+        if (Selected() is not { } s)
+            return;
+        var (clip, fx) = s;
+        var t = EditTime(clip, fx);
+        if (fx.Keyframes.Count == 0)
+            _editor.Editor.SetEffectAnimated(clip.Id, fx.Id, true, t);
+        _editor.Editor.SetEffectKeyframe(clip.Id, fx.Id, t, new Dictionary<string, double>
+        {
+            ["centerX"] = 0.5, ["centerY"] = 0.5, ["zoom"] = 1, ["rotation"] = Rotation,
+        });
+        _host.SelectKeyframe(t);
+    }
+
+    /// <summary>Plays the animated stretch (first keyframe to last), or the limited span, so the movement can be judged.</summary>
+    [RelayCommand]
+    private void PreviewMovement()
+    {
+        if (Selected() is not { } s)
+            return;
+        var (clip, fx) = s;
+        var times = TimesOf(fx);
+        var from = times.Count > 1 ? times[0] : (fx.StartSec ?? 0);
+        var to = times.Count > 1 ? times[^1] : from + (fx.DurSec ?? clip.DurSec - from);
+        _editor.PlayRange(clip.StartSec + Math.Max(0, from - 0.3), clip.StartSec + Math.Min(clip.DurSec, to + 0.3));
+    }
+
+    // ---- the keyframe ruler ----------------------------------------------------------------
+
+    private (Clip Clip, EffectInstance Effect)? RulerTarget() => Selected();
+
+    /// <summary>Moves the playhead to a time in the clip (clip-relative seconds).</summary>
+    public void RulerSeek(double localSec)
+    {
+        if (RulerTarget() is { } s)
+            _editor.SeekFromUser(s.Clip.StartSec + Math.Clamp(localSec, 0, s.Clip.DurSec));
+    }
+
+    public void RulerSelect(double localSec)
+    {
+        _host.SelectKeyframe(localSec);
+        RulerSeek(localSec);
+    }
+
+    public void RulerMove(double fromSec, double toSec, string gesture)
+    {
+        if (RulerTarget() is { } s)
+        {
+            _editor.Editor.MoveEffectKeyframe(s.Clip.Id, s.Effect.Id, fromSec, toSec, gesture);
+            _host.SelectKeyframe(Math.Clamp(toSec, 0, s.Clip.DurSec));
+        }
+    }
+
+    /// <summary>Adds a keyframe at a time (turning animation on first if it is off).</summary>
+    public void RulerAdd(double localSec)
+    {
+        if (RulerTarget() is not { } s)
+            return;
+        var t = Math.Clamp(localSec, 0, s.Clip.DurSec);
+        if (_editor.Editor.AddEffectKeyframe(s.Clip.Id, s.Effect.Id, t) is { } added)
+        {
+            _host.SelectKeyframe(added);
+            RulerSeek(added);
+        }
+    }
+
+    public void RulerDelete(double localSec)
+    {
+        if (RulerTarget() is not { } s)
+            return;
+        _editor.Editor.RemoveEffectKeyframe(s.Clip.Id, s.Effect.Id, localSec);
+        _host.SelectedKeyframeSec = null;
+    }
+
+    public void RulerDuplicateToPlayhead(double localSec)
+    {
+        if (RulerTarget() is not { } s)
+            return;
+        var to = Math.Clamp(_editor.PlayheadTimeSec - s.Clip.StartSec, 0, s.Clip.DurSec);
+        _editor.Editor.DuplicateEffectKeyframe(s.Clip.Id, s.Effect.Id, localSec, to);
+        _host.SelectKeyframe(to);
+    }
+
+    public KeyframeEasing RulerEasingAt(double localSec)
+        => RulerTarget() is { } s
+            ? s.Effect.Keyframes.Values.SelectMany(t => t).FirstOrDefault(k => Math.Abs(k.TimeSec - localSec) < 1e-6).Easing
+            : KeyframeEasing.Linear;
+
+    public void RulerSetEasing(double localSec, KeyframeEasing easing)
+    {
+        if (RulerTarget() is { } s)
+            _editor.Editor.SetEffectKeyframeEasing(s.Clip.Id, s.Effect.Id, localSec, easing);
+    }
+
+    /// <summary>Frame-snaps a clip-relative time, for dragging.</summary>
+    public double RulerSnap(double localSec) => _editor.Editor.SnapTime(localSec);
+}

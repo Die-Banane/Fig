@@ -22,6 +22,7 @@ namespace Fig.Core.Media
         public const string FadeToBlack = "fade-to-black";
         public const string Iris = "iris";
         public const string Curtain = "curtain";
+        public const string Swirl = "swirl";
 
         private sealed record TransitionEntry(Type Implementation, TransitionCatalogEntry Metadata);
 

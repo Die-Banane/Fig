@@ -257,7 +257,7 @@ public class ProxyTests
             Assert.True(MediaService.ShouldGenerateProxy(asset.Width, asset.Height));
 
             Directory.CreateDirectory(cache);
-            var stale = Path.Combine(cache, $"{asset.Hash}_proxy.mp4");
+            var stale = Path.Combine(cache, $"{asset.Hash}_proxy_v3.mp4");
             WriteIncompleteMp4(stale);
 
             manager.RequestProxy(asset);

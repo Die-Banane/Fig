@@ -17,6 +17,9 @@ public static class DragFormats
     public static readonly DataFormat<EffectCatalogEntry> Effect =
         DataFormat<EffectCatalogEntry>.CreateInProcessFormat<EffectCatalogEntry>("fig.effect");
 
+    public static readonly DataFormat<EffectPreset> Preset =
+        DataFormat<EffectPreset>.CreateInProcessFormat<EffectPreset>("fig.preset");
+
     public static readonly DataFormat<TransitionCatalogEntry> Transition =
         DataFormat<TransitionCatalogEntry>.CreateInProcessFormat<TransitionCatalogEntry>("fig.transition");
 }

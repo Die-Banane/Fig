@@ -9,7 +9,7 @@ This is an early-stage project. The core engine (timeline, media pipeline, and p
 
 ## Status
 
-Actively developed. Expect rough edges, incomplete features, and frequent changes. The project is clean on purpose: no AI-generated code has been merged, and contributors are expected to understand every line they add.
+Actively developed. Expect rough edges, incomplete features, and frequent changes.
 
 ## Features
 
@@ -19,7 +19,9 @@ Actively developed. Expect rough edges, incomplete features, and frequent change
 - **Synchronous playback**: audio is the master clock. A background producer decodes and mixes the audible clips into a ring buffer while the device drains it, so the timeline position and video preview follow the audio in real time.
 - **Keyboard-first controls**: a data-driven gesture system that maps input combinations to timeline actions. Mappings are stored as editable configuration, not hardcoded.
 - **Project validation**: opening a project checks every asset, detects offline sources, and regenerates stale or missing previews, with visible progress and a summary of what was repaired.
-- **Resizable workspace**: media library, preview, and timeline panels are separated by draggable splitters.
+- **Resizable workspace**: media library, preview, inspector and timeline are separated by draggable splitters, scale with the window, collapse out of the way, and remember their sizes. Focus the preview with one click.
+- **Markers**: bookmarks and range markers on the sequence, a Markers panel in the sidebar, snapping to markers, and "Export marked ranges" to save each range as its own video.
+- **Effects and keyframes**: effects apply to the whole clip and can be animated with keyframes (a stopwatch switches animating on; values hold before the first and after the last keyframe). Each effect gets a row under its clip with its keyframes, and a keyframe ruler in the inspector; an effect can optionally be limited to part of the clip. Transform zooms, pans and rotates with keyframes (zoom in, hold and zoom back out are just keyframes), with an on-preview frame, easing, and reusable presets; the Swirl transition has draggable center, radius and rotation handles.
 
 ## Requirements
 
@@ -83,16 +85,15 @@ This is the design philosophy I use for other projects, and it keeps things main
 
 ## Contributing
 
-AI generated pull requests are not accepted. This project stays clean because it has not been written by an AI autonomously, and polluting it with unexamined code would make it hard to develop and eventually lead to abandonment. AI pull requests will not be reviewed.
+AI generated code is allowed as long as you mention:
 
-AI is welcome as an assistant. If you architect a change yourself, understand every line of it, and review it like it was your own, that pull request can be discussed. Use the AI as an assistant/reference aggregator, not an agent that just spaghettifies code. Write your own code. On open source projects, it's difficult to verify the legitimacy of AI generated code. I, as the sole maintainer of this project have the sole authority to accept or reject AI generated pull requests.
+1. What model was used
+2. You can extensively describe what you added, how it works, and **why** you added it
 
-I reserve the right to use AI in this project as it aligns with my development philosophy. Documented architecture -> fully human-directed micro-edits.
+Being able to understand what you added or built is of utmost importance. 
 
-# Rust transition
+AI generated output will not be accepted if it's generated slop. I couldn't care less if you use AI as long as the code is good and you understand it, but I have a vision for this project, and feature bloat isn't one of them.
 
-As a Rust developer, I will be trying to transition this project to Rust using gpui and ffmpeg_next. This is a viability study.
-Rust 2024 edition.
 ## License
 
 Not yet licensed.

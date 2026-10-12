@@ -91,7 +91,7 @@
                                            ToolTip.Tip="Monitor volume"/>
                         <ComboBox ItemsSource="{Binding PreviewScaleOptions}"
                                   SelectedItem="{Binding PreviewScale}"
-                                  FontSize="10" Width="66" Height="24"
+                                  FontSize="10" Width="84" Height="24"
                                   Background="#202226" BorderBrush="#3a3d42"
                                   BorderThickness="1" CornerRadius="3"
                                   ToolTip.Tip="Preview quality">
@@ -110,7 +110,11 @@
             <Border CornerRadius="3" Background="#090a0b"
                     BorderBrush="#292b30" BorderThickness="1"
                     ClipToBounds="True">
-                <local:PreviewSurface x:Name="Surface"/>
+                <Grid>
+                    <local:PreviewSurface x:Name="Surface"/>
+                    <ctrls:TransformOverlay DataContext="{Binding Transform}" IsVisible="{Binding ShowOverlay, FallbackValue=False}"/>
+                    <ctrls:SwirlOverlay DataContext="{Binding Swirl}" IsVisible="{Binding ShowOverlay, FallbackValue=False}"/>
+                </Grid>
             </Border>
         </DockPanel>
     </Border>

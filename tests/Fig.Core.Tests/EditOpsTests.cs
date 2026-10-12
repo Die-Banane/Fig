@@ -515,8 +515,8 @@ public class MagneticSnapResizeTests
         editor.AddClip(track.Id, TimelineFixtures.Video("a", 2, 5));
         editor.AddClip(track.Id, TimelineFixtures.Video("b", 10, 3));
 
-        // 0.03 has no clip boundary nearby, so it snaps to the frame grid (30fps -> 0.0333)
-        var snapped = editor.SnapTimeMagnetic(0.03, "a");
-        Assert.Equal(0.033333333333333333, snapped, 4);
+        // 1.01 has no clip boundary (or the timeline start) nearby, so it snaps to the frame grid (30fps -> 1.0)
+        var snapped = editor.SnapTimeMagnetic(1.01, "a");
+        Assert.Equal(1.0, snapped, 4);
     }
 }

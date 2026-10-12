@@ -10,7 +10,7 @@ namespace Fig.Core.Media
     {
         /// <summary>Forward play: decode every frame, accurate timing.</summary>
         Playback,
-        /// <summary>Scrub/seek: skip non-ref frames, accept nearest after seek.</summary>
+        /// <summary>Scrub/seek: show the nearest keyframe at once (see LastFrameApproximate).</summary>
         Scrub,
     }
 
@@ -23,6 +23,15 @@ namespace Fig.Core.Media
         private const int SwsBilinear = 2;
         private const double FastCatchUpSec = 0.5;
 
+        /// <summary>A scrub step this close ahead of the last frame just keeps decoding (exact, a few frames).</summary>
+        private const double ScrubContinueSec = 0.35;
+
+        /// <summary>
+        /// Farther ahead than this, re-seeking to the keyframe before the target beats decoding every frame
+        /// in between.
+        /// </summary>
+        private const double SeekInsteadSec = 1.5;
+
         private readonly AVFormatContext* _inCtx;
         private readonly AVCodecContext* _decCtx;
         private readonly int _vIdx;
@@ -33,6 +42,7 @@ namespace Fig.Core.Media
         private readonly AVRational _timeBase;
 
         private AVFrame* _pendingFrame;
+        private AVFrame* _tailFrame;   // the newest frame seen, kept so the picture can hold at the end of the media
         private AVFrame* _rgbFrame;
         private SwsContext* _sws;
         private AVPixelFormat _swsSrcFmt = AVPixelFormat.AV_PIX_FMT_NONE;
@@ -40,6 +50,10 @@ namespace Fig.Core.Media
         private DecodedFrame? _lastFrame;
         private PreviewDecodeMode _mode = PreviewDecodeMode.Playback;
         private bool _disposed;
+        private readonly double _lastFrameSec = double.PositiveInfinity;   // start of the final frame, when known
+        private bool _lastApproximate;
+        private bool _seekedSinceFrame;       // sought and nothing decoded since
+        private bool _atKeyframeAfterSeek;    // only the keyframe after a seek has been decoded
 
         // Reused output buffer: frames are consumed synchronously or copied (e.g. into the
         // frame cache) before the next decode, so one scratch per source avoids a per-frame
@@ -47,6 +61,12 @@ namespace Fig.Core.Media
         private byte[] _outputScratch = Array.Empty<byte>();
 
         public double LastPresentedTimeSec => _lastPresentedSec;
+
+        public bool LastFrameApproximate => _lastApproximate;
+
+        public Func<bool>? AbortRequested { get; set; }
+
+        private bool Aborted() => AbortRequested?.Invoke() == true;
 
         public PreviewDecodeMode Mode
         {
@@ -95,7 +115,7 @@ namespace Fig.Core.Media
                 // only ever disposed on the single decode worker thread, never concurrently with
                 // an in-flight decode (the previous single-threaded workaround for a teardown
                 // crash is obsolete).
-                decCtx->thread_count = 4;
+                decCtx->thread_count = Math.Clamp(Environment.ProcessorCount / 2, 2, 8);
 
                 ThrowIfError(ffmpeg.avcodec_open2(decCtx, dec, null), "avcodec_open2");
 
@@ -108,6 +128,15 @@ namespace Fig.Core.Media
                 _outH = height;
                 _timeBase = stream->time_base;
 
+                // where the final frame starts: asking for later holds that frame instead of seeking off the end
+                var fpsRational = stream->avg_frame_rate.num > 0 && stream->avg_frame_rate.den > 0
+                    ? ffmpeg.av_q2d(stream->avg_frame_rate) : 30.0;
+                if (inCtx->duration > 0)
+                {
+                    var startSec = inCtx->start_time != ffmpeg.AV_NOPTS_VALUE ? inCtx->start_time / 1_000_000.0 : 0;
+                    _lastFrameSec = Math.Max(0, startSec + inCtx->duration / 1_000_000.0 - 1.5 / Math.Max(1, fpsRational));
+                }
+
                 // largest centered region that fits the canvas while preserving aspect
                 var scale = Math.Min(width / (double)Math.Max(1, _srcW), height / (double)Math.Max(1, _srcH));
                 _fitW = Math.Max(1, (int)Math.Round(_srcW * scale));
@@ -116,6 +145,7 @@ namespace Fig.Core.Media
                 _offY = (height - _fitH) / 2;
 
                 _pendingFrame = ffmpeg.av_frame_alloc();
+                _tailFrame = ffmpeg.av_frame_alloc();
                 EnsureRgbFrame();
                 ApplySkipPolicy();
             }
@@ -185,6 +215,8 @@ namespace Fig.Core.Media
                 ffmpeg.av_seek_frame(ctx, _vIdx, 0, ffmpeg.AVSEEK_FLAG_BACKWARD);
             ffmpeg.avcodec_flush_buffers(dec);
             _lastPresentedSec = -1;
+            _seekedSinceFrame = true;
+            _atKeyframeAfterSeek = false;
             // Keep _lastFrame so scrub can show something until the new decode lands.
         }
 
@@ -200,77 +232,61 @@ namespace Fig.Core.Media
             AVPacket* packet = ffmpeg.av_packet_alloc();
             try
             {
+                timeSec = Math.Min(timeSec, _lastFrameSec);
                 if (_lastPresentedSec >= 0 && timeSec <= _lastPresentedSec + 1e-4)
                     return _lastFrame;
 
-                if (mode == PreviewDecodeMode.Playback)
-                {
-                    // After a seek (_lastPresentedSec < 0) or when the decode has fallen far
-                    // behind the target, fast-forward by dropping B-frames (never referenced)
-                    // to reach the target's neighborhood, then decode precisely for the tail.
-                    // Random access no longer costs a full-rate decode of the whole GOP from
-                    // the keyframe — the dominant stall when starting playback mid-clip.
-                    var catchUp = _lastPresentedSec < 0 || timeSec - _lastPresentedSec > FastCatchUpSec;
-                    return DecodeSequential(packet, timeSec, catchUp);
-                }
+                _lastApproximate = false;
+                if (mode == PreviewDecodeMode.Scrub)
+                    return DecodeScrub(packet, timeSec);
 
-                var acceptAfter = timeSec - 0.35;
+                // far ahead (or after a gap): the keyframe just before the target is nearer than the last frame
+                if (_lastPresentedSec >= 0 && !_atKeyframeAfterSeek && timeSec - _lastPresentedSec > SeekInsteadSec)
+                    Seek(timeSec);
 
-                var got = false;
-                var lastDecodedSec = -1.0;
-                int ret;
-                while ((ret = ffmpeg.av_read_frame(ctx, packet)) >= 0)
-                {
-                    if (packet->stream_index == _vIdx && ffmpeg.avcodec_send_packet(dec, packet) >= 0)
-                    {
-                        while (ffmpeg.avcodec_receive_frame(dec, _pendingFrame) == 0)
-                        {
-                            var ts = _pendingFrame->best_effort_timestamp;
-                            var sec = ts * ffmpeg.av_q2d(_timeBase);
-                            if (sec >= acceptAfter)
-                            {
-                                got = true;
-                                _lastPresentedSec = sec;
-                                break;
-                            }
-                            lastDecodedSec = sec;
-                        }
-                        if (got) break;
-                    }
-                    ffmpeg.av_packet_unref(packet);
-                }
-
-                if (!got)
-                {
-                    ffmpeg.avcodec_send_packet(dec, null);
-                    while (ffmpeg.avcodec_receive_frame(dec, _pendingFrame) == 0)
-                    {
-                        var sec = _pendingFrame->best_effort_timestamp * ffmpeg.av_q2d(_timeBase);
-                        if (sec >= acceptAfter)
-                        {
-                            got = true;
-                            _lastPresentedSec = sec;
-                            break;
-                        }
-                        lastDecodedSec = sec;
-                    }
-                }
-
-                if (!got)
-                {
-                    // past the end of the media: fall back to the last frame actually decoded
-                    // so the preview shows the final frame rather than a stale earlier one
-                    if (lastDecodedSec >= 0)
-                        _lastPresentedSec = lastDecodedSec;
-                    return _lastFrame;
-                }
-
-                return ScalePendingToLastFrame();
+                // After a seek (_lastPresentedSec < 0) or when the decode has fallen far behind the
+                // target, fast-forward by dropping B-frames (never referenced) to reach the target's
+                // neighborhood, then decode precisely for the tail.
+                var catchUp = _lastPresentedSec < 0 || timeSec - _lastPresentedSec > FastCatchUpSec;
+                return DecodeSequential(packet, timeSec, catchUp);
             }
             finally
             {
                 ffmpeg.av_packet_free(&packet);
             }
+        }
+
+        /// <summary>
+        /// Interactive scrub: a small step forward keeps decoding (exact); anything else shows the nearest
+        /// keyframe at or before the target right away. The caller settles on the exact frame afterwards
+        /// with a Playback decode, which continues from here instead of seeking again.
+        /// </summary>
+        private DecodedFrame? DecodeScrub(AVPacket* packet, double timeSec)
+        {
+            if (_lastPresentedSec >= 0 && timeSec > _lastPresentedSec && timeSec - _lastPresentedSec <= ScrubContinueSec)
+                return DecodeSequential(packet, timeSec, catchUp: false);
+
+            if (!_seekedSinceFrame)
+                Seek(timeSec);
+
+            var ctx = _inCtx;
+            var dec = _decCtx;
+            int ret;
+            while ((ret = ffmpeg.av_read_frame(ctx, packet)) >= 0)
+            {
+                if (packet->stream_index == _vIdx && ffmpeg.avcodec_send_packet(dec, packet) >= 0
+                    && ffmpeg.avcodec_receive_frame(dec, _pendingFrame) == 0)
+                {
+                    ffmpeg.av_packet_unref(packet);
+                    _lastPresentedSec = _pendingFrame->best_effort_timestamp * ffmpeg.av_q2d(_timeBase);
+                    _seekedSinceFrame = false;
+                    _atKeyframeAfterSeek = true;
+                    _lastApproximate = timeSec - _lastPresentedSec > 0.02;
+                    return ScalePendingToLastFrame();
+                }
+                ffmpeg.av_packet_unref(packet);
+            }
+            return _lastFrame;
         }
 
         private DecodedFrame? DecodeSequential(AVPacket* packet, double targetSec, bool catchUp)
@@ -283,19 +299,37 @@ namespace Fig.Core.Media
             // the precise tail. skip_frame is restored in finally so the mode policy always
             // wins after this call.
             _decCtx->skip_frame = catchUp ? AVDiscard.AVDISCARD_NONREF : AVDiscard.AVDISCARD_DEFAULT;
+            var lastSeenSec = -1.0;
+            ffmpeg.av_frame_unref(_tailFrame);
             try
             {
                 int ret;
                 while ((ret = ffmpeg.av_read_frame(ctx, packet)) >= 0)
                 {
+                    if (Aborted())
+                    {
+                        // a newer position arrived: stop here and force a fresh seek next time
+                        ffmpeg.av_packet_unref(packet);
+                        _lastPresentedSec = -1;
+                        _lastApproximate = true;
+                        return _lastFrame;
+                    }
                     if (packet->stream_index == _vIdx && ffmpeg.avcodec_send_packet(dec, packet) >= 0)
                     {
                         while (ffmpeg.avcodec_receive_frame(dec, _pendingFrame) == 0)
                         {
                             var sec = _pendingFrame->best_effort_timestamp * ffmpeg.av_q2d(_timeBase);
+                            if (sec < targetSec)
+                            {
+                                lastSeenSec = sec;
+                                ffmpeg.av_frame_unref(_tailFrame);
+                                ffmpeg.av_frame_ref(_tailFrame, _pendingFrame);
+                            }
                             if (sec >= targetSec)
                             {
                                 _lastPresentedSec = sec;
+                                _seekedSinceFrame = false;
+                                _atKeyframeAfterSeek = false;
                                 ffmpeg.av_packet_unref(packet);
                                 return ScalePendingToLastFrame();
                             }
@@ -320,8 +354,21 @@ namespace Fig.Core.Media
                         _lastPresentedSec = sec;
                         return ScalePendingToLastFrame();
                     }
+                    lastSeenSec = sec;
+                    ffmpeg.av_frame_unref(_tailFrame);
+                    ffmpeg.av_frame_ref(_tailFrame, _pendingFrame);
                 }
 
+                // the media ends before the target: hold its final frame (a source that never showed one stays empty)
+                if (lastSeenSec >= 0 && _lastFrame != null && _tailFrame->data[0] != null)
+                {
+                    ffmpeg.av_frame_unref(_pendingFrame);
+                    ffmpeg.av_frame_move_ref(_pendingFrame, _tailFrame);
+                    _lastPresentedSec = lastSeenSec;
+                    _seekedSinceFrame = false;
+                    _atKeyframeAfterSeek = false;
+                    return ScalePendingToLastFrame();
+                }
                 return _lastFrame;
             }
             finally
@@ -402,6 +449,12 @@ namespace Fig.Core.Media
                 var f = _pendingFrame;
                 ffmpeg.av_frame_free(&f);
                 _pendingFrame = null;
+            }
+            if (_tailFrame != null)
+            {
+                var f = _tailFrame;
+                ffmpeg.av_frame_free(&f);
+                _tailFrame = null;
             }
             if (_decCtx != null)
             {

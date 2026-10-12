@@ -35,6 +35,8 @@ public partial class PropertiesViewModel : ViewModelBase
 
     public PropertiesViewModel(EditorViewModel editor)
     {
+        Transform = new TransformControlsViewModel(this, editor);
+        Swirl = new SwirlControlsViewModel(this, editor);
         _editor = editor;
         _editor.PropertyChanged += OnEditorPropertyChanged;
         Effects.CollectionChanged += (_, _) =>
@@ -50,6 +52,8 @@ public partial class PropertiesViewModel : ViewModelBase
         CropRightAutomation = new AutomationButtonViewModel(this, AutomationKeys.CropRight, () => CropRight);
     }
 
+    public TransformControlsViewModel Transform { get; }
+    public SwirlControlsViewModel Swirl { get; }
     public AutomationButtonViewModel OpacityAutomation { get; }
     public AutomationButtonViewModel VolumeAutomation { get; }
     public AutomationButtonViewModel CropTopAutomation { get; }
@@ -66,6 +70,7 @@ public partial class PropertiesViewModel : ViewModelBase
                 RefreshParams();
             if (Kind == PropertiesContextKind.Clip)
                 RefreshAutomation();
+            Transform.Refresh();
         }
     }
 
@@ -98,6 +103,20 @@ public partial class PropertiesViewModel : ViewModelBase
         _editor.Preview.RefreshFrame();
     }
 
+    /// <summary>Moves the playhead to the previous or next keyframe of a clip automation track.</summary>
+    public void StepAutomation(string key, bool forward)
+    {
+        if (_clipId is null || FindClip(_clipId) is not { } clip
+            || !clip.Keyframes.TryGetValue(key, out var track) || track.Count == 0)
+            return;
+        var localT = Math.Max(0, _editor.PlayheadTimeSec - clip.StartSec);
+        var target = forward
+            ? track.Where(k => k.TimeSec > localT + 1e-6).OrderBy(k => k.TimeSec).Cast<KeyframePoint?>().FirstOrDefault()
+            : track.Where(k => k.TimeSec < localT - 1e-6).OrderByDescending(k => k.TimeSec).Cast<KeyframePoint?>().FirstOrDefault();
+        if (target is { } kf)
+            _editor.SeekFromUser(clip.StartSec + kf.TimeSec);
+    }
+
     /// <summary>Re-reads all automation diamonds against the current playhead.</summary>
     public void RefreshAutomation()
     {
@@ -111,11 +130,15 @@ public partial class PropertiesViewModel : ViewModelBase
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasContext))]
+    [NotifyPropertyChangedFor(nameof(ShowTabStrip))]
     private PropertiesContextKind _kind = PropertiesContextKind.Empty;
     [ObservableProperty] private string _title = "Properties";
     [ObservableProperty] private string _subtitle = "Select a clip, track, or media item.";
 
     public bool HasContext => Kind != PropertiesContextKind.Empty;
+
+    /// <summary>Only a clip has several tabs; markers, tracks and transitions are a single page.</summary>
+    public bool ShowTabStrip => Kind is PropertiesContextKind.Clip or PropertiesContextKind.Media;
 
     // shared / media
     [ObservableProperty] private string? _fileName;
@@ -139,6 +162,32 @@ public partial class PropertiesViewModel : ViewModelBase
     [ObservableProperty] private string? _sourceRangeLabel;
     [ObservableProperty] private int _selectedTabIndex;
 
+    /// <summary>The "Show controls" switch for handles drawn on the preview (zoom frame, swirl center…).</summary>
+    [ObservableProperty]
+    private bool _showPreviewControls = true;
+
+    /// <summary>Something selected has handles that can be shown on the preview.</summary>
+    public bool HasPreviewControls => Transform.IsActive || Swirl.IsActive;
+
+    partial void OnShowPreviewControlsChanged(bool value)
+    {
+        Transform.NotifyControlsVisibilityChanged();
+        Swirl.NotifyControlsVisibilityChanged();
+    }
+
+    internal void NotifyPreviewControlsChanged() => OnPropertyChanged(nameof(HasPreviewControls));
+
+
+    /// <summary>Source length of the clip before retiming, e.g. "00:12".</summary>
+    [ObservableProperty] private string? _originalDurationLabel;
+    /// <summary>Length on the timeline after the speed change.</summary>
+    [ObservableProperty] private string? _retimedDurationLabel;
+    /// <summary>"Linked to Robot_02.mp4" when the clip moves together with a partner clip.</summary>
+    [ObservableProperty] private string? _linkedToLabel;
+    /// <summary>Clip length in seconds, used to draw the fade envelope.</summary>
+    [ObservableProperty] private double _clipDurationSec = 1;
+    public bool IsLinked => LinkedToLabel is not null;
+
     [ObservableProperty] private double _opacityValue = 1;
     [ObservableProperty] private double _fadeInValue;
     [ObservableProperty] private double _fadeOutValue;
@@ -160,22 +209,45 @@ public partial class PropertiesViewModel : ViewModelBase
     [ObservableProperty] private string? _markerTimeLabel;
     [ObservableProperty] private string? _markerDurationLabel;
     [ObservableProperty] private string _markerColor = "#ffd60a";
+    [ObservableProperty] private bool _markerIsRange;
+    [ObservableProperty] private string _markerStartText = "";
+    [ObservableProperty] private string _markerEndText = "";
+    [ObservableProperty] private string _markerPositionText = "";
+    [ObservableProperty] private string _markerDurationText = "";
+    [ObservableProperty] private bool _markerIncludeInExport = true;
+    [ObservableProperty] private string _markerOutputName = "";
+    [ObservableProperty] private string _markerAttachedText = "Timeline";
+    [ObservableProperty] private string _markerAttachedNote = "";
+    [ObservableProperty] private string? _markerEffectLabel;
+    public bool MarkerHasEffect => MarkerEffectLabel is not null;
+    public string MarkerTitle => MarkerIsRange ? "Range marker" : "Point marker";
+    private FrameRate _markerRate;
 
     // transition
     [ObservableProperty] private bool _showTransitionSection;
     [ObservableProperty] private string? _transitionTypeLabel;
+    [ObservableProperty] private string? _transitionDescription;
+    [ObservableProperty] private string? _transitionEditPoint;
+    [ObservableProperty] private string? _transitionOutgoing;
+    [ObservableProperty] private string? _transitionIncoming;
+    [ObservableProperty] private string _transitionDurationText = "";
     [ObservableProperty] private string? _transitionSpanLabel;
     [ObservableProperty] private double _transitionDurationValue;
     [ObservableProperty] private double _transitionMaxDuration = 1;
 
     // effect stack (clip context)
     [ObservableProperty] private bool _showEffectsSection;
-    [ObservableProperty] private EffectItemViewModel? _selectedEffect;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowGenericParams))]
+    private EffectItemViewModel? _selectedEffect;
     public ObservableCollection<EffectItemViewModel> Effects { get; } = new();
     public ObservableCollection<ParamEditorViewModel> EffectParams { get; } = new();
     public ObservableCollection<ParamEditorViewModel> TransitionParams { get; } = new();
 
     public bool HasEffects => Effects.Count > 0;
+
+    /// <summary>The generic parameter list is hidden for effects that have their own panel.</summary>
+    public bool ShowGenericParams => SelectedEffect is not null && !Transform.IsActive;
     public bool NoEffects => Effects.Count == 0;
 
     private string? _lastEffectsClipId;
@@ -184,18 +256,23 @@ public partial class PropertiesViewModel : ViewModelBase
     private string? _selectedEffectId;
     private string? _lastBuiltEffectId;
 
-    /// <summary>Color swatches offered in the marker inspector.</summary>
-    public IReadOnlyList<string> MarkerPalette { get; } =
-    [
-        "#ff3b30", "#ff9500", "#ffcc00", "#34c759", "#5ac8fa",
-        "#0a84ff", "#af52de", "#ff2d55", "#f5f5f7", "#1c1c1e",
-    ];
+    /// <summary>Color swatches offered in the marker inspector (blue, teal, green, amber, red).</summary>
+    public static readonly string[] MarkerColors = ["#5f9cf8", "#5ba3b0", "#7fc8a0", "#eab308", "#ff6b6b"];
+
+    public ObservableCollection<MarkerSwatchViewModel> MarkerSwatches { get; } = new();
 
     private string? _markerId;
     private string? _transitionKey;
     private MediaAsset? _proxyTarget;
 
     public void Refresh()
+    {
+        RefreshCore();
+        Transform.Refresh();
+        Swirl.Refresh();
+    }
+
+    private void RefreshCore()
     {
         var ed = _editor.Editor;
 
@@ -362,9 +439,46 @@ public partial class PropertiesViewModel : ViewModelBase
             ShowProxySection = false;
             CanGenerateProxy = false;
         }
+        ClipDurationSec = Math.Max(0.01, clip.DurSec);
+        RetimedDurationLabel = FormatTime(clip.DurSec);
+        OriginalDurationLabel = FormatTime(clip.DurSec * clip.Speed);
+        LinkedToLabel = clip.LinkGroupId is not null && asset is not null ? $"Linked to {asset.FileName}" : null;
+        OnPropertyChanged(nameof(IsLinked));
+        // the inspector names the file, the timing lives in the Speed tab
+        Subtitle = asset?.FileName ?? ClipTimingLabel;
         ResetTabFor(PropertiesContextKind.Clip, clip.Id);
         RefreshAutomation();
         _suppressApply = false;
+    }
+
+    /// <summary>Turns every effect on the clip off, or back on when they are all already off.</summary>
+    [RelayCommand]
+    private void BypassAllEffects()
+    {
+        if (_clipId is null || FindClip(_clipId) is not { } clip || clip.Effects.Count == 0)
+            return;
+        var turnOff = clip.Effects.Any(e => e.Enabled);
+        foreach (var effect in clip.Effects.Where(e => e.Enabled == turnOff).ToList())
+            _editor.Editor.ToggleEffect(clip.Id, effect.Id);
+        _lastEffectsClipId = null;
+        Refresh();
+        _editor.Preview.RefreshFrame();
+    }
+
+    [RelayCommand]
+    private void ResetCompositing() => OpacityValue = 1;
+
+    [RelayCommand]
+    private void ResetAudio() => VolumeValue = 1;
+
+    [RelayCommand]
+    private void ResetSpeed() => SpeedValue = 1;
+
+    [RelayCommand]
+    private void ResetFades()
+    {
+        FadeInValue = 0;
+        FadeOutValue = 0;
     }
 
     private void ShowTrack(Track track)
@@ -397,23 +511,51 @@ public partial class PropertiesViewModel : ViewModelBase
     {
         var marker = location.Marker;
         var absolute = location.Clip is not null ? location.Clip.StartSec + marker.StartSec : marker.StartSec;
+        var rate = _editor.Editor.Document.Rate;
 
         // Same marker already shown: skip the destructive clear so typing a marker name
         // (which raises TimelineChanged on every keystroke) doesn't reset the panel.
         var sameMarker = Kind == PropertiesContextKind.Marker && _markerId == marker.Id;
         _suppressApply = true;
         Kind = PropertiesContextKind.Marker;
-        Title = "Marker";
-        Subtitle = marker.Name.Length == 0 ? "Unnamed marker" : marker.Name;
+        Title = marker.IsRange ? "Range marker" : "Point marker";
+        Subtitle = "";
         if (!sameMarker)
             ClearSections();
         _clipId = null;
         _markerId = marker.Id;
+        _markerRate = rate;
         ShowMarkerSection = true;
+        MarkerIsRange = marker.IsRange;
+        OnPropertyChanged(nameof(MarkerTitle));
         MarkerName = marker.Name;
         MarkerColor = marker.Color;
+        RefreshSwatches(marker.Color);
         MarkerTimeLabel = FormatTime(absolute);
         MarkerDurationLabel = marker.DurSec > 0 ? FormatTime(marker.DurSec) : "Point";
+        MarkerPositionText = Timecode.Format(absolute, rate);
+        MarkerStartText = Timecode.Format(marker.StartSec, rate);
+        MarkerEndText = Timecode.Format(marker.EndSec, rate);
+        MarkerDurationText = $"Duration \u00b7 {marker.DurSec:0.00} seconds";
+        MarkerIncludeInExport = marker.IncludeInExport;
+        MarkerOutputName = marker.OutputName ?? "";
+        if (location.Clip is not null)
+        {
+            MarkerAttachedText = "Clip";
+            MarkerAttachedNote = "Moves with its clip.";
+        }
+        else if (location.Track is not null)
+        {
+            MarkerAttachedText = "Track";
+            MarkerAttachedNote = "Stays on this track.";
+        }
+        else
+        {
+            MarkerAttachedText = "Timeline";
+            MarkerAttachedNote = "Stays at this sequence time.";
+        }
+        MarkerEffectLabel = SelectedEffect is { } effect ? $"Selected effect: {effect.DisplayName}" : null;
+        OnPropertyChanged(nameof(MarkerHasEffect));
         _proxyTarget = null;
         ShowProxySection = false;
         CanGenerateProxy = false;
@@ -421,13 +563,118 @@ public partial class PropertiesViewModel : ViewModelBase
         _suppressApply = false;
     }
 
+    private void RefreshSwatches(string selected)
+    {
+        if (MarkerSwatches.Count != MarkerColors.Length)
+        {
+            MarkerSwatches.Clear();
+            foreach (var hex in MarkerColors)
+                MarkerSwatches.Add(new MarkerSwatchViewModel(hex, SetMarkerColor));
+        }
+        foreach (var swatch in MarkerSwatches)
+            swatch.IsSelected = string.Equals(swatch.Hex, selected, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private double MarkerBaseSec()
+        => _markerId is not null && _editor.Editor.FindMarker(_markerId) is { Clip: { } clip } ? clip.StartSec : 0;
+
+    private void EditMarker(MarkerEdit edit)
+    {
+        if (_markerId is null || Kind != PropertiesContextKind.Marker)
+            return;
+        _editor.Editor.EditMarker(_markerId, edit);
+        Refresh();
+    }
+
+    /// <summary>Re-reads the marker after a typed value was rejected, so the box shows the real value.</summary>
+    private void RevertMarkerText() => Refresh();
+
+    partial void OnMarkerPositionTextChanged(string value)
+    {
+        if (_suppressApply || Kind != PropertiesContextKind.Marker)
+            return;
+        if (!Timecode.TryParse(value, _markerRate, out var sec)) { RevertMarkerText(); return; }
+        EditMarker(new MarkerEdit(StartSec: sec - MarkerBaseSec()));
+    }
+
+    partial void OnMarkerStartTextChanged(string value)
+    {
+        if (_suppressApply || Kind != PropertiesContextKind.Marker)
+            return;
+        if (!Timecode.TryParse(value, _markerRate, out var start)
+            || _markerId is null || _editor.Editor.FindMarker(_markerId) is not { } loc) { RevertMarkerText(); return; }
+        // moving the start keeps the end where it is
+        var end = loc.Marker.EndSec;
+        if (start >= end - 1e-3) { RevertMarkerText(); return; }
+        EditMarker(new MarkerEdit(StartSec: start, DurSec: end - start));
+    }
+
+    partial void OnMarkerEndTextChanged(string value)
+    {
+        if (_suppressApply || Kind != PropertiesContextKind.Marker)
+            return;
+        if (!Timecode.TryParse(value, _markerRate, out var end)
+            || _markerId is null || _editor.Editor.FindMarker(_markerId) is not { } loc) { RevertMarkerText(); return; }
+        if (end <= loc.Marker.StartSec + 1e-3) { RevertMarkerText(); return; }
+        EditMarker(new MarkerEdit(DurSec: end - loc.Marker.StartSec));
+    }
+
+    partial void OnMarkerIncludeInExportChanged(bool value)
+    {
+        if (_suppressApply || Kind != PropertiesContextKind.Marker)
+            return;
+        EditMarker(new MarkerEdit(IncludeInExport: value));
+    }
+
+    partial void OnMarkerOutputNameChanged(string value)
+    {
+        if (_suppressApply || Kind != PropertiesContextKind.Marker)
+            return;
+        EditMarker(new MarkerEdit(OutputName: value.Trim()));
+    }
+
+    [RelayCommand]
+    private void JumpToMarker()
+    {
+        if (_markerId is null || _editor.Editor.FindMarker(_markerId) is not { } loc)
+            return;
+        _editor.SeekFromUser(loc.Marker.StartSec + MarkerBaseSec());
+    }
+
+    [RelayCommand]
+    private void JumpToMarkerEnd()
+    {
+        if (_markerId is null || _editor.Editor.FindMarker(_markerId) is not { } loc)
+            return;
+        _editor.SeekFromUser(loc.Marker.EndSec + MarkerBaseSec());
+    }
+
+    /// <summary>Moves the playhead to the marker and keyframes every parameter of the selected effect there.</summary>
+    [RelayCommand]
+    private void PlaceKeyframeAtMarker()
+    {
+        if (SelectedEffect is null)
+            return;
+        JumpToMarker();
+        foreach (var param in EffectParams.ToList())
+            param.AddKeyframeCommand.Execute(null);
+    }
+
+    [RelayCommand]
+    private void DeleteMarker()
+    {
+        if (_markerId is null)
+            return;
+        _editor.Editor.DeleteMarker(_markerId);
+        Refresh();
+    }
+
     partial void OnMarkerNameChanged(string value)
     {
         if (_suppressApply || _markerId is null || Kind != PropertiesContextKind.Marker)
             return;
         _editor.Editor.UpdateMarker(_markerId, name: value);
-        Subtitle = value.Length == 0 ? "Unnamed marker" : value;
-    }
+        }
 
     [RelayCommand]
     private void SetMarkerColor(string? hex)
@@ -457,7 +704,13 @@ public partial class PropertiesViewModel : ViewModelBase
         _transitionKey = transition.Key;
         ShowTransitionSection = true;
         TransitionTypeLabel = displayName;
+        TransitionDescription = TransitionCatalog.Find(transition.TypeId)?.Description;
+        TransitionEditPoint = Timecode.Format(transition.CutSec, _editor.Editor.Document.Rate);
+        TransitionOutgoing = ClipFileName(transition.Left);
+        TransitionIncoming = ClipFileName(transition.Right);
+        Subtitle = $"{TransitionOutgoing} \u2192 {TransitionIncoming}";
         TransitionDurationValue = transition.DurationSec;
+        TransitionDurationText = $"{transition.DurationSec:0.00} s";
         TransitionMaxDuration = Math.Max(transition.DurationSec, Math.Max(0.05,
             _editor.Editor.GetMaxTransitionDuration(transition.LeftClipId, transition.RightClipId)));
         TransitionSpanLabel = $"{FormatTime(transition.DurationSec)} across the cut";
@@ -485,6 +738,68 @@ public partial class PropertiesViewModel : ViewModelBase
             _suppressApply = false;
         }
         TransitionSpanLabel = $"{FormatTime(clamped)} across the cut";
+        TransitionDurationText = $"{clamped:0.00} s";
+        _editor.Preview.RefreshFrame();
+    }
+
+    /// <summary>Applies a typed duration such as "1.4" or "1.40 s".</summary>
+    partial void OnTransitionDurationTextChanged(string value)
+    {
+        if (_suppressApply || Kind != PropertiesContextKind.Transition)
+            return;
+        var text = value.Replace("s", "", StringComparison.OrdinalIgnoreCase).Trim();
+        if (double.TryParse(text, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var seconds)
+            && seconds > 0 && Math.Abs(seconds - TransitionDurationValue) > 1e-6)
+            TransitionDurationValue = seconds;
+        else
+            TransitionDurationText = $"{TransitionDurationValue:0.00} s";
+    }
+
+    private string ClipFileName(Clip clip)
+        => clip switch
+        {
+            VideoClip v when _editor.MediaById.TryGetValue(v.SourceId, out var a) => a.FileName,
+            AudioClip au when _editor.MediaById.TryGetValue(au.SourceId, out var a) => a.FileName,
+            _ => "clip",
+        };
+
+    internal CutTransition? CurrentTransition()
+        => Kind == PropertiesContextKind.Transition && _transitionKey is not null
+            ? _editor.Editor.GetTransition(_transitionKey)
+            : null;
+
+    internal void WriteTransitionParam(string key, ParamValue value)
+    {
+        if (CurrentTransition() is not { } t)
+            return;
+        _editor.Editor.SetTransitionParam(t.LeftClipId, t.RightClipId, key, value);
+        _editor.Preview.RefreshFrame();
+    }
+
+    /// <summary>Plays across the cut so the transition can be judged.</summary>
+    [RelayCommand]
+    private void PreviewTransition()
+    {
+        if (CurrentTransition() is not { } t)
+            return;
+        var half = t.DurationSec / 2;
+        _editor.PlayRange(Math.Max(0, t.CutSec - half - 0.4), t.CutSec + half + 0.4);
+    }
+
+    /// <summary>Opens the transitions library so a different one can be dragged onto the cut.</summary>
+    [RelayCommand]
+    private void ReplaceTransition() => _editor.OpenTransitionsLibrary();
+
+    /// <summary>Puts every control of the transition back to its default.</summary>
+    [RelayCommand]
+    private void ResetTransitionControls()
+    {
+        if (CurrentTransition() is not { } t || TransitionCatalog.Find(t.TypeId) is not { } entry)
+            return;
+        foreach (var def in entry.ParamSchema)
+            _editor.Editor.SetTransitionParam(t.LeftClipId, t.RightClipId, def.Key, def.DefaultValue());
+        _lastTransitionSignature = "";
+        Refresh();
         _editor.Preview.RefreshFrame();
     }
 
@@ -547,13 +862,17 @@ public partial class PropertiesViewModel : ViewModelBase
         return sb.ToString();
     }
 
+    partial void OnSelectedTabIndexChanged(int value) => Transform?.Refresh();
+
     partial void OnSelectedEffectChanged(EffectItemViewModel? value)
     {
         var nextId = value?.EffectId;
         if (nextId == _selectedEffectId && nextId == _lastBuiltEffectId)
             return;
         _selectedEffectId = nextId;
+        SelectedKeyframeSec = null;
         RebuildEffectParams();
+        Transform?.Refresh();
     }
 
     private void ToggleEffect(EffectItemViewModel item)
@@ -665,6 +984,33 @@ public partial class PropertiesViewModel : ViewModelBase
             ? EffectPipeline.Evaluate(track, localT)
             : (effect.Params.TryGetValue(key, out var constant) ? constant : default);
         return (convert(value), count);
+    }
+
+    /// <summary>The clip and effect currently selected in the Effects tab, if any.</summary>
+    internal (Clip Clip, EffectInstance Effect)? SelectedEffectInstance()
+    {
+        if (_clipId is null || _selectedEffectId is null || FindClip(_clipId) is not { } clip
+            || FindEffect(clip, _selectedEffectId) is not { } effect)
+            return null;
+        return (clip, effect);
+    }
+
+    /// <summary>The keyframe (clip-relative seconds) picked on the selected effect's bar, if any.</summary>
+    [ObservableProperty]
+    private double? _selectedKeyframeSec;
+
+    public void SelectKeyframe(double sec) => SelectedKeyframeSec = sec;
+
+    partial void OnSelectedKeyframeSecChanged(double? value) => Transform?.Refresh();
+
+    internal string? SelectedClipFileName => FileName;
+
+    internal void NotifyGenericParamsChanged() => OnPropertyChanged(nameof(ShowGenericParams));
+
+    internal void WriteSelectedEffectParam(string key, ParamValue value)
+    {
+        if (SelectedEffectInstance() is { } sel)
+            WriteEffectParam(sel.Clip.Id, sel.Effect.Id, key, value);
     }
 
     private void WriteEffectParam(string clipId, string effectId, string key, ParamValue value)

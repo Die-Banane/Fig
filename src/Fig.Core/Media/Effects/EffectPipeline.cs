@@ -44,12 +44,13 @@ namespace Fig.Core.Media
             var current = frame;
             foreach (var fx in ordered)
             {
-                if (!fx.Enabled || string.IsNullOrEmpty(fx.TypeId))
+                if (!fx.Enabled || string.IsNullOrEmpty(fx.TypeId) || !fx.IsActiveAt(localT))
                     continue;
                 var processor = EffectCatalog.Resolve(fx.TypeId);
                 if (processor is null)
                     continue;
                 var resolved = ResolveParams(fx, localT);
+
                 var next = processor.Apply(current, resolved, localT);
                 if (!ReferenceEquals(current, next))
                     rentedOut?.Add(next.Pixels);
@@ -93,7 +94,7 @@ namespace Fig.Core.Media
                 {
                     var span = b.TimeSec - a.TimeSec;
                     var u = span <= 1e-9 ? 0 : (t - a.TimeSec) / span;
-                    return Interpolate(a.Value, b.Value, u);
+                    return Interpolate(a.Value, b.Value, KeyframeEasingMath.Apply(a.Easing, u));
                 }
             }
             return last.Value;

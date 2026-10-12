@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Platform.Storage;
@@ -22,6 +23,7 @@ public enum LibraryPanelTab
     Templates,
     Transitions,
     Effects,
+    Markers,
 }
 
 /// <summary>One vertical library tab (icon + label).</summary>
@@ -62,6 +64,7 @@ public partial class EditorViewModel : ViewModelBase
     public TimelineEditor Editor { get; private set; }
     public PreviewViewModel Preview { get; }
     public PropertiesViewModel Properties { get; }
+    public MarkersPanelViewModel Markers { get; }
     public PlaybackEngine? Playback { get; private set; }
     private readonly MediaService _mediaService = new();
 
@@ -77,6 +80,26 @@ public partial class EditorViewModel : ViewModelBase
     public bool HasExportJobs => Exports.Jobs.Count > 0;
     public bool ShowEmptyJobs => !HasExportJobs;
     public int ActiveExportCount => Exports.Jobs.Count(j => j.IsActive);
+    /// <summary>Media filtered by the library search box.</summary>
+    public System.Collections.ObjectModel.ObservableCollection<MediaAsset> VisibleMedia { get; } = new();
+
+    [ObservableProperty]
+    private string _mediaSearchText = "";
+
+    public bool NoMediaMatches => HasMedia && VisibleMedia.Count == 0;
+
+    partial void OnMediaSearchTextChanged(string value) => RefreshVisibleMedia();
+
+    private void RefreshVisibleMedia()
+    {
+        var query = MediaSearchText.Trim();
+        VisibleMedia.Clear();
+        foreach (var asset in Media.Where(a => query.Length == 0
+                     || a.FileName.Contains(query, StringComparison.OrdinalIgnoreCase)))
+            VisibleMedia.Add(asset);
+        OnPropertyChanged(nameof(NoMediaMatches));
+    }
+
     public bool HasMedia => Media.Count > 0;
     public bool NoMedia => Media.Count == 0;
 
@@ -114,8 +137,32 @@ public partial class EditorViewModel : ViewModelBase
     [ObservableProperty]
     private bool _magneticSnap = true;
 
+    /// <summary>Selecting a clip also selects the video or audio linked to it (Alt-click picks just one).</summary>
     [ObservableProperty]
+    private bool _linkedSelection = true;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SaveStatusText))]
     private bool _isDirty;
+
+    /// <summary>The last autosave failed; cleared by the next successful save.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SaveStatusText))]
+    private bool _saveFailed;
+
+    /// <summary>Panel arrangement (sizes, collapsed panels, focus preview), remembered between sessions.</summary>
+    public WorkspaceLayout Layout { get; } = new(AppPaths.WorkspaceLayoutPath);
+
+    public string SaveStatusText => SaveFailed ? "Couldn't save · will retry on your next change"
+        : IsDirty ? "Saving changes…" : "All changes saved";
+
+    /// <summary>One line describing what is selected, shown in the status bar.</summary>
+    [ObservableProperty]
+    private string _selectionSummary = "Nothing selected";
+
+    /// <summary>A hint that fits what the user is doing, shown in the status bar.</summary>
+    [ObservableProperty]
+    private string _statusHint = "Click a clip to select it · Space plays and pauses";
 
     /// <summary>Vertical library rail: Media, Transitions, Effects.</summary>
     public IReadOnlyList<LibraryTabItem> LibraryTabs { get; } =
@@ -124,6 +171,7 @@ public partial class EditorViewModel : ViewModelBase
         new(LibraryPanelTab.Templates, "clapperboard", "Templates"),
         new(LibraryPanelTab.Transitions, "blend", "Transitions"),
         new(LibraryPanelTab.Effects, "wand-sparkles", "Effects"),
+        new(LibraryPanelTab.Markers, "flag", "Markers"),
     ];
 
     [ObservableProperty]
@@ -131,17 +179,158 @@ public partial class EditorViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(IsLibraryTemplates))]
     [NotifyPropertyChangedFor(nameof(IsLibraryTransitions))]
     [NotifyPropertyChangedFor(nameof(IsLibraryEffects))]
+    [NotifyPropertyChangedFor(nameof(IsLibraryMarkers))]
     [NotifyPropertyChangedFor(nameof(LibraryPanelTitle))]
+    [NotifyPropertyChangedFor(nameof(LibraryPanelCount))]
     private LibraryTabItem? _selectedLibraryTab;
 
     public bool IsLibraryMedia => SelectedLibraryTab?.Tab == LibraryPanelTab.Media;
     public bool IsLibraryTemplates => SelectedLibraryTab?.Tab == LibraryPanelTab.Templates;
     public bool IsLibraryTransitions => SelectedLibraryTab?.Tab == LibraryPanelTab.Transitions;
     public bool IsLibraryEffects => SelectedLibraryTab?.Tab == LibraryPanelTab.Effects;
+    public bool IsLibraryMarkers => SelectedLibraryTab?.Tab == LibraryPanelTab.Markers;
     public string LibraryPanelTitle => SelectedLibraryTab?.Title ?? "Media";
 
     public IReadOnlyList<EffectCatalogEntry> EffectCatalogItems => EffectCatalog.All;
     public IReadOnlyList<TransitionCatalogEntry> TransitionCatalogItems => TransitionCatalog.All;
+
+    // ---- effects / transitions browsers: search + category filtering ----
+    private static readonly HashSet<string> ColorEffects = new()
+    {
+        EffectCatalog.Brightness, EffectCatalog.Contrast, EffectCatalog.Saturation, EffectCatalog.Grayscale,
+        EffectCatalog.Tint, EffectCatalog.Hue, EffectCatalog.Invert, EffectCatalog.Sepia, EffectCatalog.Posterize,
+    };
+
+    // ---- presets: named, reusable keyframed effects (built in, plus the user's own) ----
+    private readonly EffectPresetStore _presetStore = new(AppPaths.PresetsDir);
+    private List<EffectPreset> _allPresets = new();
+    public ObservableCollection<EffectPreset> FilteredPresets { get; } = new();
+    public bool HasPresets => FilteredPresets.Count > 0;
+
+    private void LoadPresets()
+    {
+        _allPresets = BuiltInEffectPresets.All.Concat(_presetStore.List()).ToList();
+        RefreshPresetFilter();
+    }
+
+    private void RefreshPresetFilter()
+    {
+        var query = EffectSearchText.Trim();
+        FilteredPresets.Clear();
+        // presets are motion: shown under All and Motion
+        if (SelectedEffectCategory is "All" or "Motion")
+            foreach (var preset in _allPresets.Where(p => query.Length == 0
+                         || p.Name.Contains(query, StringComparison.OrdinalIgnoreCase)
+                         || p.Description.Contains(query, StringComparison.OrdinalIgnoreCase)))
+                FilteredPresets.Add(preset);
+        OnPropertyChanged(nameof(HasPresets));
+    }
+
+    [RelayCommand]
+    private void ApplyPresetFromLibrary(EffectPreset? preset)
+    {
+        if (preset is null || Editor is null)
+            return;
+        var clip = Editor.Selection.SelectedClipIds.FirstOrDefault() is { } id
+            ? Editor.Document.Tracks.SelectMany(t => t.Clips).FirstOrDefault(c => c.Id == id)
+            : null;
+        if (clip is not VideoClip)
+        {
+            Notify?.Invoke("Select a video clip to apply this");
+            return;
+        }
+        var instance = EffectPresetInstantiator.Create(preset, clip.DurSec, PlayheadTimeSec - clip.StartSec);
+        Editor.AddEffect(clip.Id, instance);
+        Preview.RefreshFrame();
+        Properties.Refresh();
+        Properties.SelectEffect(clip.Id, instance.Id);
+        Notify?.Invoke($"Added \"{preset.Name}\" \u2014 move the playhead and drag the frame on the preview to add more keyframes");
+    }
+
+    [RelayCommand]
+    private void DeletePreset(EffectPreset? preset)
+    {
+        if (preset is null || preset.BuiltIn)
+            return;
+        _presetStore.Delete(preset.Id);
+        LoadPresets();
+    }
+
+    /// <summary>Asks for a name and saves an effect's bar and keyframes as a reusable preset.</summary>
+    public async Task SaveEffectAsPresetAsync(string clipId, string effectId)
+    {
+        var clip = Editor.Document.Tracks.SelectMany(t => t.Clips).FirstOrDefault(c => c.Id == clipId);
+        var effect = clip?.Effects.FirstOrDefault(e => e.Id == effectId);
+        if (clip is null || effect is null)
+            return;
+        var name = await Dialogs.PromptTextAsync(null, "Save as preset", "Preset name", "My preset", "Save", "My preset");
+        if (name is null)
+            return;
+        var preset = EffectPresetInstantiator.FromEffect(effect, clip.DurSec, name);
+        preset.Description = "Saved from your own edit.";
+        _presetStore.Save(preset);
+        LoadPresets();
+        SelectedLibraryTab = LibraryTabs.First(t => t.Tab == LibraryPanelTab.Effects);
+        SelectedEffectCategory = "Motion";
+        Notify?.Invoke($"Saved \"{name}\" \u2014 find it under Effects \u2192 Motion");
+    }
+
+    public IReadOnlyList<string> EffectCategories { get; } = ["All", "Color", "Stylize", "Motion"];
+    public ObservableCollection<EffectCatalogEntry> FilteredEffects { get; } = new();
+    public ObservableCollection<TransitionCatalogEntry> FilteredTransitions { get; } = new();
+
+    [ObservableProperty] private string _effectSearchText = "";
+    [ObservableProperty] private string _selectedEffectCategory = "All";
+    [ObservableProperty] private string _transitionSearchText = "";
+
+    public bool NoEffectMatches => FilteredEffects.Count == 0;
+    public bool NoTransitionMatches => FilteredTransitions.Count == 0;
+
+    /// <summary>Number of items in the open library tab, shown beside its title (effects and transitions only).</summary>
+    public string? LibraryPanelCount => SelectedLibraryTab?.Tab switch
+    {
+        LibraryPanelTab.Effects => EffectCatalogItems.Count.ToString(),
+        LibraryPanelTab.Transitions => TransitionCatalogItems.Count.ToString(),
+        _ => null,
+    };
+
+    [RelayCommand]
+    private void SelectEffectCategory(string? category)
+    {
+        if (!string.IsNullOrEmpty(category))
+            SelectedEffectCategory = category;
+    }
+
+    partial void OnEffectSearchTextChanged(string value) { RefreshEffectFilter(); RefreshPresetFilter(); }
+    partial void OnSelectedEffectCategoryChanged(string value) { RefreshEffectFilter(); RefreshPresetFilter(); }
+    partial void OnTransitionSearchTextChanged(string value) => RefreshTransitionFilter();
+
+    private void RefreshEffectFilter()
+    {
+        var query = EffectSearchText.Trim();
+        FilteredEffects.Clear();
+        foreach (var e in EffectCatalogItems.Where(e =>
+                     (SelectedEffectCategory == "All"
+                      || (SelectedEffectCategory == "Motion" && e.TypeId == EffectCatalog.Transform)
+                      || (SelectedEffectCategory == "Color" && ColorEffects.Contains(e.TypeId))
+                      || (SelectedEffectCategory == "Stylize" && e.TypeId != EffectCatalog.Transform && !ColorEffects.Contains(e.TypeId)))
+                     && (query.Length == 0
+                         || e.DisplayName.Contains(query, StringComparison.OrdinalIgnoreCase)
+                         || e.Description.Contains(query, StringComparison.OrdinalIgnoreCase))))
+            FilteredEffects.Add(e);
+        OnPropertyChanged(nameof(NoEffectMatches));
+    }
+
+    private void RefreshTransitionFilter()
+    {
+        var query = TransitionSearchText.Trim();
+        FilteredTransitions.Clear();
+        foreach (var t in TransitionCatalogItems.Where(t => query.Length == 0
+                     || t.DisplayName.Contains(query, StringComparison.OrdinalIgnoreCase)
+                     || t.Description.Contains(query, StringComparison.OrdinalIgnoreCase)))
+            FilteredTransitions.Add(t);
+        OnPropertyChanged(nameof(NoTransitionMatches));
+    }
 
     private readonly TemplateStore _templateStore = new(AppPaths.TemplatesDir);
     public System.Collections.ObjectModel.ObservableCollection<VideoTemplate> Templates { get; } = new();
@@ -159,12 +348,20 @@ public partial class EditorViewModel : ViewModelBase
     partial void OnTemplateSearchTextChanged(string value) => RefreshTemplateFilter();
     partial void OnSelectedTemplateCategoryChanged(string value) => RefreshTemplateFilter();
 
+    partial void OnSelectedLibraryTabChanged(LibraryTabItem? value)
+    {
+        // picking a rail tab while the panel is tucked away should show it
+        if (value is not null && _constructed)
+            Layout.RevealLeft();
+    }
+
     partial void OnMagneticSnapChanged(bool value)
     {
         if (Editor is not null)
             Editor.MagneticSnap = value;
     }
 
+    private bool _constructed;
     private ProjectStore? _store;
     private System.Threading.CancellationTokenSource? _autosaveCts;
     private readonly object _autosaveLock = new();
@@ -173,12 +370,16 @@ public partial class EditorViewModel : ViewModelBase
     {
         Gestures = gestures;
         SelectedLibraryTab = LibraryTabs[0];
+        RefreshEffectFilter();
+        RefreshTransitionFilter();
+        LoadPresets();
         LoadTemplates();
         Editor = CreateSeededEditor();
         Editor.MediaResolver = FindAssetById;
         Preview = new PreviewViewModel(_mediaService, ResolvePreviewLayers);
         Preview.AttachEditor(this);
         Properties = new PropertiesViewModel(this);
+        Markers = new MarkersPanelViewModel(this);
         Media.CollectionChanged += (_, _) =>
         {
             _mediaById.Clear();
@@ -189,6 +390,7 @@ public partial class EditorViewModel : ViewModelBase
             OnPropertyChanged(nameof(SequenceEndSec));
             OnPropertyChanged(nameof(HasMedia));
             OnPropertyChanged(nameof(NoMedia));
+            RefreshVisibleMedia();
             Preview.UpdateCanvasFromMedia();
             Properties.Refresh();
         };
@@ -206,6 +408,7 @@ public partial class EditorViewModel : ViewModelBase
             OnPropertyChanged(nameof(ShowEmptyJobs));
             OnPropertyChanged(nameof(ActiveExportCount));
         };
+        _constructed = true;
     }
 
     private void LoadTemplates()
@@ -233,6 +436,21 @@ public partial class EditorViewModel : ViewModelBase
         }
         OnPropertyChanged(nameof(HasTemplates));
         OnPropertyChanged(nameof(NoTemplates));
+    }
+
+    /// <summary>Opens the transitions library (used by the inspector's "Replace").</summary>
+    public void OpenTransitionsLibrary()
+    {
+        SelectedLibraryTab = LibraryTabs.First(t => t.Tab == LibraryPanelTab.Transitions);
+        Layout.RevealLeft();
+    }
+
+    /// <summary>Opens the effects library (used by the inspector's "Add effect").</summary>
+    [RelayCommand]
+    private void OpenEffectsLibrary()
+    {
+        SelectedLibraryTab = LibraryTabs.First(t => t.Tab == LibraryPanelTab.Effects);
+        Layout.RevealLeft();
     }
 
     [RelayCommand]
@@ -318,6 +536,39 @@ public partial class EditorViewModel : ViewModelBase
             _syncingSelection = false;
         }
         Properties.Refresh();
+        UpdateSelectionSummary();
+        Markers.Refresh();
+    }
+
+    private void UpdateSelectionSummary()
+    {
+        var selection = Editor.Selection;
+        var clips = Editor.Document.Tracks.SelectMany(t => t.Clips)
+            .Where(c => selection.IsSelected(c.Id)).ToList();
+
+        if (clips.Count > 0)
+        {
+            var linked = clips.Count > 1 && clips[0].LinkGroupId is { } g && clips.All(c => c.LinkGroupId == g);
+            SelectionSummary = clips.Count == 1
+                ? "1 clip selected"
+                : linked ? $"{clips.Count} linked clips selected" : $"{clips.Count} clips selected";
+            StatusHint = "Drag an edge to trim · Ctrl-click adds or removes · drag empty space (or Shift-drag anywhere) to select a region";
+        }
+        else if (selection.SelectedMarkerId is not null)
+        {
+            SelectionSummary = "1 marker selected";
+            StatusHint = "Drag a range edge to adjust export boundaries · Shift+Delete removes it";
+        }
+        else if (selection.SelectedTransitionKey is not null)
+        {
+            SelectionSummary = "Transition selected";
+            StatusHint = "Drag the transition handle to change its length";
+        }
+        else
+        {
+            SelectionSummary = "Nothing selected";
+            StatusHint = "Click a clip to select it · drag empty space to box-select · Space plays · M adds a marker";
+        }
     }
 
     private void OnEditorTimelineChanged()
@@ -325,6 +576,7 @@ public partial class EditorViewModel : ViewModelBase
         IsDirty = true;
         OnPropertyChanged(nameof(SequenceEndSec));
         Properties.Refresh();
+        Markers.Refresh();
         // property edits (opacity/crop) need an immediate preview redraw
         if (!IsPlaying)
             Preview.RefreshFrame();
@@ -370,14 +622,47 @@ public partial class EditorViewModel : ViewModelBase
     /// <summary>Timeline scrub or transport seek (not driven by playback clock).</summary>
     public void SeekFromUser(double sec)
     {
+        StopShuttle();
+        MovePlayhead(sec, audible: true);
+    }
+
+    /// <summary>Moves the playhead; while stopped, scrubbing also plays the audio under it.</summary>
+    private void MovePlayhead(double sec, bool audible)
+    {
+        _stopAtSec = null;
         PlayheadTimeSec = Math.Max(0, sec);
         Playback?.Seek(PlayheadTimeSec);
+        if (audible && AudioScrub)
+            Playback?.ScrubTo(PlayheadTimeSec);
         Preview.PlayheadSec = PlayheadTimeSec;
+    }
+
+    private double? _stopAtSec;
+
+    /// <summary>Plays from <paramref name="startSec"/> and pauses when it reaches <paramref name="endSec"/>.</summary>
+    public async void PlayRange(double startSec, double endSec)
+    {
+        if (Playback is null)
+            return;
+        if (Playback.IsPlaying)
+            await Playback.PauseAsync();
+        _stopAtSec = null;
+        MovePlayhead(startSec, audible: false);
+        _stopAtSec = endSec;
+        IsPlaying = true;
+        Preview.PreRollPlayback();
+        await Playback.PlayAsync();
+        IsPlaying = Playback.IsPlaying;
     }
 
     /// <summary>Audio master clock position during playback.</summary>
     public void NotifyPlaybackPosition(double sec)
     {
+        if (_stopAtSec is { } stop && sec >= stop)
+        {
+            _stopAtSec = null;
+            _ = Playback?.PauseAsync();
+        }
         PlayheadTimeSec = Math.Max(0, sec);
         Preview.PlayheadSec = PlayheadTimeSec;
         IsPlaying = Playback?.IsPlaying ?? false;
@@ -442,10 +727,14 @@ public partial class EditorViewModel : ViewModelBase
             Notify?.Invoke("Effects apply to video clips");
             return;
         }
-        Editor.AddEffect(clipId, entry.CreateInstance());
+        var instance = entry.CreateInstance();
+        Editor.AddEffect(clipId, instance);
         Preview.RefreshFrame();
         Properties.Refresh();
-        Notify?.Invoke($"Added {entry.DisplayName}");
+        Properties.SelectEffect(clipId, instance.Id);
+        Notify?.Invoke(entry.TypeId == EffectCatalog.Transform
+            ? "Added Transform \u2014 press the stopwatch to animate it with keyframes"
+            : $"Added {entry.DisplayName}");
     }
 
     [RelayCommand]
@@ -499,9 +788,21 @@ public partial class EditorViewModel : ViewModelBase
                         _store.SaveProject(Project!);
                 }
             });
+
+            // saved. If another edit arrived meanwhile its own autosave is pending, so stay "saving".
+            if (!token.IsCancellationRequested)
+                Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+                {
+                    SaveFailed = false;
+                    IsDirty = false;
+                });
         }
         catch (TaskCanceledException)
         {
+        }
+        catch (Exception)
+        {
+            Avalonia.Threading.Dispatcher.UIThread.Post(() => SaveFailed = true);
         }
     }
 
@@ -870,6 +1171,7 @@ public partial class EditorViewModel : ViewModelBase
         }
         new SaveService(path).Save(Project!);
         _store?.SaveProject(Project!);
+        SaveFailed = false;
         IsDirty = false;
         Notify?.Invoke($"Saved \"{Project.Name}\"");
     }
@@ -955,6 +1257,96 @@ public partial class EditorViewModel : ViewModelBase
         Notify?.Invoke(marker.Name.Length == 0 ? "Added marker at playhead" : $"Added marker \"{marker.Name}\"");
     }
 
+    /// <summary>
+    /// Asks how to build ranges from the timeline's bookmarks (shows a preview), then adds them.
+    /// Returns true when ranges were created.
+    /// </summary>
+    public async Task<bool> CreateRangesFromBookmarksAsync(Window? owner)
+    {
+        owner ??= MainWindow;
+        if (owner is null)
+            return false;
+        var dialog = new BookmarkRangesDialog(Editor.Document);
+        var includeBounds = await dialog.ShowDialog<bool?>(owner);
+        if (includeBounds is null)
+            return false;
+        var created = Editor.CreateRangesFromBookmarks(includeBounds.Value);
+        if (created.Count == 0)
+            return false;
+        Notify?.Invoke(created.Count == 1 ? "Created 1 range" : $"Created {created.Count} ranges");
+        return true;
+    }
+
+    [RelayCommand]
+    private async Task CreateRangesFromBookmarks(Window? owner) => await CreateRangesFromBookmarksAsync(owner);
+
+    /// <summary>Selects a marker (from the Markers panel) and moves the playhead to it.</summary>
+    public void SelectMarker(string markerId)
+    {
+        if (Editor.FindMarker(markerId) is not { } loc)
+            return;
+        Editor.Selection.SelectMarker(markerId);
+        SeekFromUser((loc.Clip?.StartSec ?? 0) + loc.Marker.StartSec);
+        Preview.RefreshFrame();
+    }
+
+    /// <summary>Deletes a marker by id.</summary>
+    public void DeleteMarker(string markerId) => Editor.DeleteMarker(markerId);
+
+    /// <summary>Opens the inspector on the marker so it can be renamed, recolored or retimed.</summary>
+    public void EditMarker(string markerId)
+    {
+        Editor.Selection.SelectMarker(markerId);
+        Layout.RevealRight();
+    }
+
+    public void UseMarkerAsRangeStart(string markerId) => AddRangeFromBookmark(markerId, true);
+
+    public void UseMarkerAsRangeEnd(string markerId) => AddRangeFromBookmark(markerId, false);
+
+    private void AddRangeFromBookmark(string markerId, bool asStart)
+    {
+        var range = Editor.AddRangeFromBookmark(markerId, asStart);
+        if (range is null)
+        {
+            Notify?.Invoke("There's no room for a range here — only bookmarks on the sequence can start or end one");
+            return;
+        }
+        Editor.Selection.SelectMarker(range.Id);
+        Notify?.Invoke($"Created range \"{range.Name}\"");
+    }
+
+    /// <summary>True when an effect is selected, so a keyframe can be placed at a marker.</summary>
+    public bool CanPlaceKeyframeAtMarker => Properties.SelectedEffect is not null;
+
+    /// <summary>Moves the playhead to the marker and keyframes the selected effect there.</summary>
+    public void PlaceKeyframeAtMarker(string markerId)
+    {
+        Editor.Selection.SelectMarker(markerId);
+        Properties.PlaceKeyframeAtMarkerCommand.Execute(null);
+    }
+
+    /// <summary>Adds a bookmark (point marker) to the sequence at the playhead.</summary>
+    public void AddTimelinePointMarker()
+    {
+        var count = Editor.Document.Markers.Count(m => !m.IsRange) + 1;
+        var marker = Editor.AddMarker(Editor.Document, Editor.SnapTime(PlayheadTimeSec), $"Marker {count}", "#eab308");
+        Editor.Selection.SelectMarker(marker.Id);
+        Notify?.Invoke($"Added \"{marker.Name}\" at the playhead");
+    }
+
+    /// <summary>Adds a range marker starting at the playhead (up to 4 seconds, or until the end of the sequence).</summary>
+    public void AddTimelineRangeMarker()
+    {
+        var start = Editor.SnapTime(PlayheadTimeSec);
+        var end = Math.Max(SequenceEndSec, start + 1);
+        var length = Math.Min(4, end - start);
+        var count = Editor.Document.Markers.Count(m => m.IsRange) + 1;
+        var marker = Editor.AddRangeMarker(start, length, $"Range {count}", "#5f9cf8");
+        Editor.Selection.SelectMarker(marker.Id);
+        Notify?.Invoke($"Added \"{marker.Name}\" \u2014 drag its edges on the timeline to adjust");
+    }
+
     [RelayCommand]
     private void DeleteSelectedMarker()
     {
@@ -998,7 +1390,13 @@ public partial class EditorViewModel : ViewModelBase
     /// as a background job visible in the jobs popup.
     /// </summary>
     [RelayCommand]
-    private async Task ExportAsync(Window? owner)
+    private Task ExportAsync(Window? owner) => RunExportAsync(owner, chapterMode: false);
+
+    /// <summary>Exports each marked range of the timeline as its own video.</summary>
+    [RelayCommand]
+    private Task ExportMarkedRangesAsync(Window? owner) => RunExportAsync(owner, chapterMode: true);
+
+    private async Task RunExportAsync(Window? owner, bool chapterMode)
     {
         if (Project is null || Editor is null)
             return;
@@ -1008,21 +1406,30 @@ public partial class EditorViewModel : ViewModelBase
 
         var timeline = Editor.Document;
         var settings = Project.Export;
-        var dialog = new ExportDialog(timeline.Rate.Fps, settings.Width, settings.Height);
+        var dialog = new ExportDialog(timeline.Rate.Fps, settings.Width, settings.Height, timeline, Project.Name, chapterMode);
+        dialog.Model.CreateRangesFromBookmarks = () => CreateRangesFromBookmarksAsync(dialog);
         var options = await dialog.ShowDialog<ExportOptions?>(owner);
         if (options is null)
             return;
-        if (string.IsNullOrWhiteSpace(options.OutputPath))
-        {
-            Notify?.Invoke("Choose an output path");
-            return;
-        }
 
         var width = Math.Max(2, options.Width & ~1);
         var height = Math.Max(2, options.Height & ~1);
-        Exports.Enqueue(options.OutputPath, width, height, Math.Clamp(options.Crf, 0, 51), Project, timeline);
+        var crf = Math.Clamp(options.Crf, 0, 51);
+
+        if (options.Chapters is { Count: > 0 } chapters)
+        {
+            System.IO.Directory.CreateDirectory(options.OutputPath);
+            foreach (var chapter in chapters)
+                Exports.Enqueue(System.IO.Path.Combine(options.OutputPath, chapter.FileName), width, height, crf,
+                    Project, timeline, chapter.StartSec, chapter.EndSec);
+            IsJobsOpen = true;
+            Notify?.Invoke($"Exporting {chapters.Count} video{(chapters.Count == 1 ? "" : "s")} — you can keep editing");
+            return;
+        }
+
+        Exports.Enqueue(options.OutputPath, width, height, crf, Project, timeline);
         IsJobsOpen = true;
-        Notify?.Invoke($"Export started: {System.IO.Path.GetFileName(options.OutputPath)}");
+        Notify?.Invoke($"Export started: {System.IO.Path.GetFileName(options.OutputPath)} — you can keep editing");
     }
 
     [RelayCommand]
@@ -1075,6 +1482,8 @@ public partial class EditorViewModel : ViewModelBase
     {
         if (Playback is null)
             return;
+        _stopAtSec = null;
+        StopShuttle();
         if (Playback.IsPlaying)
         {
             await Playback.PauseAsync();
@@ -1138,6 +1547,46 @@ public partial class EditorViewModel : ViewModelBase
         }
         Preview.InvalidateSources();
         NotifyMediaArtifactsChanged();
+    }
+
+    /// <summary>Puts a media item on the timeline at the playhead (on a free track, or new ones).</summary>
+    [RelayCommand]
+    private void AddMediaToTimeline(MediaAsset? asset)
+    {
+        if (asset is null || Editor is null)
+            return;
+        var start = Editor.SnapTime(PlayheadTimeSec);
+        var kind = asset.Kind == MediaKind.Audio ? TrackKind.Audio : TrackKind.Video;
+        var free = Editor.Document.Tracks.FirstOrDefault(t => t.Kind == kind
+            && !Editor.WouldOverlapGroup(t.Id, Array.Empty<string>(), start, Math.Max(0.1, asset.DurationSec)));
+        var clip = free is not null
+            ? Editor.AddMediaLinked(asset, free.Id, start)
+            : Editor.AddMediaNewTracks(asset, start);
+        if (clip is not null)
+            Editor.Selection.SelectClips(Editor.LinkGroup(clip.Id).Select(c => c.Id));
+        Notify?.Invoke($"Added {asset.FileName} at the playhead");
+    }
+
+    [RelayCommand]
+    private void RevealMediaInFolder(MediaAsset? asset)
+    {
+        if (asset is null || string.IsNullOrEmpty(asset.Url))
+            return;
+        var folder = System.IO.Path.GetDirectoryName(asset.Url);
+        if (string.IsNullOrEmpty(folder) || !System.IO.Directory.Exists(folder))
+        {
+            Notify?.Invoke("The original file's folder can't be found");
+            return;
+        }
+        try
+        {
+            var launcher = OperatingSystem.IsWindows() ? "explorer" : OperatingSystem.IsMacOS() ? "open" : "xdg-open";
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(launcher, $"\"{folder}\"") { UseShellExecute = false });
+        }
+        catch (Exception ex)
+        {
+            Notify?.Invoke($"Couldn't open the folder: {ex.Message}");
+        }
     }
 
     [RelayCommand]

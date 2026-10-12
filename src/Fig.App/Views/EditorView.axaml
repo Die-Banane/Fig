@@ -6,6 +6,7 @@
              xmlns:conv="using:Fig.App.Converters"
              xmlns:vm="using:Fig.App.ViewModels"
              xmlns:core="using:Fig.Core.Timeline"
+             xmlns:media="using:Fig.Core.Media"
              xmlns:templates="using:Fig.Core.Templates"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              mc:Ignorable="d" d:DesignWidth="1300" d:DesignHeight="900"
@@ -256,6 +257,41 @@
             <Setter Property="BorderThickness" Value="0"/>
             <Setter Property="Padding" Value="0"/>
         </Style>
+        <Style Selector="TabControl.inspector-tabs.no-strip /template/ ItemsPresenter#PART_ItemsPresenter">
+            <Setter Property="IsVisible" Value="False"/>
+        </Style>
+        <Style Selector="Button.marker-row">
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="HorizontalAlignment" Value="Stretch"/>
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+            <Setter Property="Background" Value="#202124"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="6"/>
+        </Style>
+        <Style Selector="Button.marker-row:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="#26272B"/>
+        </Style>
+        <Style Selector="Button.marker-row.selected /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="#21334d"/>
+            <Setter Property="BorderBrush" Value="#5f9cf8"/>
+        </Style>
+        <Style Selector="Button.swatch">
+            <Setter Property="Width" Value="24"/>
+            <Setter Property="Height" Value="24"/>
+            <Setter Property="MinWidth" Value="24"/>
+            <Setter Property="MinHeight" Value="24"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="CornerRadius" Value="4"/>
+            <Setter Property="BorderThickness" Value="2"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+        </Style>
+        <Style Selector="Button.swatch:pointerover /template/ ContentPresenter">
+            <Setter Property="BorderBrush" Value="#8a8a8a"/>
+        </Style>
+        <Style Selector="Button.swatch.selected /template/ ContentPresenter">
+            <Setter Property="BorderBrush" Value="#f0f0f0"/>
+        </Style>
         <Style Selector="TabControl.inspector-tabs TabItem">
             <Setter Property="Foreground" Value="{StaticResource TextMuted}"/>
             <Setter Property="FontSize" Value="10"/>
@@ -399,6 +435,8 @@
                           CommandParameter="{Binding $parent[Window]}"/>
                 <MenuItem Header="_Export..." Command="{Binding ExportCommand}"
                           CommandParameter="{Binding $parent[Window]}"/>
+                <MenuItem Header="Export Marked _Ranges..." Command="{Binding ExportMarkedRangesCommand}"
+                          CommandParameter="{Binding $parent[Window]}"/>
                 <Separator/>
                 <MenuItem Header="_Close Project" Click="CloseProjectMenu_Click" InputGesture="Ctrl+W"/>
                 <Separator/>
@@ -431,10 +469,35 @@
                 <Separator/>
                 <MenuItem Header="Add _Marker at Playhead" Command="{Binding AddMarkerAtPlayheadCommand}"
                           InputGesture="M"/>
+                <MenuItem Header="Create _Ranges from Bookmarks..." Command="{Binding CreateRangesFromBookmarksCommand}"
+                          CommandParameter="{Binding $parent[Window]}"/>
                 <MenuItem Header="_Delete Marker" Command="{Binding DeleteSelectedMarkerCommand}"
                           InputGesture="Shift+Delete"/>
                 <MenuItem Header="_Enable / Disable Clip" Command="{Binding ToggleClipEnabledSelectedCommand}"
                           InputGesture="Ctrl+E"/>
+            </MenuItem>
+            <MenuItem Header="_View">
+                <MenuItem Header="Show _Media Panel" Command="{Binding Layout.ToggleLeftCommand}"
+                          ToggleType="CheckBox" IsChecked="{Binding Layout.IsLeftVisible, Mode=OneWay}"
+                          InputGesture="Ctrl+1"/>
+                <MenuItem Header="Show _Inspector" Command="{Binding Layout.ToggleRightCommand}"
+                          ToggleType="CheckBox" IsChecked="{Binding Layout.IsRightVisible, Mode=OneWay}"
+                          InputGesture="Ctrl+2"/>
+                <Separator/>
+                <MenuItem Header="{Binding Layout.FocusMenuText}" Command="{Binding Layout.ToggleFocusCommand}"
+                          InputGesture="Ctrl+Shift+F"/>
+                <MenuItem Header="_Reset Layout" Command="{Binding Layout.ResetCommand}"/>
+                <Separator/>
+                <MenuItem Header="Audio _Scrubbing" Command="{Binding ToggleAudioScrubCommand}"
+                          ToggleType="CheckBox" IsChecked="{Binding AudioScrub, Mode=OneWay}"
+                          InputGesture="Shift+S"/>
+                <Separator/>
+                <MenuItem Header="Zoom to _Fit Sequence" Click="TimelineZoomFit_Click"/>
+                <MenuItem Header="Zoom _In" Click="TimelineZoomIn_Click"/>
+                <MenuItem Header="Zoom _Out" Click="TimelineZoomOut_Click"/>
+            </MenuItem>
+            <MenuItem Header="_Help">
+                <MenuItem Header="_Keyboard Shortcuts" Click="ShortcutsMenu_Click"/>
             </MenuItem>
         </Menu>
 
@@ -444,76 +507,74 @@
             <Border.Effect>
                 <DropShadowEffect Color="#000000" Opacity="0.25" BlurRadius="10" OffsetX="0" OffsetY="2"/>
             </Border.Effect>
-            <DockPanel>
-                <TextBlock Text="{Binding Project.Name}"
-                           VerticalAlignment="Center"
-                           Foreground="{StaticResource TextPrimary}" FontWeight="SemiBold" FontSize="13"
-                           Margin="4,0,12,0"/>
-                <Button DockPanel.Dock="Right" Content="Import" Classes="btn-ghost"
-                        Command="{Binding ImportCommand}"
-                        CommandParameter="{Binding $parent[Window]}"/>
-                <Button DockPanel.Dock="Right" Content="Export" Classes="btn-primary"
-                        Command="{Binding ExportCommand}"
-                        CommandParameter="{Binding $parent[Window]}"
-                        Margin="8,0,0,0"/>
-                <Button x:Name="JobsButton" DockPanel.Dock="Right" Classes="tool-btn"
-                        Command="{Binding ToggleJobsCommand}"
-                        ToolTip.Tip="Export jobs"
-                        Margin="0,0,8,0">
-                    <StackPanel Orientation="Horizontal" Spacing="5">
-                        <local:StrokeIcon Icon="download" Width="16" Height="16" IconBrush="{StaticResource TextSecondary}"/>
-                        <TextBlock Text="{Binding ActiveExportCount}" Foreground="{StaticResource TextSecondary}"
-                                   FontSize="11" VerticalAlignment="Center"/>
+            <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto,Auto,Auto" ColumnSpacing="8">
+                <Button Classes="fig compact" Width="92" Click="BackToProjects_Click"
+                        ToolTip.Tip="Back to your projects (Ctrl+W)" AutomationProperties.Name="Back to projects">
+                    <StackPanel Orientation="Horizontal" Spacing="4" HorizontalAlignment="Center">
+                        <local:StrokeIcon Icon="chevron-left" Width="13" Height="13" IconBrush="{StaticResource TextSecondary}"/>
+                        <TextBlock Text="Projects" VerticalAlignment="Center"/>
                     </StackPanel>
                 </Button>
-                <Popup IsOpen="{Binding IsJobsOpen}"
-                       PlacementTarget="{Binding #JobsButton}"
-                       Placement="Bottom"
-                       VerticalOffset="6">
-                    <Border Background="{StaticResource PanelBg}" CornerRadius="{StaticResource RadiusCard}"
-                            BorderBrush="{StaticResource Border}" BorderThickness="1"
-                            Padding="10" MinWidth="300" MaxWidth="360" MaxHeight="380">
-                        <Border.Effect>
-                            <DropShadowEffect Color="#000000" Opacity="0.4" BlurRadius="16" OffsetX="0" OffsetY="4"/>
-                        </Border.Effect>
-                        <StackPanel Spacing="6">
-                            <TextBlock Text="Export jobs" Classes="inspector-section"/>
-                            <ItemsControl ItemsSource="{Binding Exports.Jobs}">
-                                <ItemsControl.ItemTemplate>
-                                    <DataTemplate x:DataType="vm:ExportJob">
-                                        <Border Background="{StaticResource CardBg}" CornerRadius="{StaticResource RadiusControl}"
-                                                Padding="8" Margin="0,0,0,6">
-                                            <StackPanel Spacing="4">
-                                                <DockPanel>
-                                                    <TextBlock DockPanel.Dock="Right" Text="{Binding StatusLabel}"
-                                                               Classes="field-label" VerticalAlignment="Center"/>
-                                                    <TextBlock Text="{Binding FileName}" Classes="field-value"
-                                                               TextTrimming="CharacterEllipsis"/>
-                                                </DockPanel>
-                                                <ProgressBar Minimum="0" Maximum="1" Value="{Binding Progress}"
-                                                             Height="5" CornerRadius="3"
-                                                             Foreground="{StaticResource Accent}"
-                                                             Background="{StaticResource ChipBg}"/>
-                                                <DockPanel>
-                                                    <TextBlock DockPanel.Dock="Right" Text="{Binding SizeLabel}"
-                                                               Foreground="{StaticResource TextFaint}" FontSize="10"/>
-                                                    <TextBlock Text="{Binding Error}" Foreground="{StaticResource Danger}"
-                                                               FontSize="10" TextTrimming="CharacterEllipsis"/>
-                                                </DockPanel>
-                                            </StackPanel>
-                                        </Border>
-                                    </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
-                            <TextBlock Text="No export jobs yet." Classes="empty-state" Margin="0,8"
-                                       IsVisible="{Binding ShowEmptyJobs}"/>
-                        </StackPanel>
-                    </Border>
-                </Popup>
-            </DockPanel>
+                <TextBlock Grid.Column="1" Text="{Binding Project.Name}"
+                           VerticalAlignment="Center" TextTrimming="CharacterEllipsis" MaxWidth="320"
+                           Foreground="{StaticResource TextPrimary}" FontWeight="SemiBold" FontSize="14"
+                           Margin="8,0,12,0"/>
+                <TextBlock Grid.Column="2" Text="{Binding SaveStatusText}" HorizontalAlignment="Center"
+                           VerticalAlignment="Center" Foreground="{StaticResource TextMuted}" FontSize="11"/>
+                <Button x:Name="LayoutButton" Grid.Column="3" Classes="fig" Width="104" ToolTip.Tip="Panels and layout">
+                    <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
+                        <TextBlock Text="Layout" VerticalAlignment="Center"/>
+                        <local:StrokeIcon Icon="chevron-down" Width="12" Height="12" IconBrush="{StaticResource TextMuted}"/>
+                    </StackPanel>
+                    <Button.Flyout>
+                        <Flyout Placement="BottomEdgeAlignedRight" ShowMode="Standard">
+                            <StackPanel Width="200" Spacing="8">
+                                <TextBlock Text="Workspace layout" FontWeight="SemiBold" Foreground="{StaticResource TextPrimary}"/>
+                                <Button Classes="fig" HorizontalContentAlignment="Left" Content="{Binding Layout.FocusMenuText}"
+                                        Command="{Binding Layout.ToggleFocusCommand}"/>
+                                <Button Classes="fig" HorizontalContentAlignment="Left" Content="Reset layout"
+                                        Command="{Binding Layout.ResetCommand}"/>
+                                <TextBlock Text="Panel sizes remembered" FontSize="11" Foreground="{StaticResource TextMuted}"/>
+                            </StackPanel>
+                        </Flyout>
+                    </Button.Flyout>
+                </Button>
+                <Button x:Name="JobsButton" Grid.Column="4" Classes="fig" Width="80"
+                        Command="{Binding ToggleJobsCommand}" ToolTip.Tip="Export jobs">
+                    <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
+                        <TextBlock Text="Jobs" VerticalAlignment="Center"/>
+                        <TextBlock Text="{Binding ActiveExportCount}" VerticalAlignment="Center"
+                                   Foreground="{StaticResource TextMuted}"/>
+                    </StackPanel>
+                </Button>
+                <Button Grid.Column="5" Classes="fig" Width="80" Content="Import"
+                        Command="{Binding ImportCommand}" CommandParameter="{Binding $parent[Window]}"
+                        ToolTip.Tip="Add video, audio or images to this project"/>
+                <Button Grid.Column="6" Classes="fig primary" Width="92" Content="Export"
+                        Command="{Binding ExportCommand}" CommandParameter="{Binding $parent[Window]}"
+                        ToolTip.Tip="Render the timeline to a video file"/>
+            </Grid>
         </Border>
 
-        <Grid RowDefinitions="*,4,520" ColumnDefinitions="320,4,*,4,360">
+        <!-- Status bar: what is selected, and a hint for what to do next -->
+        <Grid DockPanel.Dock="Bottom" ColumnDefinitions="*,Auto" Margin="4,6,4,0">
+            <TextBlock Text="{Binding SelectionSummary}" Foreground="{StaticResource TextMuted}" FontSize="11"/>
+            <TextBlock Grid.Column="1" Text="{Binding StatusHint}" Foreground="{StaticResource TextMuted}" FontSize="11"/>
+        </Grid>
+
+        <Grid x:Name="Workspace">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="0.54*" MinHeight="220"/>
+                <RowDefinition Height="4"/>
+                <RowDefinition Height="0.46*" MinHeight="240"/>
+            </Grid.RowDefinitions>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="0.2*" MinWidth="220"/>
+                <ColumnDefinition Width="4"/>
+                <ColumnDefinition Width="0.58*" MinWidth="360"/>
+                <ColumnDefinition Width="4"/>
+                <ColumnDefinition Width="0.22*" MinWidth="260"/>
+            </Grid.ColumnDefinitions>
 
             <Border Grid.Row="0" Grid.Column="0"
                     Padding="0" Background="{StaticResource PanelBg}" CornerRadius="{StaticResource RadiusPanel}"
@@ -560,16 +621,32 @@
                         </ListBox>
                     </Border>
 
-                    <DockPanel Margin="12,10,10,10">
-                        <TextBlock DockPanel.Dock="Top" Text="{Binding LibraryPanelTitle}"
-                                   Foreground="{StaticResource TextPrimary}"
-                                   FontSize="14" FontWeight="SemiBold"
-                                   Margin="0,0,0,10"/>
+                    <DockPanel Margin="12,10,10,10" IsVisible="{Binding Layout.IsLeftVisible}">
+                        <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="0,0,0,10">
+                            <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                <TextBlock Text="{Binding LibraryPanelTitle}" VerticalAlignment="Center"
+                                           Foreground="{StaticResource TextPrimary}"
+                                           FontSize="14" FontWeight="SemiBold"/>
+                                <TextBlock Text="{Binding LibraryPanelCount}" VerticalAlignment="Center"
+                                           IsVisible="{Binding LibraryPanelCount, Converter={x:Static ObjectConverters.IsNotNull}}"
+                                           Foreground="{StaticResource TextMuted}" FontSize="12"/>
+                            </StackPanel>
+                            <Button Grid.Column="1" Classes="tool-btn" Width="26" Height="26" MinWidth="26" MinHeight="26" Padding="5"
+                                    Command="{Binding Layout.ToggleLeftCommand}" ToolTip.Tip="Hide this panel (Ctrl+1)"
+                                    AutomationProperties.Name="Hide library panel">
+                                <local:StrokeIcon Icon="chevron-left" Width="14" Height="14"/>
+                            </Button>
+                        </Grid>
 
+                        <Panel>
                         <!-- Media browser -->
-                        <Grid IsVisible="{Binding IsLibraryMedia}">
+                        <DockPanel IsVisible="{Binding IsLibraryMedia}">
+                          <TextBox DockPanel.Dock="Top" Margin="0,0,0,10" Text="{Binding MediaSearchText}"
+                                   PlaceholderText="Search media" IsVisible="{Binding HasMedia}"
+                                   AutomationProperties.Name="Search media"/>
+                          <Grid>
                             <ListBox x:Name="MediaBox"
-                                     ItemsSource="{Binding Media}"
+                                     ItemsSource="{Binding VisibleMedia}"
                                      SelectedItem="{Binding SelectedMedia}"
                                      Background="Transparent"
                                      BorderThickness="0"
@@ -599,6 +676,13 @@
                                                 PointerReleased="MediaCard_PointerReleased">
                                             <Border.ContextMenu>
                                                 <ContextMenu>
+                                                    <MenuItem Header="Add to timeline at the playhead"
+                                                              Command="{Binding #MediaBox.DataContext.AddMediaToTimelineCommand}"
+                                                              CommandParameter="{Binding}"/>
+                                                    <MenuItem Header="Show in folder"
+                                                              Command="{Binding #MediaBox.DataContext.RevealMediaInFolderCommand}"
+                                                              CommandParameter="{Binding}"/>
+                                                    <Separator/>
                                                     <MenuItem Header="Generate Proxy"
                                                               Command="{Binding #MediaBox.DataContext.GenerateProxyCommand}"
                                                               CommandParameter="{Binding}"/>
@@ -645,7 +729,10 @@
                                                   IconBrush="{StaticResource TextFaint}" HorizontalAlignment="Center"/>
                                 <TextBlock Text="Drop media here or use Import" Classes="empty-state"/>
                             </StackPanel>
-                        </Grid>
+                            <TextBlock IsVisible="{Binding NoMediaMatches}" Text="No media matches your search"
+                                       Classes="empty-state" HorizontalAlignment="Center" Margin="0,40,0,0"/>
+                          </Grid>
+                        </DockPanel>
 
                         <!-- Template browser: built-in and locally-authored timeline blueprints -->
                         <DockPanel IsVisible="{Binding IsLibraryTemplates}">
@@ -742,126 +829,337 @@
                         </DockPanel>
 
                         <!-- Effects catalog -->
-                        <ScrollViewer IsVisible="{Binding IsLibraryEffects}"
-                                      HorizontalScrollBarVisibility="Disabled"
-                                      VerticalScrollBarVisibility="Auto">
-                            <ItemsControl ItemsSource="{Binding EffectCatalogItems}">
-                                <ItemsControl.ItemsPanel>
-                                    <ItemsPanelTemplate>
-                                        <WrapPanel Orientation="Horizontal"/>
-                                    </ItemsPanelTemplate>
-                                </ItemsControl.ItemsPanel>
-                                <ItemsControl.ItemTemplate>
-                                    <DataTemplate x:DataType="core:EffectCatalogEntry">
-                                        <Border Width="140" Margin="4" Padding="8"
-                                                Background="{StaticResource CardBg}" CornerRadius="{StaticResource RadiusCard}"
-                                                BorderBrush="{StaticResource Border}" BorderThickness="1"
-                                                Cursor="Hand"
-                                                ToolTip.Tip="Drag onto a video clip"
-                                                PointerPressed="CatalogCard_PointerPressed"
-                                                PointerMoved="CatalogCard_PointerMoved"
-                                                PointerReleased="CatalogCard_PointerReleased">
-                                            <StackPanel Spacing="6">
-                                                <Border Width="36" Height="36" CornerRadius="{StaticResource RadiusControl}"
-                                                        Background="{StaticResource AccentSofter}" HorizontalAlignment="Center">
-                                                    <local:StrokeIcon Icon="{Binding Icon}" Width="18" Height="18"
-                                                                      HorizontalAlignment="Center" VerticalAlignment="Center"
-                                                                      IconBrush="{StaticResource AccentText}"/>
+                        <DockPanel IsVisible="{Binding IsLibraryEffects}">
+                            <TextBlock DockPanel.Dock="Bottom" Classes="field-label" Margin="0,10,0,0"
+                                       Text="Drag onto a clip, or select a clip and press +." TextWrapping="Wrap"/>
+                            <StackPanel DockPanel.Dock="Top" Spacing="10" Margin="0,0,0,10">
+                                <TextBox Text="{Binding EffectSearchText}" PlaceholderText="Search effects"
+                                         AutomationProperties.Name="Search effects"/>
+                                <ItemsControl ItemsSource="{Binding EffectCategories}">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate><WrapPanel Orientation="Horizontal"/></ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="x:String">
+                                            <ToggleButton Classes="fig" Margin="0,0,6,6" Content="{Binding}" MinWidth="0" Padding="10,0"
+                                                          Command="{Binding $parent[UserControl].((vm:EditorViewModel)DataContext).SelectEffectCategoryCommand}"
+                                                          CommandParameter="{Binding}">
+                                                <ToggleButton.IsChecked>
+                                                    <MultiBinding Converter="{x:Static conv:StringEqualsConverter.Instance}">
+                                                        <Binding Path="."/>
+                                                        <Binding Path="$parent[UserControl].((vm:EditorViewModel)DataContext).SelectedEffectCategory"/>
+                                                    </MultiBinding>
+                                                </ToggleButton.IsChecked>
+                                            </ToggleButton>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                            <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                                <StackPanel Spacing="6">
+                                    <TextBlock IsVisible="{Binding NoEffectMatches}" Classes="empty-state" Margin="0,24,0,0"
+                                               Text="No effects match your search"/>
+                                    <TextBlock IsVisible="{Binding HasPresets}" Text="Presets" Classes="inspector-section" Margin="0,2,0,2"/>
+                                    <ItemsControl ItemsSource="{Binding FilteredPresets}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="media:EffectPreset">
+                                                <Border Margin="0,0,0,6" Padding="10,8" CornerRadius="{StaticResource RadiusCard}"
+                                                        Background="#202124" Cursor="Hand"
+                                                        ToolTip.Tip="Drag onto a video clip, or select a clip and press +"
+                                                        PointerPressed="CatalogCard_PointerPressed"
+                                                        PointerMoved="CatalogCard_PointerMoved"
+                                                        PointerReleased="CatalogCard_PointerReleased">
+                                                    <Border.ContextMenu>
+                                                        <ContextMenu>
+                                                            <MenuItem Header="Add to the selected clip"
+                                                                      Command="{Binding $parent[UserControl].((vm:EditorViewModel)DataContext).ApplyPresetFromLibraryCommand}"
+                                                                      CommandParameter="{Binding}"/>
+                                                            <MenuItem Header="Delete preset" IsVisible="{Binding !BuiltIn}"
+                                                                      Command="{Binding $parent[UserControl].((vm:EditorViewModel)DataContext).DeletePresetCommand}"
+                                                                      CommandParameter="{Binding}"/>
+                                                        </ContextMenu>
+                                                    </Border.ContextMenu>
+                                                    <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+                                                        <Border Width="28" Height="28" CornerRadius="14" VerticalAlignment="Center"
+                                                                Background="#1F3A66">
+                                                            <local:StrokeIcon Icon="{Binding Icon}" Width="15" Height="15"
+                                                                              HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                                              IconBrush="#5F9CF8"/>
+                                                        </Border>
+                                                        <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                                                            <TextBlock Text="{Binding Name}" Foreground="{StaticResource TextPrimary}"
+                                                                       FontSize="12" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+                                                            <TextBlock Text="{Binding Description}" Classes="field-label"
+                                                                       FontSize="10" TextWrapping="Wrap" MaxLines="2"
+                                                                       TextTrimming="CharacterEllipsis"/>
+                                                        </StackPanel>
+                                                        <Button Grid.Column="2" Classes="tool-btn" Width="26" Height="26" MinWidth="26" MinHeight="26" Padding="0"
+                                                                Command="{Binding $parent[UserControl].((vm:EditorViewModel)DataContext).ApplyPresetFromLibraryCommand}"
+                                                                CommandParameter="{Binding}" ToolTip.Tip="Add to the selected clip"
+                                                                AutomationProperties.Name="Add preset">
+                                                            <local:StrokeIcon Icon="plus" Width="14" Height="14" HorizontalAlignment="Center"/>
+                                                        </Button>
+                                                    </Grid>
                                                 </Border>
-                                                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="6">
-                                                    <local:StrokeIcon Icon="{Binding Icon}" Width="14" Height="14"
-                                                                      IconBrush="{StaticResource AccentText}"/>
-                                                    <TextBlock Grid.Column="1" Text="{Binding DisplayName}"
-                                                               Foreground="{StaticResource TextPrimary}"
-                                                               FontSize="11" FontWeight="Medium"
-                                                               TextTrimming="CharacterEllipsis"/>
-                                                </Grid>
-                                                <TextBlock Text="{Binding Description}" Foreground="{StaticResource TextFaint}"
-                                                           FontSize="10" TextWrapping="Wrap"
-                                                           MaxHeight="36" TextTrimming="CharacterEllipsis"/>
-                                            </StackPanel>
-                                        </Border>
-                                    </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
-                        </ScrollViewer>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                    <TextBlock IsVisible="{Binding HasPresets}" Text="Effects" Classes="inspector-section" Margin="0,10,0,2"/>
+                                    <ItemsControl ItemsSource="{Binding FilteredEffects}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="core:EffectCatalogEntry">
+                                                <Border Margin="0,0,0,6" Padding="10,8" CornerRadius="{StaticResource RadiusCard}"
+                                                        Background="#202124" Cursor="Hand"
+                                                        ToolTip.Tip="Drag onto a video clip"
+                                                        PointerPressed="CatalogCard_PointerPressed"
+                                                        PointerMoved="CatalogCard_PointerMoved"
+                                                        PointerReleased="CatalogCard_PointerReleased">
+                                                    <Border.ContextMenu>
+                                                        <ContextMenu>
+                                                            <MenuItem Header="Add to the selected clip"
+                                                                      Command="{Binding $parent[UserControl].((vm:EditorViewModel)DataContext).ApplyEffectFromCatalogCommand}"
+                                                                      CommandParameter="{Binding}"/>
+                                                        </ContextMenu>
+                                                    </Border.ContextMenu>
+                                                    <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+                                                        <Border Width="28" Height="28" CornerRadius="14" VerticalAlignment="Center"
+                                                                Background="{StaticResource AccentSofter}">
+                                                            <local:StrokeIcon Icon="{Binding Icon}" Width="15" Height="15"
+                                                                              HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                                              IconBrush="{StaticResource AccentText}"/>
+                                                        </Border>
+                                                        <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                                                            <TextBlock Text="{Binding DisplayName}" Foreground="{StaticResource TextPrimary}"
+                                                                       FontSize="12" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+                                                            <TextBlock Text="{Binding Description}" Classes="field-label"
+                                                                       FontSize="10" TextWrapping="Wrap" MaxLines="2"
+                                                                       TextTrimming="CharacterEllipsis"/>
+                                                        </StackPanel>
+                                                        <Button Grid.Column="2" Classes="tool-btn" Width="26" Height="26" MinWidth="26" MinHeight="26" Padding="0"
+                                                                Command="{Binding $parent[UserControl].((vm:EditorViewModel)DataContext).ApplyEffectFromCatalogCommand}"
+                                                                CommandParameter="{Binding}" ToolTip.Tip="Add to the selected clip"
+                                                                AutomationProperties.Name="Add effect">
+                                                            <local:StrokeIcon Icon="plus" Width="14" Height="14" HorizontalAlignment="Center"/>
+                                                        </Button>
+                                                    </Grid>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                            </ScrollViewer>
+                        </DockPanel>
 
                         <!-- Transitions catalog -->
-                        <ScrollViewer IsVisible="{Binding IsLibraryTransitions}"
-                                      HorizontalScrollBarVisibility="Disabled"
-                                      VerticalScrollBarVisibility="Auto">
-                            <ItemsControl ItemsSource="{Binding TransitionCatalogItems}">
-                                <ItemsControl.ItemsPanel>
-                                    <ItemsPanelTemplate>
-                                        <WrapPanel Orientation="Horizontal"/>
-                                    </ItemsPanelTemplate>
-                                </ItemsControl.ItemsPanel>
-                                <ItemsControl.ItemTemplate>
-                                    <DataTemplate x:DataType="core:TransitionCatalogEntry">
-                                        <Border Width="128" Margin="4" Padding="10"
-                                                Background="{StaticResource CardBg}" CornerRadius="{StaticResource RadiusCard}"
-                                                BorderBrush="{StaticResource Border}" BorderThickness="1"
-                                                Cursor="Hand"
-                                                ToolTip.Tip="Drag onto a cut between clips"
-                                                PointerPressed="CatalogCard_PointerPressed"
-                                                PointerMoved="CatalogCard_PointerMoved"
-                                                PointerReleased="CatalogCard_PointerReleased">
-                                            <StackPanel Spacing="6">
-                                                <Border Width="104" Height="52" CornerRadius="{StaticResource RadiusControl}"
-                                                        Background="#101011" ClipToBounds="True"
-                                                        HorizontalAlignment="Center">
-                                                    <local:TransitionPreview TypeId="{Binding TypeId}"/>
+                        <DockPanel IsVisible="{Binding IsLibraryTransitions}">
+                            <StackPanel DockPanel.Dock="Top" Spacing="8" Margin="0,0,0,10">
+                                <TextBox Text="{Binding TransitionSearchText}" PlaceholderText="Search transitions"
+                                         AutomationProperties.Name="Search transitions"/>
+                                <TextBlock Classes="field-label" Text="Drag a transition onto a cut."/>
+                            </StackPanel>
+                            <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                                <StackPanel>
+                                    <TextBlock IsVisible="{Binding NoTransitionMatches}" Classes="empty-state" Margin="0,24,0,0"
+                                               Text="No transitions match your search"/>
+                                    <ItemsControl ItemsSource="{Binding FilteredTransitions}">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate><UniformGrid Columns="2"/></ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="core:TransitionCatalogEntry">
+                                                <Border Margin="0,0,8,8" Padding="8"
+                                                        Background="#202124" CornerRadius="{StaticResource RadiusCard}"
+                                                        BorderBrush="Transparent" BorderThickness="1"
+                                                        Cursor="Hand"
+                                                        ToolTip.Tip="{Binding Description}"
+                                                        PointerPressed="CatalogCard_PointerPressed"
+                                                        PointerMoved="CatalogCard_PointerMoved"
+                                                        PointerReleased="CatalogCard_PointerReleased">
+                                                    <StackPanel Spacing="6">
+                                                        <Border Height="44" CornerRadius="{StaticResource RadiusControl}"
+                                                                Background="#101011" ClipToBounds="True">
+                                                            <local:TransitionPreview TypeId="{Binding TypeId}"/>
+                                                        </Border>
+                                                        <TextBlock Text="{Binding DisplayName}" Foreground="{StaticResource TextPrimary}"
+                                                                   FontSize="11" TextTrimming="CharacterEllipsis"/>
+                                                    </StackPanel>
                                                 </Border>
-                                                <TextBlock Text="{Binding DisplayName}" Foreground="{StaticResource TextPrimary}"
-                                                           FontSize="12" FontWeight="Medium" HorizontalAlignment="Center"
-                                                           TextTrimming="CharacterEllipsis"/>
-                                                <TextBlock Text="{Binding Description}" Foreground="{StaticResource TextFaint}"
-                                                           FontSize="10" TextWrapping="Wrap"
-                                                           MaxHeight="36" TextTrimming="CharacterEllipsis"/>
-                                            </StackPanel>
-                                        </Border>
-                                    </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
-                        </ScrollViewer>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                            </ScrollViewer>
+                        </DockPanel>
+
+                        <!-- Markers: bookmarks and ranges on the sequence, plus markers attached to clips -->
+                        <DockPanel IsVisible="{Binding IsLibraryMarkers}">
+                            <Button DockPanel.Dock="Bottom" Classes="fig primary" Margin="0,12,0,0"
+                                    Content="Export marked ranges"
+                                    Command="{Binding ExportMarkedRangesCommand}"
+                                    ToolTip.Tip="Save each range marker as its own video"/>
+                            <StackPanel DockPanel.Dock="Top" Spacing="10" Margin="0,0,0,12">
+                                <TextBox Text="{Binding Markers.SearchText}" PlaceholderText="Search markers"
+                                         AutomationProperties.Name="Search markers"/>
+                                <Grid ColumnDefinitions="*,8,*">
+                                    <Button Classes="fig" Content="+ Point" Command="{Binding Markers.AddPointCommand}"
+                                            ToolTip.Tip="Add a bookmark at the playhead (M)"/>
+                                    <Button Grid.Column="2" Classes="fig" Content="+ Range" Command="{Binding Markers.AddRangeCommand}"
+                                            ToolTip.Tip="Add a range that starts at the playhead"/>
+                                </Grid>
+                            </StackPanel>
+                            <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                                <StackPanel Spacing="8">
+                                    <StackPanel IsVisible="{Binding Markers.NoMarkers}" Spacing="6" Margin="0,28,0,0">
+                                        <local:StrokeIcon Icon="flag" Width="24" Height="24" HorizontalAlignment="Center"
+                                                          IconBrush="{StaticResource TextFaint}"/>
+                                        <TextBlock Classes="empty-state" Text="No markers yet"/>
+                                        <TextBlock Classes="empty-state" Text="Press M to bookmark the playhead, or add a range to export a section."/>
+                                    </StackPanel>
+
+                                    <TextBlock IsVisible="{Binding Markers.HasSequenceMarkers}" Text="Sequence markers"
+                                               Classes="inspector-section" Margin="0,4,0,2"/>
+                                    <ItemsControl ItemsSource="{Binding Markers.SequenceMarkers}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="vm:MarkerRowViewModel">
+                                                <Button Classes="marker-row" Classes.selected="{Binding IsSelected}"
+                                                        Command="{Binding SelectCommand}" Margin="0,0,0,6"
+                                                        AutomationProperties.Name="{Binding Name}">
+                                                    <Button.ContextMenu>
+                                                        <ContextMenu>
+                                                            <MenuItem Header="Jump to marker" Command="{Binding SelectCommand}"/>
+                                                            <MenuItem Header="Edit marker..." Command="{Binding EditCommand}"/>
+                                                            <Separator/>
+                                                            <MenuItem Header="Delete marker" Foreground="{StaticResource Danger}" Command="{Binding DeleteCommand}"/>
+                                                        </ContextMenu>
+                                                    </Button.ContextMenu>
+                                                    <Grid ColumnDefinitions="4,*" MinHeight="50">
+                                                        <Border CornerRadius="2" Margin="8,10,0,10" Background="{Binding Color}"/>
+                                                        <StackPanel Grid.Column="1" Margin="10,9,8,9" Spacing="3" VerticalAlignment="Center">
+                                                            <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="12"
+                                                                       Foreground="{StaticResource TextPrimary}" TextTrimming="CharacterEllipsis"/>
+                                                            <TextBlock Text="{Binding Subtitle}" Classes="field-label" TextTrimming="CharacterEllipsis"/>
+                                                        </StackPanel>
+                                                    </Grid>
+                                                </Button>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+
+                                    <TextBlock IsVisible="{Binding Markers.HasClipMarkers}" Text="Clip markers"
+                                               Classes="inspector-section" Margin="0,10,0,2"/>
+                                    <ItemsControl ItemsSource="{Binding Markers.ClipMarkers}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="vm:MarkerRowViewModel">
+                                                <Button Classes="marker-row" Classes.selected="{Binding IsSelected}"
+                                                        Command="{Binding SelectCommand}" Margin="0,0,0,6"
+                                                        AutomationProperties.Name="{Binding Name}">
+                                                    <Button.ContextMenu>
+                                                        <ContextMenu>
+                                                            <MenuItem Header="Jump to marker" Command="{Binding SelectCommand}"/>
+                                                            <MenuItem Header="Edit marker..." Command="{Binding EditCommand}"/>
+                                                            <Separator/>
+                                                            <MenuItem Header="Delete marker" Foreground="{StaticResource Danger}" Command="{Binding DeleteCommand}"/>
+                                                        </ContextMenu>
+                                                    </Button.ContextMenu>
+                                                    <Grid ColumnDefinitions="4,*" MinHeight="50">
+                                                        <Border CornerRadius="2" Margin="8,10,0,10" Background="{Binding Color}"/>
+                                                        <StackPanel Grid.Column="1" Margin="10,9,8,9" Spacing="3" VerticalAlignment="Center">
+                                                            <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="12"
+                                                                       Foreground="{StaticResource TextPrimary}" TextTrimming="CharacterEllipsis"/>
+                                                            <TextBlock Text="{Binding Subtitle}" Classes="field-label" TextTrimming="CharacterEllipsis"/>
+                                                        </StackPanel>
+                                                    </Grid>
+                                                </Button>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                    <TextBlock IsVisible="{Binding Markers.HasClipMarkers}" Classes="field-label"
+                                               Text="Clip markers move with their clip."/>
+                                </StackPanel>
+                            </ScrollViewer>
+                        </DockPanel>
+                        </Panel>
                     </DockPanel>
                 </DockPanel>
             </Border>
 
-            <GridSplitter Grid.Row="0" Grid.Column="1"
-                          Width="4" Background="Transparent" ShowsPreview="True"/>
+            <GridSplitter x:Name="LeftSplitter" Grid.Row="0" Grid.Column="1"
+                          Width="4" Background="Transparent" ShowsPreview="False"
+                          IsVisible="{Binding Layout.IsLeftVisible}"
+                          DragCompleted="Splitter_DragCompleted"
+                          ToolTip.Tip="Drag to resize the panel"/>
 
             <Border Grid.Row="0" Grid.Column="2"
                     Padding="10" Background="{StaticResource PanelBg}" CornerRadius="{StaticResource RadiusPanel}"
                     BorderBrush="{StaticResource BorderSubtle}" BorderThickness="1">
-                <local:PreviewView x:Name="PreviewHost"
-                                   DataContext="{Binding Preview}"/>
+                <DockPanel>
+                    <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="2,0,0,8">
+                        <TextBlock Text="Preview" VerticalAlignment="Center" FontSize="14" FontWeight="SemiBold"
+                                   Foreground="{StaticResource TextPrimary}"/>
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                        <ToggleButton Classes="fig compact" Width="124" Content="Show controls"
+                                      IsVisible="{Binding Properties.HasPreviewControls}"
+                                      IsChecked="{Binding Properties.ShowPreviewControls}"
+                                      ToolTip.Tip="Show or hide the zoom frame on the preview"/>
+                        <Button Classes="fig compact" Width="{Binding Layout.IsFocusPreview, Converter={x:Static conv:BoolToFocusButtonWidthConverter.Instance}}"
+                                Command="{Binding Layout.ToggleFocusCommand}"
+                                ToolTip.Tip="Hide the side panels so the preview fills the window (Ctrl+Shift+F)"
+                                AutomationProperties.Name="Focus preview">
+                            <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
+                                <local:StrokeIcon Icon="maximize-2" Width="13" Height="13" IconBrush="{StaticResource TextSecondary}"/>
+                                <TextBlock Text="{Binding Layout.IsFocusPreview, Converter={x:Static conv:BoolToFocusButtonTextConverter.Instance}}" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
+                        </StackPanel>
+                    </Grid>
+                    <local:PreviewView x:Name="PreviewHost"
+                                       DataContext="{Binding Preview}"/>
+                </DockPanel>
             </Border>
 
-            <GridSplitter Grid.Row="0" Grid.Column="3"
-                          Width="4" Background="Transparent" ShowsPreview="True"/>
+            <GridSplitter x:Name="RightSplitter" Grid.Row="0" Grid.Column="3"
+                          Width="4" Background="Transparent" ShowsPreview="False"
+                          IsVisible="{Binding Layout.IsRightVisible}"
+                          DragCompleted="Splitter_DragCompleted"
+                          ToolTip.Tip="Drag to resize the panel"/>
 
-                <Border Grid.Column="4"
+                <!-- Collapsed inspector: a slim strip that brings it back -->
+                <Border Grid.Column="4" IsVisible="{Binding !Layout.IsRightVisible}"
+                        Background="{StaticResource PanelBg}" CornerRadius="{StaticResource RadiusPanel}"
+                        BorderBrush="{StaticResource BorderSubtle}" BorderThickness="1" VerticalAlignment="Stretch">
+                    <Button Classes="tool-btn" VerticalAlignment="Top" HorizontalAlignment="Center" Margin="0,10,0,0"
+                            Command="{Binding Layout.ToggleRightCommand}" ToolTip.Tip="Show the inspector (Ctrl+2)"
+                            AutomationProperties.Name="Show inspector">
+                        <local:StrokeIcon Icon="chevron-left" Width="14" Height="14"/>
+                    </Button>
+                </Border>
+
+                <Border Grid.Column="4" IsVisible="{Binding Layout.IsRightVisible}"
                         Padding="12,10" Background="{StaticResource PanelBg}" CornerRadius="{StaticResource RadiusPanel}"
                         BorderBrush="{StaticResource BorderSubtle}" BorderThickness="1">
                     <DockPanel DataContext="{Binding Properties}">
                         <Border DockPanel.Dock="Top" Padding="2,1,2,9"
                                 BorderBrush="{StaticResource BorderSubtle}" BorderThickness="0,0,0,1"
                                 Margin="0,0,0,4">
-                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                            <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="8">
                                 <TextBlock Text="{Binding Title}"
                                            Foreground="{StaticResource TextPrimary}"
-                                           FontSize="13" FontWeight="SemiBold"
+                                           FontSize="14" FontWeight="SemiBold"
                                            VerticalAlignment="Center"/>
-                                <TextBlock Grid.Column="1" Text="{Binding Subtitle}"
-                                           Foreground="{StaticResource TextMuted}"
-                                           FontSize="10" VerticalAlignment="Center"
-                                           TextTrimming="CharacterEllipsis" MaxWidth="190"/>
+                                <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Text="{Binding Subtitle}"
+                                           Foreground="{StaticResource TextMuted}" Margin="0,4,0,0"
+                                           FontSize="11" TextTrimming="CharacterEllipsis"/>
+                                <Button Grid.Column="1" Classes="tool-btn" Width="26" Height="26" MinWidth="26" MinHeight="26" Padding="5"
+                                        Command="{Binding $parent[UserControl].((vm:EditorViewModel)DataContext).Layout.ToggleRightCommand}"
+                                        ToolTip.Tip="Hide the inspector (Ctrl+2)" AutomationProperties.Name="Hide inspector">
+                                    <local:StrokeIcon Icon="chevron-right" Width="14" Height="14"/>
+                                </Button>
                             </Grid>
                         </Border>
 
                         <Grid>
                         <TabControl SelectedIndex="{Binding SelectedTabIndex}" Classes="inspector-tabs"
+                                    Classes.no-strip="{Binding !ShowTabStrip}"
                                     IsVisible="{Binding HasContext}">
 
                             <!-- VIDEO: compact aligned property groups -->
@@ -870,7 +1168,11 @@
                                     <StackPanel Spacing="0">
                                         <Border Classes="inspector-group">
                                             <StackPanel Spacing="8">
-                                                <TextBlock Classes="inspector-section" Text="Compositing"/>
+                                                <Grid ColumnDefinitions="*,Auto">
+                                                    <TextBlock Classes="inspector-section" Text="Compositing" VerticalAlignment="Center"/>
+                                                    <Button Grid.Column="1" Content="Reset" Classes="btn-ghost" Padding="7,3"
+                                                            Command="{Binding ResetCompositingCommand}" ToolTip.Tip="Set opacity back to 100%"/>
+                                                </Grid>
                                                 <Grid ColumnDefinitions="58,*,48,20" ColumnSpacing="7">
                                                     <TextBlock Text="Opacity" Classes="field-label" VerticalAlignment="Center"/>
                                                     <ctrls:FigSlider Grid.Column="1" Minimum="0" Maximum="1"
@@ -947,9 +1249,14 @@
                             <!-- AUDIO: volume -->
                             <TabItem Header="Audio" IsVisible="{Binding ShowAudioControls}">
                                 <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                                    <StackPanel>
                                     <Border Classes="inspector-group">
                                         <StackPanel Spacing="8">
-                                            <TextBlock Classes="inspector-section" Text="Clip audio"/>
+                                            <Grid ColumnDefinitions="*,Auto">
+                                                <TextBlock Classes="inspector-section" Text="Clip audio" VerticalAlignment="Center"/>
+                                                <Button Grid.Column="1" Content="Reset" Classes="btn-ghost" Padding="7,3"
+                                                        Command="{Binding ResetAudioCommand}" ToolTip.Tip="Set the level back to 100%"/>
+                                            </Grid>
                                             <Grid ColumnDefinitions="58,*,48,20" ColumnSpacing="7">
                                                 <TextBlock Text="Level" Classes="field-label" VerticalAlignment="Center"/>
                                                 <ctrls:FigSlider Grid.Column="1" Minimum="0" Maximum="1" Value="{Binding VolumeValue}"/>
@@ -960,43 +1267,106 @@
                                                     <local:StrokeIcon Icon="diamond" Width="10" Height="10"/>
                                                 </ToggleButton>
                                             </Grid>
+                                            <Grid ColumnDefinitions="65,*,Auto">
+                                                <Grid Grid.Column="1" ColumnDefinitions="*,Auto">
+                                                    <TextBlock Text="0%" Classes="field-label" FontSize="10"/>
+                                                    <TextBlock Grid.Column="1" Text="100%" Classes="field-label" FontSize="10"/>
+                                                </Grid>
+                                            </Grid>
                                         </StackPanel>
                                     </Border>
+                                    <Border Classes="inspector-group">
+                                        <StackPanel Spacing="10">
+                                            <TextBlock Classes="inspector-section" Text="Volume keyframes"/>
+                                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                                <Button Classes="kf-btn" Command="{Binding VolumeAutomation.StepCommand}" CommandParameter="False"
+                                                        ToolTip.Tip="Previous keyframe" AutomationProperties.Name="Previous keyframe">
+                                                    <local:StrokeIcon Icon="chevron-left" Width="14" Height="14"/>
+                                                </Button>
+                                                <ToggleButton Classes="kf-diamond" Width="28" Height="28"
+                                                              IsChecked="{Binding VolumeAutomation.IsKeyframed, Mode=OneWay}"
+                                                              Command="{Binding VolumeAutomation.ToggleCommand}"
+                                                              ToolTip.Tip="Add or remove a keyframe at the playhead">
+                                                    <local:StrokeIcon Icon="diamond" Width="12" Height="12"/>
+                                                </ToggleButton>
+                                                <Button Classes="kf-btn" Command="{Binding VolumeAutomation.StepCommand}" CommandParameter="True"
+                                                        ToolTip.Tip="Next keyframe" AutomationProperties.Name="Next keyframe">
+                                                    <local:StrokeIcon Icon="chevron-right" Width="14" Height="14"/>
+                                                </Button>
+                                            </StackPanel>
+                                            <TextBlock Classes="field-label" Text="Previous · Add at playhead · Next"/>
+                                        </StackPanel>
+                                    </Border>
+                                    <TextBlock IsVisible="{Binding IsLinked}" Text="{Binding LinkedToLabel}" Classes="field-label"
+                                               Margin="4,16,0,0"/>
+                                    </StackPanel>
                                 </ScrollViewer>
                             </TabItem>
 
                             <!-- SPEED -->
                             <TabItem Header="Speed" IsVisible="{Binding ShowSpeedControls}">
                                 <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                                    <StackPanel>
                                     <Border Classes="inspector-group">
                                         <StackPanel Spacing="8">
-                                            <TextBlock Classes="inspector-section" Text="Retime"/>
-                                            <Grid ColumnDefinitions="58,*,48" ColumnSpacing="7">
+                                            <Grid ColumnDefinitions="*,Auto">
+                                                <TextBlock Classes="inspector-section" Text="Retime" VerticalAlignment="Center"/>
+                                                <Button Grid.Column="1" Content="Reset" Classes="btn-ghost" Padding="7,3"
+                                                        Command="{Binding ResetSpeedCommand}" ToolTip.Tip="Play at normal speed (1.00×)"/>
+                                            </Grid>
+                                            <Grid ColumnDefinitions="58,*,56" ColumnSpacing="7">
                                                 <TextBlock Text="Speed" Classes="field-label" VerticalAlignment="Center"/>
                                                 <ctrls:FigSlider Grid.Column="1" Minimum="0.25" Maximum="4" Value="{Binding SpeedValue}"/>
                                                 <Border Grid.Column="2" Classes="inspector-value">
-                                                    <TextBlock Text="{Binding SpeedValue, StringFormat={}{0:0.00}x}" Classes="field-value" FontSize="10" HorizontalAlignment="Right"/>
+                                                    <TextBlock Text="{Binding SpeedValue, StringFormat={}{0:0.00}×}" Classes="field-value" FontSize="10" HorizontalAlignment="Right"/>
                                                 </Border>
+                                            </Grid>
+                                            <Grid ColumnDefinitions="65,*,Auto">
+                                                <Grid Grid.Column="1" ColumnDefinitions="*,Auto">
+                                                    <TextBlock Text="0.25×" Classes="field-label" FontSize="10"/>
+                                                    <TextBlock Grid.Column="1" Text="4.00×" Classes="field-label" FontSize="10"/>
+                                                </Grid>
                                             </Grid>
                                         </StackPanel>
                                     </Border>
+                                    <Border Classes="inspector-group">
+                                        <StackPanel Spacing="10">
+                                            <TextBlock Classes="inspector-section" Text="Clip duration"/>
+                                            <Grid ColumnDefinitions="*,Auto">
+                                                <TextBlock Text="Original" Classes="field-label"/>
+                                                <TextBlock Grid.Column="1" Text="{Binding OriginalDurationLabel}" Classes="field-value" FontFamily="monospace"/>
+                                            </Grid>
+                                            <Grid ColumnDefinitions="*,Auto">
+                                                <TextBlock Text="After retiming" Classes="field-label"/>
+                                                <TextBlock Grid.Column="1" Text="{Binding RetimedDurationLabel}" Classes="field-value" FontFamily="monospace"/>
+                                            </Grid>
+                                        </StackPanel>
+                                    </Border>
+                                    <TextBlock IsVisible="{Binding IsLinked}" Text="Linked audio follows clip speed." Classes="field-label"
+                                               Margin="4,16,0,0"/>
+                                    </StackPanel>
                                 </ScrollViewer>
                             </TabItem>
 
-                            <!-- ANIMATE: fades -->
+                            <!-- MOTION: fades -->
                             <TabItem Header="Motion" IsVisible="{Binding ShowFadeControls}">
                                 <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                                    <StackPanel>
                                     <Border Classes="inspector-group">
-                                        <StackPanel Spacing="7">
-                                            <TextBlock Classes="inspector-section" Text="Clip fades"/>
-                                            <Grid ColumnDefinitions="58,*,48" ColumnSpacing="7">
+                                        <StackPanel Spacing="8">
+                                            <Grid ColumnDefinitions="*,Auto">
+                                                <TextBlock Classes="inspector-section" Text="Clip fades" VerticalAlignment="Center"/>
+                                                <Button Grid.Column="1" Content="Reset" Classes="btn-ghost" Padding="7,3"
+                                                        Command="{Binding ResetFadesCommand}" ToolTip.Tip="Remove both fades"/>
+                                            </Grid>
+                                            <Grid ColumnDefinitions="58,*,56" ColumnSpacing="7">
                                                 <TextBlock Text="Fade in" Classes="field-label" VerticalAlignment="Center"/>
                                                 <ctrls:FigSlider Grid.Column="1" Minimum="0" Maximum="5" Value="{Binding FadeInValue}"/>
                                                 <Border Grid.Column="2" Classes="inspector-value">
                                                     <TextBlock Text="{Binding FadeInValue, StringFormat={}{0:0.00}s}" Classes="field-value" FontSize="10" HorizontalAlignment="Right"/>
                                                 </Border>
                                             </Grid>
-                                            <Grid ColumnDefinitions="58,*,48" ColumnSpacing="7">
+                                            <Grid ColumnDefinitions="58,*,56" ColumnSpacing="7">
                                                 <TextBlock Text="Fade out" Classes="field-label" VerticalAlignment="Center"/>
                                                 <ctrls:FigSlider Grid.Column="1" Minimum="0" Maximum="5" Value="{Binding FadeOutValue}"/>
                                                 <Border Grid.Column="2" Classes="inspector-value">
@@ -1005,74 +1375,179 @@
                                             </Grid>
                                         </StackPanel>
                                     </Border>
+                                    <Border Classes="inspector-group">
+                                        <StackPanel Spacing="10">
+                                            <TextBlock Classes="inspector-section" Text="Fade envelope"/>
+                                            <ctrls:FadeEnvelope Height="88" FadeIn="{Binding FadeInValue}" FadeOut="{Binding FadeOutValue}"
+                                                                ClipDuration="{Binding ClipDurationSec}"/>
+                                            <TextBlock Classes="field-label" TextWrapping="Wrap" Text="Adjust fades here or from the clip corners."/>
+                                        </StackPanel>
+                                    </Border>
+                                    </StackPanel>
                                 </ScrollViewer>
                             </TabItem>
 
-                            <!-- ADJUST: effect stack -->
+                            <!-- EFFECTS: what is applied to this clip -->
                             <TabItem Header="Effects" IsVisible="{Binding ShowEffectsSection}">
-                                <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-                                    <StackPanel Spacing="12">
-                                        <StackPanel IsVisible="{Binding NoEffects}" Spacing="4"
-                                                    HorizontalAlignment="Center" Margin="0,4">
-                                            <local:StrokeIcon Icon="wand-sparkles" Width="20" Height="20"
+                                <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto" Padding="0,0,10,0">
+                                    <StackPanel Spacing="12" Margin="0,10,0,0">
+                                        <Grid ColumnDefinitions="*,Auto">
+                                            <TextBlock Classes="inspector-section" Text="Applied effects" VerticalAlignment="Center"/>
+                                            <Button Grid.Column="1" Content="Bypass all" Classes="btn-ghost" Padding="7,3"
+                                                    IsVisible="{Binding HasEffects}" Command="{Binding BypassAllEffectsCommand}"
+                                                    ToolTip.Tip="Turn every effect off to see the clip without them (click again to restore)"/>
+                                        </Grid>
+
+                                        <StackPanel IsVisible="{Binding NoEffects}" Spacing="6" Margin="0,8">
+                                            <local:StrokeIcon Icon="wand-sparkles" Width="22" Height="22"
                                                               IconBrush="{StaticResource TextFaint}" HorizontalAlignment="Center"/>
                                             <TextBlock Text="No effects on this clip yet" Classes="empty-state"/>
+                                            <TextBlock Text="Add one below, or drag it from the Effects library onto the clip." Classes="empty-state"/>
                                         </StackPanel>
 
                                         <ListBox ItemsSource="{Binding Effects}" SelectedItem="{Binding SelectedEffect}"
-                                                 Background="Transparent" BorderThickness="0"
+                                                 Background="Transparent" BorderThickness="0" Padding="0"
                                                  IsVisible="{Binding HasEffects}">
                                             <ListBox.Styles>
                                                 <Style Selector="ListBoxItem">
                                                     <Setter Property="Padding" Value="0"/>
-                                                    <Setter Property="Margin" Value="0,0,0,4"/>
+                                                    <Setter Property="Margin" Value="0,0,0,6"/>
                                                     <Setter Property="Background" Value="Transparent"/>
                                                 </Style>
                                                 <Style Selector="ListBoxItem:selected /template/ ContentPresenter">
                                                     <Setter Property="Background" Value="Transparent"/>
                                                 </Style>
+                                                <Style Selector="ListBoxItem:selected Border.effect-card">
+                                                    <Setter Property="BorderBrush" Value="{StaticResource Accent}"/>
+                                                </Style>
                                             </ListBox.Styles>
                                             <ListBox.ItemTemplate>
                                                 <DataTemplate x:DataType="vm:EffectItemViewModel">
-                                                    <Border Padding="10,8" CornerRadius="{StaticResource RadiusControl}"
-                                                            Background="{StaticResource CardBgAlt}"
-                                                            BorderBrush="{StaticResource Border}" BorderThickness="1"
+                                                    <Border Classes="effect-card" Padding="10,6" CornerRadius="{StaticResource RadiusControl}"
+                                                            Background="#202124" BorderBrush="Transparent" BorderThickness="1"
                                                             Opacity="{Binding IsEnabled, Converter={x:Static conv:BoolToOpacityConverter.Instance}}">
-                                                        <DockPanel>
-                                                            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="2">
-                                                                <ToggleButton IsChecked="{Binding IsEnabled}"
-                                                                              Command="{Binding ToggleCommand}"
-                                                                              ToolTip.Tip="Enable / disable"
-                                                                              Classes="tool-btn" Padding="5">
+                                                        <Grid ColumnDefinitions="Auto,*,Auto">
+                                                            <local:StrokeIcon Icon="{Binding Icon}" Width="15" Height="15" Margin="0,0,10,0"
+                                                                              IconBrush="{StaticResource AccentText}" VerticalAlignment="Center"/>
+                                                            <TextBlock Grid.Column="1" Text="{Binding DisplayName}" Foreground="{StaticResource TextPrimary}"
+                                                                       FontSize="12" FontWeight="Medium" VerticalAlignment="Center"/>
+                                                            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="2">
+                                                                <ToggleButton IsChecked="{Binding IsEnabled}" Command="{Binding ToggleCommand}"
+                                                                              ToolTip.Tip="Turn this effect on or off"
+                                                                              Classes="tool-btn" Padding="5" AutomationProperties.Name="Turn effect on or off">
                                                                     <local:StrokeIcon Icon="power" Width="14" Height="14"/>
                                                                 </ToggleButton>
-                                                                <Button Command="{Binding RemoveCommand}"
-                                                                        ToolTip.Tip="Remove effect"
-                                                                        Classes="tool-btn" Padding="5">
+                                                                <Button Command="{Binding RemoveCommand}" ToolTip.Tip="Remove this effect"
+                                                                        Classes="tool-btn" Padding="5" AutomationProperties.Name="Remove effect">
                                                                     <local:StrokeIcon Icon="x" Width="14" Height="14" IconBrush="{StaticResource Danger}"/>
                                                                 </Button>
                                                             </StackPanel>
-                                                            <StackPanel Orientation="Horizontal" Spacing="8">
-                                                                <local:StrokeIcon Icon="{Binding Icon}" Width="16" Height="16"
-                                                                                  IconBrush="{StaticResource AccentText}" VerticalAlignment="Center"/>
-                                                                <TextBlock Text="{Binding DisplayName}" Foreground="{StaticResource TextPrimary}"
-                                                                           FontSize="12" FontWeight="Medium" VerticalAlignment="Center"/>
-                                                            </StackPanel>
-                                                        </DockPanel>
+                                                        </Grid>
                                                     </Border>
                                                 </DataTemplate>
                                             </ListBox.ItemTemplate>
                                         </ListBox>
 
+                                        <!-- Transform: one effect for the whole clip, animated with keyframes -->
+                                        <Border IsVisible="{Binding Transform.IsActive}" Classes="inspector-card">
+                                            <StackPanel Spacing="12" DataContext="{Binding Transform}" x:DataType="vm:TransformControlsViewModel">
+                                                <TextBlock Text="{Binding ClipLabel}" Classes="field-label"/>
+
+                                                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+                                                    <ToggleButton Classes="fig" Width="40" Padding="0" IsChecked="{Binding IsAnimated, Mode=OneWay}"
+                                                                  Command="{Binding ToggleAnimateCommand}"
+                                                                  ToolTip.Tip="Animate: changes at the playhead become keyframes. Turn off to keep one look for the whole clip."
+                                                                  AutomationProperties.Name="Animate with keyframes">
+                                                        <local:StrokeIcon Icon="timer" Width="16" Height="16" HorizontalAlignment="Center"/>
+                                                    </ToggleButton>
+                                                    <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                                                        <TextBlock Text="Animate" Classes="inspector-section"/>
+                                                        <TextBlock Text="{Binding Summary}" Classes="field-label"/>
+                                                    </StackPanel>
+                                                </Grid>
+                                                <TextBlock Text="{Binding Hint}" Classes="field-label" TextWrapping="Wrap"/>
+
+                                                <ctrls:KeyframeRuler IsVisible="{Binding IsAnimated}"/>
+
+                                                <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding IsAnimated}">
+                                                    <Button Classes="kf-btn" Command="{Binding PreviousKeyframeCommand}"
+                                                            ToolTip.Tip="Previous keyframe" AutomationProperties.Name="Previous keyframe">
+                                                        <local:StrokeIcon Icon="chevron-left" Width="14" Height="14"/>
+                                                    </Button>
+                                                    <ToggleButton Classes="kf-diamond" Width="32" Height="28"
+                                                                  IsChecked="{Binding IsOnKeyframe, Mode=OneWay}"
+                                                                  Command="{Binding ToggleKeyframeCommand}"
+                                                                  ToolTip.Tip="Add a keyframe at the playhead, or remove the one here"
+                                                                  AutomationProperties.Name="Add or remove keyframe">
+                                                        <local:StrokeIcon Icon="diamond" Width="13" Height="13"/>
+                                                    </ToggleButton>
+                                                    <Button Classes="kf-btn" Command="{Binding NextKeyframeCommand}"
+                                                            ToolTip.Tip="Next keyframe" AutomationProperties.Name="Next keyframe">
+                                                        <local:StrokeIcon Icon="chevron-right" Width="14" Height="14"/>
+                                                    </Button>
+                                                </StackPanel>
+
+                                                <Border Height="1" Background="#2B2D31"/>
+                                                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                                                    <TextBlock Text="Time" Classes="field-label" VerticalAlignment="Center"/>
+                                                    <TextBox Grid.Column="1" Width="136" FontFamily="monospace" TextAlignment="Center"
+                                                             Text="{Binding TimeText, UpdateSourceTrigger=LostFocus}"
+                                                             KeyDown="CommitOnEnter_KeyDown" AutomationProperties.Name="Time"/>
+                                                </Grid>
+                                                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                                                    <TextBlock Text="Zoom" Classes="field-label" VerticalAlignment="Center"/>
+                                                    <TextBox Grid.Column="1" Width="136" TextAlignment="Center"
+                                                             Text="{Binding ZoomText, UpdateSourceTrigger=LostFocus}"
+                                                             KeyDown="CommitOnEnter_KeyDown" AutomationProperties.Name="Zoom"/>
+                                                </Grid>
+                                                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                                                    <TextBlock Text="Rotation" Classes="field-label" VerticalAlignment="Center"/>
+                                                    <TextBox Grid.Column="1" Width="136" TextAlignment="Center"
+                                                             Text="{Binding RotationText, UpdateSourceTrigger=LostFocus}"
+                                                             KeyDown="CommitOnEnter_KeyDown" AutomationProperties.Name="Rotation in degrees"/>
+                                                </Grid>
+                                                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                                                    <TextBlock Text="Aspect ratio" Classes="field-label"/>
+                                                    <TextBlock Grid.Column="1" Text="{Binding AspectText}" Classes="field-value"/>
+                                                </Grid>
+
+                                                <StackPanel Spacing="8" IsVisible="{Binding IsAnimated}">
+                                                    <Border Height="1" Background="#2B2D31"/>
+                                                    <TextBlock Text="Movement to the next keyframe" Classes="inspector-section"/>
+                                                    <ComboBox HorizontalAlignment="Stretch" SelectedIndex="{Binding EasingIndex}"
+                                                              IsEnabled="{Binding IsOnKeyframe}"
+                                                              ItemsSource="{x:Static vm:TransformControlsViewModel.EasingNames}"
+                                                              AutomationProperties.Name="Movement easing"/>
+                                                    <Button Classes="fig" Content="Back to full frame here" Command="{Binding BackToFullFrameCommand}"
+                                                            ToolTip.Tip="Add a keyframe at the playhead that zooms all the way back out"/>
+                                                    <Button Classes="fig primary" Content="Preview movement" Command="{Binding PreviewMovementCommand}"/>
+                                                </StackPanel>
+
+                                                <Border Height="1" Background="#2B2D31"/>
+                                                <CheckBox IsChecked="{Binding HasLimit}" Content="Limit to part of the clip"
+                                                          ToolTip.Tip="Off: the effect covers the whole clip. On: it applies only between the ends of its bar."/>
+                                                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10" IsVisible="{Binding HasLimit}">
+                                                    <TextBlock Text="Length" Classes="field-label" VerticalAlignment="Center"/>
+                                                    <TextBox Grid.Column="1" Width="136" TextAlignment="Center"
+                                                             Text="{Binding LimitLengthText, UpdateSourceTrigger=LostFocus}"
+                                                             KeyDown="CommitOnEnter_KeyDown" AutomationProperties.Name="Limit length"/>
+                                                </Grid>
+                                            </StackPanel>
+                                        </Border>
+
+                                        <!-- everything else: the effect's own parameters -->
                                         <Border Background="{StaticResource CardBgAlt}" CornerRadius="{StaticResource RadiusControl}"
                                                 Padding="10,8" BorderBrush="{StaticResource Border}" BorderThickness="1"
-                                                IsVisible="{Binding SelectedEffect, Converter={x:Static ObjectConverters.IsNotNull}}">
+                                                IsVisible="{Binding ShowGenericParams}">
                                             <StackPanel Spacing="6">
                                                 <TextBlock Text="{Binding SelectedEffect.DisplayName}"
                                                            Foreground="{StaticResource AccentText}" FontSize="12" FontWeight="SemiBold"/>
                                                 <ItemsControl ItemsSource="{Binding EffectParams}"/>
                                             </StackPanel>
                                         </Border>
+
+                                        <Button Classes="fig" Content="+ Add effect" Command="{Binding $parent[UserControl].((vm:EditorViewModel)DataContext).OpenEffectsLibraryCommand}"
+                                                ToolTip.Tip="Open the effects library"/>
                                     </StackPanel>
                                 </ScrollViewer>
                             </TabItem>
@@ -1099,72 +1574,122 @@
 
                             <!-- MARKER -->
                             <TabItem Header="Marker" IsVisible="{Binding ShowMarkerSection}">
-                                <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-                                    <StackPanel Spacing="12">
-                                        <StackPanel Spacing="4">
+                                <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto" Padding="0,0,10,0">
+                                    <StackPanel Spacing="14" Margin="0,8,0,0">
+                                        <StackPanel Spacing="6">
                                             <TextBlock Text="Name" Classes="field-label"/>
-                                            <TextBox Text="{Binding MarkerName}"
-                                                     Foreground="{StaticResource TextSecondary}" Background="{StaticResource SurfaceBg}"
-                                                     BorderBrush="{StaticResource Border}" BorderThickness="1"
-                                                     CornerRadius="{StaticResource RadiusControl}" Padding="8,6"/>
+                                            <TextBox Text="{Binding MarkerName}" AutomationProperties.Name="Marker name"/>
                                         </StackPanel>
-                                        <StackPanel Spacing="4">
-                                            <TextBlock Text="Time" Classes="field-label"/>
-                                            <TextBlock Text="{Binding MarkerTimeLabel}" Classes="field-value"/>
-                                        </StackPanel>
-                                        <StackPanel Spacing="4">
-                                            <TextBlock Text="Duration" Classes="field-label"/>
-                                            <TextBlock Text="{Binding MarkerDurationLabel}" Classes="field-value"/>
-                                        </StackPanel>
-                                        <StackPanel Spacing="4">
+
+                                        <StackPanel Spacing="8">
                                             <TextBlock Text="Color" Classes="field-label"/>
-                                            <ItemsControl ItemsSource="{Binding MarkerPalette}">
+                                            <ItemsControl ItemsSource="{Binding MarkerSwatches}">
                                                 <ItemsControl.ItemsPanel>
                                                     <ItemsPanelTemplate>
-                                                        <WrapPanel/>
+                                                        <StackPanel Orientation="Horizontal" Spacing="10"/>
                                                     </ItemsPanelTemplate>
                                                 </ItemsControl.ItemsPanel>
                                                 <ItemsControl.ItemTemplate>
-                                                    <DataTemplate>
-                                                        <Button Width="22" Height="22" Margin="0,0,6,6"
-                                                                CornerRadius="11" BorderThickness="0"
-                                                                Background="{Binding}"
-                                                                Command="{Binding $parent[ItemsControl].DataContext.SetMarkerColorCommand}"
-                                                                CommandParameter="{Binding}"/>
+                                                    <DataTemplate x:DataType="vm:MarkerSwatchViewModel">
+                                                        <Button Classes="swatch" Classes.selected="{Binding IsSelected}"
+                                                                Background="{Binding Hex}" Command="{Binding PickCommand}"
+                                                                ToolTip.Tip="{Binding Hex}" AutomationProperties.Name="{Binding Hex}"/>
                                                     </DataTemplate>
                                                 </ItemsControl.ItemTemplate>
                                             </ItemsControl>
                                         </StackPanel>
+
+                                        <!-- Point marker -->
+                                        <StackPanel Spacing="14" IsVisible="{Binding !MarkerIsRange}">
+                                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                                                <TextBlock Text="Position" Classes="field-label" VerticalAlignment="Center"/>
+                                                <TextBox Grid.Column="1" Width="136" FontFamily="monospace" TextAlignment="Center"
+                                                         Text="{Binding MarkerPositionText, UpdateSourceTrigger=LostFocus}"
+                                                         KeyDown="CommitOnEnter_KeyDown" AutomationProperties.Name="Marker position"/>
+                                            </Grid>
+                                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                                                <TextBlock Text="Attached to" Classes="field-label" VerticalAlignment="Center"/>
+                                                <TextBlock Grid.Column="1" Text="{Binding MarkerAttachedText}" Classes="field-value"/>
+                                            </Grid>
+                                            <TextBlock Text="{Binding MarkerAttachedNote}" Classes="field-label"/>
+                                            <Border Classes="inspector-group" Padding="0,2,0,0" BorderThickness="0,1,0,0" Margin="0,4,0,0"/>
+                                            <StackPanel Spacing="8" IsVisible="{Binding MarkerHasEffect}">
+                                                <TextBlock Text="{Binding MarkerEffectLabel}" Classes="field-label"/>
+                                                <Button Classes="fig" HorizontalContentAlignment="Left" Content="Place keyframe at marker"
+                                                        Command="{Binding PlaceKeyframeAtMarkerCommand}"
+                                                        ToolTip.Tip="Keyframe the selected effect at this marker"/>
+                                            </StackPanel>
+                                            <Button Classes="fig primary" Content="Jump to marker" Command="{Binding JumpToMarkerCommand}"/>
+                                        </StackPanel>
+
+                                        <!-- Range marker -->
+                                        <StackPanel Spacing="14" IsVisible="{Binding MarkerIsRange}">
+                                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                                                <TextBlock Text="Start" Classes="field-label" VerticalAlignment="Center"/>
+                                                <TextBox Grid.Column="1" Width="136" FontFamily="monospace" TextAlignment="Center"
+                                                         Text="{Binding MarkerStartText, UpdateSourceTrigger=LostFocus}"
+                                                         KeyDown="CommitOnEnter_KeyDown" AutomationProperties.Name="Range start"/>
+                                            </Grid>
+                                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                                                <TextBlock Text="End" Classes="field-label" VerticalAlignment="Center"/>
+                                                <TextBox Grid.Column="1" Width="136" FontFamily="monospace" TextAlignment="Center"
+                                                         Text="{Binding MarkerEndText, UpdateSourceTrigger=LostFocus}"
+                                                         KeyDown="CommitOnEnter_KeyDown" AutomationProperties.Name="Range end"/>
+                                            </Grid>
+                                            <TextBlock Text="{Binding MarkerDurationText}" Classes="field-label"/>
+                                            <Border Classes="inspector-group" Padding="0,2,0,0" BorderThickness="0,1,0,0" Margin="0,4,0,0"/>
+                                            <CheckBox IsChecked="{Binding MarkerIncludeInExport}" Content="Include in batch export"/>
+                                            <StackPanel Spacing="6">
+                                                <TextBlock Text="Output name" Classes="field-label"/>
+                                                <TextBox Text="{Binding MarkerOutputName, UpdateSourceTrigger=LostFocus}"
+                                                         KeyDown="CommitOnEnter_KeyDown" Watermark="Chosen automatically from the name"
+                                                         AutomationProperties.Name="Output file name"/>
+                                            </StackPanel>
+                                            <Grid ColumnDefinitions="*,8,*">
+                                                <Button Classes="fig" Content="Jump to start" Command="{Binding JumpToMarkerCommand}"/>
+                                                <Button Grid.Column="2" Classes="fig" Content="Jump to end" Command="{Binding JumpToMarkerEndCommand}"/>
+                                            </Grid>
+                                        </StackPanel>
+
+                                        <Button Classes="fig danger" Content="Delete marker" Command="{Binding DeleteMarkerCommand}"
+                                                HorizontalContentAlignment="Center"/>
                                     </StackPanel>
                                 </ScrollViewer>
                             </TabItem>
 
                             <!-- TRANSITION -->
                             <TabItem Header="Transition" IsVisible="{Binding ShowTransitionSection}">
-                                <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-                                    <StackPanel Spacing="12">
+                                <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto" Padding="0,0,10,0">
+                                    <StackPanel Spacing="14" Margin="0,10,0,0">
                                         <StackPanel Spacing="4">
-                                            <TextBlock Text="Type" Classes="field-label"/>
-                                            <TextBlock Text="{Binding TransitionTypeLabel}" Classes="field-value"/>
+                                            <TextBlock Text="{Binding TransitionTypeLabel}" FontSize="15" FontWeight="SemiBold"
+                                                       Foreground="{StaticResource TextPrimary}"/>
+                                            <TextBlock Text="{Binding TransitionDescription}" Classes="field-label" TextWrapping="Wrap"/>
                                         </StackPanel>
-                                        <StackPanel Spacing="4">
-                                            <DockPanel>
-                                                <TextBlock Text="{Binding TransitionDurationValue, StringFormat={}{0:0.00}s}"
-                                                           DockPanel.Dock="Right" Classes="field-value" FontSize="11"/>
-                                                <TextBlock Text="Duration" Classes="field-label"/>
-                                            </DockPanel>
-                                            <ctrls:FigSlider Minimum="0.05" Maximum="{Binding TransitionMaxDuration}"
-                                                    Value="{Binding TransitionDurationValue}"/>
-                                            <TextBlock Text="{Binding TransitionSpanLabel}" Classes="field-label"/>
+
+                                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                                            <TextBlock Text="Duration" Classes="field-label" VerticalAlignment="Center"/>
+                                            <TextBox Grid.Column="1" Width="136" TextAlignment="Center" FontFamily="monospace"
+                                                     Text="{Binding TransitionDurationText, UpdateSourceTrigger=LostFocus}"
+                                                     KeyDown="CommitOnEnter_KeyDown" AutomationProperties.Name="Transition duration"/>
+                                        </Grid>
+                                        <StackPanel Spacing="4" IsVisible="{Binding TransitionParams.Count}">
+                                            <Border Classes="inspector-group" Padding="0" BorderThickness="0,1,0,0" Margin="0,0,0,8"/>
+                                            <Grid ColumnDefinitions="*,Auto">
+                                                <TextBlock Text="Controls" Classes="inspector-section" VerticalAlignment="Center"/>
+                                                <Button Grid.Column="1" Content="Reset" Classes="btn-ghost" Padding="7,3"
+                                                        Command="{Binding ResetTransitionControlsCommand}"
+                                                        ToolTip.Tip="Put every control back to its default"/>
+                                            </Grid>
+                                            <ItemsControl ItemsSource="{Binding TransitionParams}"/>
                                         </StackPanel>
-                                        <Button Command="{Binding RemoveTransitionCommand}" Classes="btn-danger"
-                                                HorizontalAlignment="Stretch">
-                                            <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
-                                                <local:StrokeIcon Icon="trash" Width="14" Height="14" IconBrush="{StaticResource Danger}"/>
-                                                <TextBlock Text="Remove transition" VerticalAlignment="Center"/>
-                                            </StackPanel>
-                                        </Button>
-                                        <ItemsControl ItemsSource="{Binding TransitionParams}"/>
+
+                                        <Button Classes="fig primary" Content="Preview transition" Command="{Binding PreviewTransitionCommand}"/>
+                                        <Grid ColumnDefinitions="*,8,*">
+                                            <Button Classes="fig" Content="Replace" Command="{Binding ReplaceTransitionCommand}"
+                                                    ToolTip.Tip="Pick a different transition from the library"/>
+                                            <Button Grid.Column="2" Classes="fig danger" Content="Remove" Command="{Binding RemoveTransitionCommand}"/>
+                                        </Grid>
                                     </StackPanel>
                                 </ScrollViewer>
                             </TabItem>
@@ -1235,9 +1760,11 @@
                         </Grid>
                     </DockPanel>
                 </Border>
-            <GridSplitter Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="5"
+            <GridSplitter x:Name="TimelineSplitter" Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="5"
                           Height="4" Background="Transparent"
-                          HorizontalAlignment="Stretch" ShowsPreview="True"/>
+                          HorizontalAlignment="Stretch" ShowsPreview="False"
+                          DragCompleted="Splitter_DragCompleted"
+                          ToolTip.Tip="Drag to resize the timeline"/>
 
             <!-- Timeline row: tracks on the left, contextual properties on the right -->
             <Grid Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="5"
@@ -1247,63 +1774,81 @@
                         Padding="10" Background="{StaticResource PanelBg}" CornerRadius="{StaticResource RadiusPanel}"
                         BorderBrush="{StaticResource BorderSubtle}" BorderThickness="1">
                     <DockPanel>
-                        <Border DockPanel.Dock="Top" Classes="timeline-toolbar"
-                                Margin="0,0,0,4" Padding="3,2"
-                                Background="#191a1d" CornerRadius="3"
-                                BorderBrush="#303238" BorderThickness="1">
-                            <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+                        <Grid DockPanel.Dock="Top" ColumnDefinitions="Auto,*,Auto" Margin="0,0,0,8">
+                            <TextBlock Text="Sequence 01" VerticalAlignment="Center" FontWeight="SemiBold" FontSize="13"
+                                       Foreground="{StaticResource TextPrimary}" Margin="4,0,16,0"/>
+                            <Border Grid.Column="1" Classes="timeline-toolbar" HorizontalAlignment="Left" Padding="3,2"
+                                    Background="#191a1d" CornerRadius="3" BorderBrush="#303238" BorderThickness="1">
                                 <StackPanel Orientation="Horizontal" Spacing="1">
-                                    <Button Classes="tool-btn" Command="{Binding UndoCommand}" ToolTip.Tip="Undo (Ctrl+Z)">
+                                    <Button Classes="tool-btn" Command="{Binding UndoCommand}" ToolTip.Tip="Undo (Ctrl+Z)" AutomationProperties.Name="Undo">
                                         <local:StrokeIcon Icon="undo" Width="15" Height="15"/>
                                     </Button>
-                                    <Button Classes="tool-btn" Command="{Binding RedoCommand}" ToolTip.Tip="Redo (Ctrl+Y)">
+                                    <Button Classes="tool-btn" Command="{Binding RedoCommand}" ToolTip.Tip="Redo (Ctrl+Y)" AutomationProperties.Name="Redo">
                                         <local:StrokeIcon Icon="redo" Width="15" Height="15"/>
                                     </Button>
                                     <Rectangle Width="1" Height="17" Fill="#34373c" Margin="4,5"/>
                                     <Button Classes="tool-btn" Command="{Binding SplitAtPlayheadCommand}"
-                                            ToolTip.Tip="Split at playhead (Ctrl+K)">
+                                            ToolTip.Tip="Split at playhead (Ctrl+K)" AutomationProperties.Name="Split at playhead">
                                         <local:StrokeIcon Icon="split" Width="15" Height="15"/>
                                     </Button>
-                                    <Button Classes="tool-btn" Command="{Binding LiftSelectedCommand}"
-                                            ToolTip.Tip="Lift delete (Delete)">
-                                        <local:StrokeIcon Icon="lift" Width="15" Height="15"/>
-                                    </Button>
                                     <Button Classes="tool-btn" Command="{Binding RippleDeleteSelectedCommand}"
-                                            ToolTip.Tip="Ripple delete">
+                                            ToolTip.Tip="Delete and close the gap (ripple delete)" AutomationProperties.Name="Ripple delete">
                                         <local:StrokeIcon Icon="ripple" Width="15" Height="15"/>
+                                    </Button>
+                                    <Button Classes="tool-btn" Command="{Binding LiftSelectedCommand}"
+                                            ToolTip.Tip="Delete and leave a gap (Delete)" AutomationProperties.Name="Delete selection">
+                                        <local:StrokeIcon Icon="trash" Width="15" Height="15"/>
                                     </Button>
                                     <Rectangle Width="1" Height="17" Fill="#34373c" Margin="4,5"/>
                                     <Button Classes="tool-btn" Command="{Binding AddMarkerAtPlayheadCommand}"
-                                            ToolTip.Tip="Add marker (M)">
+                                            ToolTip.Tip="Add marker at playhead (M)" AutomationProperties.Name="Add marker">
                                         <local:StrokeIcon Icon="marker" Width="15" Height="15"/>
                                     </Button>
-                                    <Button Classes="tool-btn" Command="{Binding DeleteSelectedMarkerCommand}"
-                                            ToolTip.Tip="Delete marker (Shift+Delete)">
-                                        <local:StrokeIcon Icon="trash" Width="15" Height="15"/>
-                                    </Button>
-                                    <Button Classes="tool-btn" Command="{Binding ToggleClipEnabledSelectedCommand}"
-                                            ToolTip.Tip="Enable / disable clip (Ctrl+E)">
-                                        <local:StrokeIcon Icon="eye-off" Width="15" Height="15"/>
-                                    </Button>
                                     <Rectangle Width="1" Height="17" Fill="#34373c" Margin="4,5"/>
-                                    <ToggleButton Classes="tool-btn" IsChecked="{Binding MagneticSnap}"
-                                                  ToolTip.Tip="Magnetic snap">
-                                        <local:StrokeIcon Icon="magnet" Width="15" Height="15"/>
+                                    <ToggleButton Classes="tool-btn" IsChecked="{Binding LinkedSelection}" Width="NaN" Padding="8,0"
+                                                  ToolTip.Tip="Selecting a clip also selects the video or audio linked to it. Hold Alt to pick just one."
+                                                  AutomationProperties.Name="Linked selection">
+                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                            <local:StrokeIcon Icon="link" Width="15" Height="15"/>
+                                            <TextBlock Text="Link" VerticalAlignment="Center" FontSize="12"/>
+                                        </StackPanel>
                                     </ToggleButton>
-                                    <Rectangle Width="1" Height="17" Fill="#34373c" Margin="4,5"/>
-                                    <Button Classes="tool-btn" Click="TimelineZoomOut_Click" ToolTip.Tip="Zoom out">
-                                        <local:StrokeIcon Icon="zoom-out" Width="15" Height="15"/>
-                                    </Button>
-                                    <Button Classes="tool-btn" Click="TimelineZoomIn_Click" ToolTip.Tip="Zoom in">
-                                        <local:StrokeIcon Icon="zoom-in" Width="15" Height="15"/>
-                                    </Button>
-                                    <Button Classes="tool-btn" Click="TimelineZoomFit_Click"
-                                            ToolTip.Tip="Zoom to fit sequence">
-                                        <local:StrokeIcon Icon="maximize-2" Width="15" Height="15"/>
-                                    </Button>
+                                    <ToggleButton Classes="tool-btn" IsChecked="{Binding MagneticSnap}" Width="NaN" Padding="8,0"
+                                                  ToolTip.Tip="Snap clips, markers and the playhead to each other (N)"
+                                                  AutomationProperties.Name="Snapping">
+                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                            <local:StrokeIcon Icon="magnet" Width="15" Height="15"/>
+                                            <TextBlock Text="Snap" VerticalAlignment="Center" FontSize="12"/>
+                                            <TextBlock Text="N" VerticalAlignment="Center" FontSize="11" Opacity="0.6"/>
+                                        </StackPanel>
+                                    </ToggleButton>
                                 </StackPanel>
-                            </ScrollViewer>
-                        </Border>
+                            </Border>
+                            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6">
+                                <Button Classes="fig compact" Width="104" Content="Fit sequence" Click="TimelineZoomFit_Click"
+                                        ToolTip.Tip="Zoom so the whole sequence fits"/>
+                                <Button Classes="fig compact icon" Width="30" Click="TimelineZoomOut_Click" ToolTip.Tip="Zoom out"
+                                        AutomationProperties.Name="Zoom out">
+                                    <local:StrokeIcon Icon="minus" Width="12" Height="12" HorizontalAlignment="Center"/>
+                                </Button>
+                                <TextBlock x:Name="ZoomText" Text="100%" Width="44" TextAlignment="Center" VerticalAlignment="Center"
+                                           Foreground="{StaticResource TextSecondary}" FontSize="11"/>
+                                <Button Classes="fig compact icon" Width="30" Click="TimelineZoomIn_Click" ToolTip.Tip="Zoom in"
+                                        AutomationProperties.Name="Zoom in">
+                                    <local:StrokeIcon Icon="plus" Width="12" Height="12" HorizontalAlignment="Center"/>
+                                </Button>
+                                <Button Classes="fig compact" Width="44" Content="⋯" ToolTip.Tip="More timeline actions">
+                                    <Button.Flyout>
+                                        <MenuFlyout Placement="BottomEdgeAlignedRight">
+                                            <MenuItem Header="Enable / disable clip" InputGesture="Ctrl+E"
+                                                      Command="{Binding ToggleClipEnabledSelectedCommand}"/>
+                                            <MenuItem Header="Delete selected marker" InputGesture="Shift+Delete"
+                                                      Command="{Binding DeleteSelectedMarkerCommand}"/>
+                                        </MenuFlyout>
+                                    </Button.Flyout>
+                                </Button>
+                            </StackPanel>
+                        </Grid>
                         <ScrollViewer x:Name="TimelineScroller"
                                       HorizontalScrollBarVisibility="Disabled"
                                       VerticalScrollBarVisibility="Auto"

@@ -1,4 +1,7 @@
 using System;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.Linq;
 using System.IO;
 using System.Threading.Tasks;
@@ -10,16 +13,43 @@ using Avalonia.Media;
 using Avalonia.Platform.Storage;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Fig.App.Services;
 using Fig.Core.Project;
 
 namespace Fig.App.ViewModels;
 
 public partial class HomeViewModel : ViewModelBase
 {
+    public static readonly string[] SortOptions = ["Last edited", "Name", "Duration"];
+
     private readonly ProjectStore _store;
+    private IReadOnlyList<ProjectSummary> _all = Array.Empty<ProjectSummary>();
+
+    /// <summary>The projects currently shown (filtered by search, ordered by <see cref="SortBy"/>).</summary>
+    public ObservableCollection<ProjectItemViewModel> Projects { get; } = new();
 
     [ObservableProperty]
-    private System.Collections.ObjectModel.ObservableCollection<ProjectSummary> _projects = new();
+    private string _searchText = "";
+
+    [ObservableProperty]
+    private string _sortBy = SortOptions[0];
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsList))]
+    private bool _isGrid = true;
+
+    public bool IsList => !IsGrid;
+
+    /// <summary>Nothing to show (either no projects at all, or the search matched nothing).</summary>
+    public bool IsEmpty => Projects.Count == 0;
+    /// <summary>The store holds no projects: show the first-run "create your first project" state.</summary>
+    public bool HasNoProjects => _all.Count == 0;
+    public bool HasProjects => _all.Count > 0;
+    public bool NoSearchResults => HasProjects && IsEmpty;
+    public bool ShowProjects => !IsEmpty;
+    public string CountText => HasProjects && Projects.Count != _all.Count
+        ? $"{Projects.Count} of {_all.Count} projects"
+        : _all.Count == 1 ? "1 project" : $"{_all.Count} projects";
 
     public event Action<Project>? ProjectOpened;
     public event Action<Project>? ProjectCreated;
@@ -33,46 +63,121 @@ public partial class HomeViewModel : ViewModelBase
 
     public void Refresh()
     {
+        _all = _store.ListProjects();
+        ApplyFilter();
+    }
+
+    partial void OnSearchTextChanged(string value) => ApplyFilter();
+    partial void OnSortByChanged(string value) => ApplyFilter();
+
+    private void ApplyFilter()
+    {
+        var query = SearchText?.Trim() ?? "";
+        IEnumerable<ProjectSummary> items = _all;
+        if (query.Length > 0)
+            items = items.Where(p => p.Name.Contains(query, StringComparison.OrdinalIgnoreCase));
+
+        items = SortBy switch
+        {
+            "Name" => items.OrderBy(p => p.Name, StringComparer.CurrentCultureIgnoreCase),
+            "Duration" => items.OrderByDescending(p => p.DurationSec).ThenBy(p => p.Name, StringComparer.CurrentCultureIgnoreCase),
+            _ => items.OrderByDescending(p => p.UpdatedAt),
+        };
+
         Projects.Clear();
-        foreach (var p in _store.ListProjects())
-            Projects.Add(p);
+        foreach (var p in items)
+            Projects.Add(new ProjectItemViewModel(p, this));
+
+        OnPropertyChanged(nameof(IsEmpty));
+        OnPropertyChanged(nameof(HasNoProjects));
+        OnPropertyChanged(nameof(HasProjects));
+        OnPropertyChanged(nameof(NoSearchResults));
+        OnPropertyChanged(nameof(ShowProjects));
+        OnPropertyChanged(nameof(CountText));
     }
 
     [RelayCommand]
-    private void OpenProject(ProjectSummary? summary)
+    private void ShowGrid() => IsGrid = true;
+
+    [RelayCommand]
+    private void ShowList() => IsGrid = false;
+
+    [RelayCommand]
+    private void ClearSearch() => SearchText = "";
+
+    [RelayCommand]
+    private void OpenProject(ProjectItemViewModel? item)
     {
-        if (summary is null)
+        if (item is null)
             return;
 
-        var project = _store.LoadProject(summary.Id);
+        var project = _store.LoadProject(item.Id);
         if (project is null)
+        {
+            Notify?.Invoke($"Couldn't open \"{item.Name}\" — its project file is missing.");
+            Refresh();
             return;
+        }
 
         ProjectOpened?.Invoke(project);
     }
 
     [RelayCommand]
-    private void DeleteProject(ProjectSummary? summary)
+    private async Task RenameProjectAsync(ProjectItemViewModel? item)
     {
-        if (summary is null)
+        if (item is null)
             return;
-        _store.DeleteProject(summary.Id);
+        var name = await Dialogs.PromptTextAsync(null, "Rename project", "Project name", item.Name, "Rename", item.Name);
+        if (name is null || name == item.Name)
+            return;
+        if (!_store.RenameProject(item.Id, name))
+            Notify?.Invoke($"Couldn't rename \"{item.Name}\".");
         Refresh();
     }
 
     [RelayCommand]
-    private async Task CreateProjectAsync(Window? owner)
+    private void ShowInFolder(ProjectItemViewModel? item)
     {
-        var name = await PromptProjectNameAsync(owner, "New Project", $"Untitled {DateTime.Now:yyyy-MM-dd}");
+        if (item is null)
+            return;
+        var folder = _store.ProjectDirectory(item.Id);
+        try
+        {
+            var launcher = OperatingSystem.IsWindows() ? "explorer" : OperatingSystem.IsMacOS() ? "open" : "xdg-open";
+            Process.Start(new ProcessStartInfo(launcher, $"\"{folder}\"") { UseShellExecute = false });
+        }
+        catch (Exception ex)
+        {
+            Notify?.Invoke($"Couldn't open the folder: {ex.Message}");
+        }
+    }
+
+    [RelayCommand]
+    private async Task DeleteProjectAsync(ProjectItemViewModel? item)
+    {
+        if (item is null)
+            return;
+        var confirmed = await Dialogs.ConfirmAsync(null, "Delete project?",
+            $"\"{item.Name}\" and its project data will be permanently deleted. Your original media files are not touched.",
+            "Delete", danger: true);
+        if (!confirmed)
+            return;
+        _store.DeleteProject(item.Id);
+        Refresh();
+    }
+
+    [RelayCommand]
+    private async Task CreateProjectAsync()
+    {
+        var name = await Dialogs.PromptTextAsync(null, "New project", "Project name", "Untitled", "Create");
         if (name is null)
             return;
 
         var id = _store.CreateProject(name);
         var project = _store.LoadProject(id);
+        Refresh();
         if (project is not null)
             ProjectCreated?.Invoke(project);
-
-        Refresh();
     }
 
     /// <summary>
@@ -80,11 +185,9 @@ public partial class HomeViewModel : ViewModelBase
     /// model, saves each as a project in the store, and opens the first one.
     /// </summary>
     [RelayCommand]
-    private async Task ImportOtioAsync(Window? owner)
+    private async Task ImportOtioAsync()
     {
-        owner ??= Avalonia.Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime { MainWindow: { } mw }
-            ? mw
-            : null;
+        var owner = Dialogs.MainWindow;
         if (owner is null)
             return;
 
@@ -139,66 +242,5 @@ public partial class HomeViewModel : ViewModelBase
         if (result.Warnings.Count > 0)
             summary += $" ({result.Warnings.Count} warning(s))";
         return summary;
-    }
-
-    /// <summary>Asks for a project name. Returns null if the user cancels.</summary>
-    public static async Task<string?> PromptProjectNameAsync(Window? owner, string title, string initial)
-    {        if (owner is null)
-            return string.IsNullOrWhiteSpace(initial) ? "Untitled" : initial.Trim();
-
-        var dialog = new Window
-        {
-            Title = title,
-            Width = 420,
-            Height = 180,
-            CanResize = false,
-            WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            Background = new SolidColorBrush(Color.Parse("#252526")),
-        };
-
-        string? result = null;
-        var nameBox = new TextBox
-        {
-            Text = initial,
-            PlaceholderText = "Project name",
-            Margin = new Thickness(0, 4, 0, 0),
-        };
-        var panel = new StackPanel { Margin = new Thickness(20), Spacing = 12 };
-        panel.Children.Add(new TextBlock
-        {
-            Text = "What should this project be called?",
-            Foreground = Brushes.White,
-            TextWrapping = TextWrapping.Wrap,
-        });
-        panel.Children.Add(nameBox);
-
-        var buttons = new StackPanel
-        {
-            Orientation = Orientation.Horizontal,
-            Spacing = 8,
-            HorizontalAlignment = HorizontalAlignment.Right,
-        };
-        var create = new Button { Content = "Create", Width = 90, IsDefault = true };
-        var cancel = new Button { Content = "Cancel", Width = 90, IsCancel = true };
-        create.Click += (_, _) =>
-        {
-            var typed = nameBox.Text?.Trim();
-            result = string.IsNullOrWhiteSpace(typed) ? "Untitled" : typed;
-            dialog.Close();
-        };
-        cancel.Click += (_, _) => dialog.Close();
-        buttons.Children.Add(create);
-        buttons.Children.Add(cancel);
-        panel.Children.Add(buttons);
-        dialog.Content = panel;
-
-        nameBox.AttachedToVisualTree += (_, _) =>
-        {
-            nameBox.Focus();
-            nameBox.SelectAll();
-        };
-
-        await dialog.ShowDialog(owner);
-        return result;
     }
 }

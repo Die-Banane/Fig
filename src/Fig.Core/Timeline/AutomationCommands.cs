@@ -56,7 +56,8 @@ namespace Fig.Core.Timeline
             {
                 if (Math.Abs(track[i].TimeSec - point.TimeSec) < 1e-6)
                 {
-                    track[i] = point;
+                    // re-keying a value keeps how it eases into the next keyframe
+                    track[i] = point with { Easing = track[i].Easing };
                     return;
                 }
                 if (track[i].TimeSec > point.TimeSec)

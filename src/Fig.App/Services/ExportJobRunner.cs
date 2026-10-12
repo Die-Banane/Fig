@@ -29,15 +29,16 @@ namespace Fig.App.Services
         }
 
         public ExportJob Enqueue(string outputPath, int width, int height, int crf,
-            ProjectModel project, TimelineModel timeline)
+            ProjectModel project, TimelineModel timeline, double? startSec = null, double? endSec = null)
         {
             var job = new ExportJob(outputPath, width, height, timeline.Rate.Fps);
             Jobs.Add(job);
-            _ = RunAsync(job, project, timeline, crf);
+            _ = RunAsync(job, project, timeline, crf, startSec, endSec);
             return job;
         }
 
-        private async Task RunAsync(ExportJob job, ProjectModel project, TimelineModel timeline, int crf)
+        private async Task RunAsync(ExportJob job, ProjectModel project, TimelineModel timeline, int crf,
+            double? startSec, double? endSec)
         {
             await _gate.WaitAsync();
             try
@@ -49,7 +50,7 @@ namespace Fig.App.Services
                 {
                     await Task.Run(() => _media.RenderTimeline(
                         project, timeline, job.OutputPath, job.Width, job.Height, crf,
-                        p => Dispatcher.UIThread.Post(() => job.Progress = p)));
+                        p => Dispatcher.UIThread.Post(() => job.Progress = p), startSec, endSec));
                     job.Status = ExportJobStatus.Done;
                     job.Progress = 1;
                 }

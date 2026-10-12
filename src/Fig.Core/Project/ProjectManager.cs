@@ -29,6 +29,12 @@ namespace Fig.Core.Project
         public event Action? ProjectChanged;
         private readonly object _proxyLock = new();
 
+        /// <summary>Proxies are all-keyframe at the source frame rate; older ones (other names) are regenerated.</summary>
+        private const string ProxySuffix = "_proxy_v3.mp4";
+
+        private static bool IsCurrentProxy(string? path) =>
+            path is not null && path.EndsWith(ProxySuffix, StringComparison.Ordinal);
+
         public ProjectManager(Project project, IMediaService media, string cacheDirectory)
         {
             Project = project;
@@ -141,12 +147,13 @@ namespace Fig.Core.Project
                 return;
             }
 
-            var proxyPath = Path.Combine(CacheDirectory, $"{asset.Hash}_proxy.mp4");
+            var proxyPath = Path.Combine(CacheDirectory, $"{asset.Hash}{ProxySuffix}");
 
             lock (_proxyLock)
             {
                 if (!force
                     && asset.ProxyStatus == ProxyStatus.Ready
+                    && IsCurrentProxy(asset.ProxyUrl)
                     && IsUsableProxyFile(asset.ProxyUrl))
                     return;
 
@@ -470,7 +477,8 @@ namespace Fig.Core.Project
             if (asset.ProxyStatus == ProxyStatus.Pending || asset.ProxyStatus == ProxyStatus.Failed)
                 return true;
             if (asset.ProxyStatus == ProxyStatus.Ready
-                && (string.IsNullOrEmpty(asset.ProxyUrl) || !Mp4Container.IsCompleteMp4(asset.ProxyUrl)))
+                && (string.IsNullOrEmpty(asset.ProxyUrl) || !IsCurrentProxy(asset.ProxyUrl)
+                    || !Mp4Container.IsCompleteMp4(asset.ProxyUrl)))
                 return true;
             if (asset.ProxyStatus == ProxyStatus.None)
                 return true;

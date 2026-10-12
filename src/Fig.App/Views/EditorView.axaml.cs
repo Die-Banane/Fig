@@ -1,3 +1,4 @@
+using System;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
@@ -15,6 +16,7 @@ public partial class EditorView : UserControl
 {
     public static DataFormat<MediaAsset> MediaFormat => DragFormats.Media;
     public static DataFormat<EffectCatalogEntry> EffectFormat => DragFormats.Effect;
+    public static DataFormat<EffectPreset> PresetFormat => DragFormats.Preset;
     public static DataFormat<TransitionCatalogEntry> TransitionFormat => DragFormats.Transition;
 
     private const double DragThresholdPx = 8.0;
@@ -26,14 +28,177 @@ public partial class EditorView : UserControl
     public EditorView()
     {
         InitializeComponent();
+        Focusable = true;
         DataContextChanged += OnDataContextChanged;
         Timeline.PlayheadChanged += OnTimelinePlayheadChanged;
+        Timeline.Viewport.Changed += UpdateZoomText;
+        UpdateZoomText();
+        PreviewHost.ContextMenu = BuildPreviewMenu();
+    }
+
+    /// <summary>Right-click the preview: the things you reach for while looking at it.</summary>
+    private ContextMenu BuildPreviewMenu()
+    {
+        var menu = new ContextMenu();
+        menu.Opening += (_, _) =>
+        {
+            menu.Items.Clear();
+            if (_boundVm is not { } vm)
+                return;
+
+            MenuItem Make(string header, Action run, bool enabled = true)
+            {
+                var item = new MenuItem { Header = header, IsEnabled = enabled };
+                item.Click += (_, _) => run();
+                return item;
+            }
+
+            menu.Items.Add(Make(vm.IsPlaying ? "Pause" : "Play", () => vm.TogglePlaybackCommand.Execute(null)));
+            menu.Items.Add(Make("Go to start", () => vm.JumpToStartCommand.Execute(null)));
+            menu.Items.Add(Make("Go to end", () => vm.JumpToEndCommand.Execute(null)));
+            menu.Items.Add(new Separator());
+            menu.Items.Add(Make(vm.Layout.IsFocusPreview ? "Restore layout" : "Focus preview", () => vm.Layout.ToggleFocusCommand.Execute(null)));
+            if (vm.Properties.HasPreviewControls)
+                menu.Items.Add(Make(vm.Properties.ShowPreviewControls ? "Hide controls on the preview" : "Show controls on the preview",
+                    () => vm.Properties.ShowPreviewControls = !vm.Properties.ShowPreviewControls));
+        };
+        return menu;
+    }
+
+    private ExportJobsWindow? _jobsWindow;
+
+    /// <summary>The Jobs button toggles a small window with every export's progress.</summary>
+    private void OnEditorPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        // the timeline's playhead follows the project playhead however it was moved (keyframe
+        // buttons, marker jumps, …), not only when the audio engine reports back
+        if (e.PropertyName == nameof(EditorViewModel.PlayheadTimeSec) && _boundVm is { } playing)
+        {
+            if (Math.Abs(Timeline.PlayheadTimeSec - playing.PlayheadTimeSec) > 1e-6)
+                Timeline.SetPlayheadFromPlayback(playing.PlayheadTimeSec);
+            return;
+        }
+
+        if (e.PropertyName != nameof(EditorViewModel.IsJobsOpen) || _boundVm is not { } vm)
+            return;
+
+        if (vm.IsJobsOpen && _jobsWindow is null && TopLevel.GetTopLevel(this) is Window owner)
+        {
+            _jobsWindow = new ExportJobsWindow { DataContext = vm };
+            _jobsWindow.Closed += (_, _) =>
+            {
+                _jobsWindow = null;
+                vm.IsJobsOpen = false;
+            };
+            _jobsWindow.Show(owner);
+        }
+        else if (!vm.IsJobsOpen && _jobsWindow is not null)
+        {
+            var window = _jobsWindow;
+            _jobsWindow = null;
+            window.Close();
+        }
+    }
+
+    private void UpdateZoomText()
+    {
+        var percent = Timeline.Viewport.PixelsPerSecond / TimelineViewport.DefaultPixelsPerSecond * 100;
+        ZoomText.Text = $"{percent:0}%";
+    }
+
+    // ---- workspace layout -------------------------------------------------
+
+    private ColumnDefinition LeftCol => Workspace.ColumnDefinitions[0];
+    private ColumnDefinition CenterCol => Workspace.ColumnDefinitions[2];
+    private ColumnDefinition RightCol => Workspace.ColumnDefinitions[4];
+    private RowDefinition PreviewRow => Workspace.RowDefinitions[0];
+    private RowDefinition TimelineRow => Workspace.RowDefinitions[2];
+
+    private const double CollapsedRailWidth = 46;
+    private const double CollapsedStripWidth = 44;
+
+    /// <summary>Applies the saved arrangement: proportional columns/rows, collapsed panels.</summary>
+    private void ApplyLayout()
+    {
+        if (_boundVm is not { } vm)
+            return;
+        var layout = vm.Layout;
+
+        var left = layout.IsLeftVisible ? layout.LeftFraction : 0;
+        var right = layout.IsRightVisible ? layout.RightFraction : 0;
+
+        if (layout.IsLeftVisible)
+        {
+            LeftCol.MinWidth = 220;
+            LeftCol.Width = new GridLength(layout.LeftFraction, GridUnitType.Star);
+        }
+        else
+        {
+            LeftCol.MinWidth = 0;
+            LeftCol.Width = new GridLength(CollapsedRailWidth);
+        }
+
+        if (layout.IsRightVisible)
+        {
+            RightCol.MinWidth = 260;
+            RightCol.Width = new GridLength(layout.RightFraction, GridUnitType.Star);
+        }
+        else
+        {
+            RightCol.MinWidth = 0;
+            RightCol.Width = new GridLength(CollapsedStripWidth);
+        }
+
+        CenterCol.Width = new GridLength(Math.Max(0.2, 1 - left - right), GridUnitType.Star);
+        PreviewRow.Height = new GridLength(1 - layout.TimelineFraction, GridUnitType.Star);
+        TimelineRow.Height = new GridLength(layout.TimelineFraction, GridUnitType.Star);
+    }
+
+    /// <summary>After a splitter drag, remember the new proportions.</summary>
+    private void Splitter_DragCompleted(object? sender, Avalonia.Input.VectorEventArgs e)
+    {
+        if (_boundVm is not { } vm)
+            return;
+        var layout = vm.Layout;
+        var width = LeftCol.ActualWidth + CenterCol.ActualWidth + RightCol.ActualWidth;
+        var height = PreviewRow.ActualHeight + TimelineRow.ActualHeight;
+        if (width <= 0 || height <= 0)
+            return;
+
+        layout.SetFractions(
+            layout.IsLeftVisible ? LeftCol.ActualWidth / width : null,
+            layout.IsRightVisible ? RightCol.ActualWidth / width : null,
+            TimelineRow.ActualHeight / height);
+    }
+
+    private async void BackToProjects_Click(object? sender, RoutedEventArgs e)
+    {
+        var window = TopLevel.GetTopLevel(this) as Window;
+        if (window?.DataContext is ViewModels.AppViewModel app)
+            await app.CloseProjectAsync(window);
+    }
+
+    /// <summary>Enter in a field applies the value (moves focus away, which commits the binding).</summary>
+    private void CommitOnEnter_KeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter)
+            return;
+        Focus();
+        e.Handled = true;
+    }
+
+    private void ShortcutsMenu_Click(object? sender, RoutedEventArgs e)
+    {
+        if (TopLevel.GetTopLevel(this) is Window owner)
+            ShortcutsDialog.Show(owner);
     }
 
     private void OnDataContextChanged(object? sender, EventArgs e)
     {
         if (_boundVm is not null)
         {
+            _boundVm.PropertyChanged -= OnEditorPropertyChanged;
+            _boundVm.Layout.Changed -= ApplyLayout;
             _boundVm.PlaybackAssigned -= OnPlaybackAssigned;
             _boundVm = null;
             OnPlaybackAssigned(null);
@@ -43,6 +208,9 @@ public partial class EditorView : UserControl
             return;
 
         _boundVm = vm;
+        vm.PropertyChanged += OnEditorPropertyChanged;
+        vm.Layout.Changed += ApplyLayout;
+        ApplyLayout();
         vm.PlaybackAssigned += OnPlaybackAssigned;
         if (vm.Playback is not null)
             WirePlayback(vm.Playback);
@@ -69,8 +237,14 @@ public partial class EditorView : UserControl
 
     private void MediaCard_PointerPressed(object? sender, PointerPressedEventArgs e)
     {
-        if (e.GetCurrentPoint(this).Properties.IsLeftButtonPressed && sender is Control { DataContext: MediaAsset })
+        if (e.GetCurrentPoint(this).Properties.IsLeftButtonPressed && sender is Control { DataContext: MediaAsset asset })
         {
+            if (e.ClickCount == 2 && DataContext is EditorViewModel editor)
+            {
+                _dragArmed = false;
+                editor.AddMediaToTimelineCommand.Execute(asset);
+                return;
+            }
             _dragArmed = true;
             _pressPoint = e.GetPosition(this);
             _pressEvent = e;
@@ -104,7 +278,7 @@ public partial class EditorView : UserControl
     {
         if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
             return;
-        if (sender is not Control { DataContext: EffectCatalogEntry or TransitionCatalogEntry })
+        if (sender is not Control { DataContext: EffectCatalogEntry or TransitionCatalogEntry or EffectPreset })
             return;
 
         _dragArmed = true;
@@ -132,6 +306,9 @@ public partial class EditorView : UserControl
                 break;
             case TransitionCatalogEntry transition:
                 transfer.Add(DataTransferItem.Create(TransitionFormat, transition));
+                break;
+            case EffectPreset preset:
+                transfer.Add(DataTransferItem.Create(PresetFormat, preset));
                 break;
             default:
                 return;
