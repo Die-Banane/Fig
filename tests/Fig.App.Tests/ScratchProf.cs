@@ -27,6 +27,12 @@ public class ScratchProf
         var lines = new List<string>();
         File.Delete("/tmp/claude-1000/prof.txt");
 
+        // the preview's own worker must be idle: decoders are single-threaded
+        var running = typeof(PreviewViewModel).GetField("_decodeRunning", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        var waited = Stopwatch.StartNew();
+        while ((bool)running.GetValue(preview)! && waited.Elapsed.TotalSeconds < 40)
+            Thread.Sleep(50);
+        File.AppendAllText("/tmp/claude-1000/prof.txt", $"worker idle after {waited.ElapsedMilliseconds} ms\n");
         // is a single frame at t=0 slow or stuck? run it on a worker with a watchdog
         var probe = Task.Run(() => { var a = new object?[] { 0.0, pixels, false, null }; var sw = Stopwatch.StartNew(); var ok = compose.Invoke(preview, a); File.AppendAllText("/tmp/claude-1000/prof.txt", $"first frame ok={ok} status={a[3]} {sw.ElapsedMilliseconds} ms\n"); });
         if (!probe.Wait(TimeSpan.FromSeconds(25))) { File.AppendAllText("/tmp/claude-1000/prof.txt", "first frame STUCK after 25s\n"); return; }
