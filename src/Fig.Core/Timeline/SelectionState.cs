@@ -7,6 +7,25 @@ namespace Fig.Core.Timeline
     public class SelectionState
     {
         private readonly HashSet<string> _ids = new();
+        public (string ClipId, string EffectId)? SelectedEffect { get; private set; }
+
+        public void SelectEffect(string clipId, string effectId)
+        {
+            _ids.Clear();
+            _activeTrackId = null;
+            _markerId = null;
+            _markerIds.Clear();
+            _markerAnchorId = null;
+            _transitionKey = null;
+            SelectedEffect = (clipId, effectId);
+            Changed?.Invoke();
+        }
+
+        private void NotifyChanged()
+        {
+            SelectedEffect = null;
+            Changed?.Invoke();
+        }
         private string? _activeTrackId;
         private string? _markerId;
         private readonly HashSet<string> _markerIds = new();
@@ -18,8 +37,7 @@ namespace Fig.Core.Timeline
         public IReadOnlyList<string> SelectedClipIds => _ids.ToList();
 
         /// <summary>
-        /// Selected marker id. Mutually exclusive with clip/track selection: selecting
-        /// a marker clears clip selection and vice versa.
+        /// Primary marker for the inspector. SelectedMarkerIds contains the full selection.
         /// </summary>
         public string? SelectedMarkerId
         {
@@ -27,7 +45,14 @@ namespace Fig.Core.Timeline
             set
             {
                 if (value is null)
-                    SelectMarkers(Array.Empty<string>());
+                {
+                    if (_markerIds.Count == 0)
+                        return;
+                    _markerIds.Clear();
+                    _markerId = null;
+                    _markerAnchorId = null;
+                    NotifyChanged();
+                }
                 else
                     SelectMarker(value);
             }
@@ -45,7 +70,7 @@ namespace Fig.Core.Timeline
                 if (_transitionKey == value)
                     return;
                 _transitionKey = value;
-                Changed?.Invoke();
+                NotifyChanged();
             }
         }
 
@@ -60,11 +85,11 @@ namespace Fig.Core.Timeline
                 if (value is not null)
                 {
                     _markerId = null;
-            _markerIds.Clear();
-            _markerAnchorId = null;
+                    _markerIds.Clear();
+                    _markerAnchorId = null;
                     _transitionKey = null;
                 }
-                Changed?.Invoke();
+                NotifyChanged();
             }
         }
 
@@ -83,19 +108,19 @@ namespace Fig.Core.Timeline
             _markerIds.Clear();
             _markerAnchorId = null;
             _transitionKey = null;
-            Changed?.Invoke();
+            NotifyChanged();
         }
 
         public void Deselect(string clipId)
         {
             if (!_ids.Remove(clipId))
                 return;
-            Changed?.Invoke();
+            NotifyChanged();
         }
 
         public void SelectOnly(string clipId)
         {
-            if (_ids.Count == 1 && _ids.Contains(clipId) && _activeTrackId is null && _markerId is null && _transitionKey is null)
+            if (_ids.Count == 1 && _ids.Contains(clipId) && _activeTrackId is null && _markerId is null && _transitionKey is null && SelectedEffect is null)
                 return;
             _ids.Clear();
             _ids.Add(clipId);
@@ -104,7 +129,7 @@ namespace Fig.Core.Timeline
             _markerIds.Clear();
             _markerAnchorId = null;
             _transitionKey = null;
-            Changed?.Invoke();
+            NotifyChanged();
         }
 
         /// <summary>
@@ -115,7 +140,7 @@ namespace Fig.Core.Timeline
         public void SelectClips(IEnumerable<string> clipIds)
         {
             var next = new HashSet<string>(clipIds.Where(id => !string.IsNullOrEmpty(id)));
-            if (next.SetEquals(_ids) && _activeTrackId is null && _markerId is null && _transitionKey is null)
+            if (next.SetEquals(_ids) && _activeTrackId is null && _markerId is null && _transitionKey is null && SelectedEffect is null)
                 return;
             _ids.Clear();
             foreach (var id in next)
@@ -125,7 +150,7 @@ namespace Fig.Core.Timeline
             _markerIds.Clear();
             _markerAnchorId = null;
             _transitionKey = null;
-            Changed?.Invoke();
+            NotifyChanged();
         }
 
         /// <summary>Selects one marker, clearing clip/track/transition selection.</summary>
@@ -135,7 +160,7 @@ namespace Fig.Core.Timeline
         {
             var next = new HashSet<string>(markerIds.Where(id => !string.IsNullOrEmpty(id)));
             _markerAnchorId = anchorId ?? (next.Contains(_markerAnchorId ?? "") ? _markerAnchorId : next.FirstOrDefault());
-            if (next.SetEquals(_markerIds) && _ids.Count == 0 && _activeTrackId is null && _transitionKey is null)
+            if (next.SetEquals(_markerIds) && _ids.Count == 0 && _activeTrackId is null && _transitionKey is null && SelectedEffect is null)
                 return;
             _markerIds.Clear();
             foreach (var id in next)
@@ -144,7 +169,7 @@ namespace Fig.Core.Timeline
             _ids.Clear();
             _activeTrackId = null;
             _transitionKey = null;
-            Changed?.Invoke();
+            NotifyChanged();
         }
 
         public void ToggleMarker(string markerId)
@@ -172,7 +197,7 @@ namespace Fig.Core.Timeline
         /// <summary>Selects a cut transition, clearing any clip/track/marker selection.</summary>
         public void SelectTransition(string key)
         {
-            if (_transitionKey == key && _ids.Count == 0 && _activeTrackId is null && _markerId is null)
+            if (_transitionKey == key && _ids.Count == 0 && _activeTrackId is null && _markerId is null && SelectedEffect is null)
                 return;
             _transitionKey = key;
             _ids.Clear();
@@ -180,12 +205,12 @@ namespace Fig.Core.Timeline
             _markerId = null;
             _markerIds.Clear();
             _markerAnchorId = null;
-            Changed?.Invoke();
+            NotifyChanged();
         }
 
         public void Clear()
         {
-            if (_ids.Count == 0 && _activeTrackId is null && _markerId is null && _transitionKey is null)
+            if (_ids.Count == 0 && _activeTrackId is null && _markerId is null && _transitionKey is null && SelectedEffect is null)
                 return;
             _ids.Clear();
             _activeTrackId = null;
@@ -193,7 +218,7 @@ namespace Fig.Core.Timeline
             _markerIds.Clear();
             _markerAnchorId = null;
             _transitionKey = null;
-            Changed?.Invoke();
+            NotifyChanged();
         }
     }
 }

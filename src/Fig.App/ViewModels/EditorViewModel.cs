@@ -66,6 +66,7 @@ public partial class EditorViewModel : ViewModelBase
     public PreviewViewModel Preview { get; }
     public PropertiesViewModel Properties { get; }
     public MarkersPanelViewModel Markers { get; }
+    public BeatMarkersViewModel Beats { get; }
     public PlaybackEngine? Playback { get; private set; }
     private readonly MediaService _mediaService = new();
 
@@ -200,12 +201,6 @@ public partial class EditorViewModel : ViewModelBase
     public IReadOnlyList<TransitionCatalogEntry> TransitionCatalogItems => TransitionCatalog.All;
 
     // ---- effects / transitions browsers: search + category filtering ----
-    private static readonly HashSet<string> ColorEffects = new()
-    {
-        EffectCatalog.Brightness, EffectCatalog.Contrast, EffectCatalog.Saturation, EffectCatalog.Grayscale,
-        EffectCatalog.Tint, EffectCatalog.Hue, EffectCatalog.Invert, EffectCatalog.Sepia, EffectCatalog.Posterize,
-    };
-
     // ---- presets: named, reusable keyframed effects (built in, plus the user's own) ----
     private readonly EffectPresetStore _presetStore = new(AppPaths.PresetsDir);
     private List<EffectPreset> _allPresets = new();
@@ -222,13 +217,23 @@ public partial class EditorViewModel : ViewModelBase
     {
         var query = EffectSearchText.Trim();
         FilteredPresets.Clear();
-        // presets are motion: shown under All and Motion
-        if (SelectedEffectCategory is "All" or "Motion")
-            foreach (var preset in _allPresets.Where(p => query.Length == 0
+        foreach (var preset in _allPresets.Where(p =>
+                     (SelectedEffectCategory == "All" || (p.Category ?? EffectCatalog.Find(p.TypeId)?.Category) == SelectedEffectCategory)
+                     && (query.Length == 0
                          || p.Name.Contains(query, StringComparison.OrdinalIgnoreCase)
-                         || p.Description.Contains(query, StringComparison.OrdinalIgnoreCase)))
+                         || p.Description.Contains(query, StringComparison.OrdinalIgnoreCase))))
                 FilteredPresets.Add(preset);
         OnPropertyChanged(nameof(HasPresets));
+        OnPropertyChanged(nameof(NoEffectMatches));
+    }
+
+    private Track? EffectTargetTrack()
+    {
+        var ownerId = Editor.Selection.SelectedEffect?.ClipId ?? Editor.Selection.ActiveTrackId;
+        var track = Editor.Document.Tracks.FirstOrDefault(t => t.Id == ownerId);
+        if (track is null && Editor.Selection.SelectedClipIds.FirstOrDefault() is { } clipId)
+            track = Editor.Document.Tracks.FirstOrDefault(t => t.Id == Editor.FindClipTrackId(clipId));
+        return track?.Kind == TrackKind.Video ? track : null;
     }
 
     [RelayCommand]
@@ -236,20 +241,20 @@ public partial class EditorViewModel : ViewModelBase
     {
         if (preset is null || Editor is null)
             return;
-        var clip = Editor.Selection.SelectedClipIds.FirstOrDefault() is { } id
-            ? Editor.Document.Tracks.SelectMany(t => t.Clips).FirstOrDefault(c => c.Id == id)
-            : null;
-        if (clip is not VideoClip)
+        var track = EffectTargetTrack();
+        if (track is null)
         {
-            Notify?.Invoke("Select a video clip to apply this");
+            Notify?.Invoke("Select a video track or clip to apply this");
             return;
         }
-        var instance = EffectPresetInstantiator.Create(preset, clip.DurSec, PlayheadTimeSec - clip.StartSec);
-        Editor.AddEffect(clip.Id, instance);
+        var start = Math.Max(0, Editor.SnapTime(PlayheadTimeSec));
+        var instance = EffectPresetInstantiator.Create(preset, start + preset.DefaultDurationSec, start);
+        Editor.AddEffect(track.Id, instance);
         Preview.RefreshFrame();
-        Properties.Refresh();
-        Properties.SelectEffect(clip.Id, instance.Id);
-        Notify?.Invoke($"Added \"{preset.Name}\" \u2014 move the playhead and drag the frame on the preview to add more keyframes");
+        Properties.SelectEffect(track.Id, instance.Id);
+        Notify?.Invoke(preset.TypeId == EffectCatalog.Transform
+            ? $"Added \"{preset.Name}\" \u2014 move the playhead and drag the frame on the preview to add more keyframes"
+            : $"Added \"{preset.Name}\" \u2014 adjust its keyframes in the inspector");
     }
 
     [RelayCommand]
@@ -264,7 +269,7 @@ public partial class EditorViewModel : ViewModelBase
     /// <summary>Asks for a name and saves an effect's bar and keyframes as a reusable preset.</summary>
     public async Task SaveEffectAsPresetAsync(string clipId, string effectId)
     {
-        var clip = Editor.Document.Tracks.SelectMany(t => t.Clips).FirstOrDefault(c => c.Id == clipId);
+        var clip = Editor.FindEffectOwner(clipId);
         var effect = clip?.Effects.FirstOrDefault(e => e.Id == effectId);
         if (clip is null || effect is null)
             return;
@@ -276,11 +281,13 @@ public partial class EditorViewModel : ViewModelBase
         _presetStore.Save(preset);
         LoadPresets();
         SelectedLibraryTab = LibraryTabs.First(t => t.Tab == LibraryPanelTab.Effects);
-        SelectedEffectCategory = "Motion";
-        Notify?.Invoke($"Saved \"{name}\" \u2014 find it under Effects \u2192 Motion");
+        SelectedEffectCategory = EffectCatalog.Find(effect.TypeId)?.Category ?? "All";
+        Notify?.Invoke($"Saved \"{name}\" \u2014 find it under Effects \u2192 {SelectedEffectCategory}");
     }
 
-    public IReadOnlyList<string> EffectCategories { get; } = ["All", "Color", "Stylize", "Motion"];
+    public IReadOnlyList<string> EffectCategories { get; } = ["All", "Motion", "Blur", "Light", "Glitch", "Retro", "Distort", "Color", "Stylize"];
+    public IReadOnlyList<string> TransitionCategories { get; } = ["All", "Basic", "Camera", "Blur", "Light", "Glitch", "Wipe"];
+    [ObservableProperty] private string _selectedTransitionCategory = "All";
     public ObservableCollection<EffectCatalogEntry> FilteredEffects { get; } = new();
     public ObservableCollection<TransitionCatalogEntry> FilteredTransitions { get; } = new();
 
@@ -288,7 +295,7 @@ public partial class EditorViewModel : ViewModelBase
     [ObservableProperty] private string _selectedEffectCategory = "All";
     [ObservableProperty] private string _transitionSearchText = "";
 
-    public bool NoEffectMatches => FilteredEffects.Count == 0;
+    public bool NoEffectMatches => FilteredEffects.Count == 0 && FilteredPresets.Count == 0;
     public bool NoTransitionMatches => FilteredTransitions.Count == 0;
 
     /// <summary>Number of items in the open library tab, shown beside its title (effects and transitions only).</summary>
@@ -309,16 +316,14 @@ public partial class EditorViewModel : ViewModelBase
     partial void OnEffectSearchTextChanged(string value) { RefreshEffectFilter(); RefreshPresetFilter(); }
     partial void OnSelectedEffectCategoryChanged(string value) { RefreshEffectFilter(); RefreshPresetFilter(); }
     partial void OnTransitionSearchTextChanged(string value) => RefreshTransitionFilter();
+    partial void OnSelectedTransitionCategoryChanged(string value) => RefreshTransitionFilter();
 
     private void RefreshEffectFilter()
     {
         var query = EffectSearchText.Trim();
         FilteredEffects.Clear();
         foreach (var e in EffectCatalogItems.Where(e =>
-                     (SelectedEffectCategory == "All"
-                      || (SelectedEffectCategory == "Motion" && e.TypeId == EffectCatalog.Transform)
-                      || (SelectedEffectCategory == "Color" && ColorEffects.Contains(e.TypeId))
-                      || (SelectedEffectCategory == "Stylize" && e.TypeId != EffectCatalog.Transform && !ColorEffects.Contains(e.TypeId)))
+                     (SelectedEffectCategory == "All" || e.Category == SelectedEffectCategory)
                      && (query.Length == 0
                          || e.DisplayName.Contains(query, StringComparison.OrdinalIgnoreCase)
                          || e.Description.Contains(query, StringComparison.OrdinalIgnoreCase))))
@@ -330,9 +335,11 @@ public partial class EditorViewModel : ViewModelBase
     {
         var query = TransitionSearchText.Trim();
         FilteredTransitions.Clear();
-        foreach (var t in TransitionCatalogItems.Where(t => query.Length == 0
+        foreach (var t in TransitionCatalogItems.Where(t =>
+                     (SelectedTransitionCategory == "All" || t.Category == SelectedTransitionCategory)
+                     && (query.Length == 0
                      || t.DisplayName.Contains(query, StringComparison.OrdinalIgnoreCase)
-                     || t.Description.Contains(query, StringComparison.OrdinalIgnoreCase)))
+                     || t.Description.Contains(query, StringComparison.OrdinalIgnoreCase))))
             FilteredTransitions.Add(t);
         OnPropertyChanged(nameof(NoTransitionMatches));
     }
@@ -385,6 +392,7 @@ public partial class EditorViewModel : ViewModelBase
         Preview.AttachEditor(this);
         Properties = new PropertiesViewModel(this);
         Markers = new MarkersPanelViewModel(this);
+        Beats = new BeatMarkersViewModel(this);
         Media.CollectionChanged += (_, _) =>
         {
             _mediaById.Clear();
@@ -534,7 +542,7 @@ public partial class EditorViewModel : ViewModelBase
     {
         if (_syncingSelection)
             return;
-        if (Editor.Selection.Count > 0 || Editor.Selection.ActiveTrackId is not null)
+        if (Editor.Selection.Count > 0 || Editor.Selection.ActiveTrackId is not null || Editor.Selection.SelectedEffect is not null)
         {
             _syncingSelection = true;
             SelectedMedia = null;
@@ -559,10 +567,16 @@ public partial class EditorViewModel : ViewModelBase
                 : linked ? $"{clips.Count} linked clips selected" : $"{clips.Count} clips selected";
             StatusHint = "Drag an edge to trim · Ctrl-click adds or removes · drag empty space (or Shift-drag anywhere) to select a region";
         }
+        else if (selection.SelectedEffect is not null)
+        {
+            SelectionSummary = "Effect selected";
+            StatusHint = "Ctrl-drag to duplicate · Delete removes the effect";
+        }
         else if (selection.SelectedMarkerId is not null)
         {
-            SelectionSummary = "1 marker selected";
-            StatusHint = "Drag a range edge to adjust export boundaries · Shift+Delete removes it";
+            int count = selection.SelectedMarkerIds.Count;
+            SelectionSummary = $"{count} marker{(count == 1 ? "" : "s")} selected";
+            StatusHint = "Ctrl-click toggles markers · Shift-click selects a range · Delete removes selected markers";
         }
         else if (selection.SelectedTransitionKey is not null)
         {
@@ -578,6 +592,7 @@ public partial class EditorViewModel : ViewModelBase
 
     private void OnEditorTimelineChanged()
     {
+        Beats.OnTimelineChanged();
         IsDirty = true;
         OnPropertyChanged(nameof(SequenceEndSec));
         Properties.Refresh();
@@ -720,23 +735,18 @@ public partial class EditorViewModel : ViewModelBase
     {
         if (entry is null || Editor is null)
             return;
-        var clipId = Editor.Selection.SelectedClipIds.FirstOrDefault();
-        if (clipId is null)
+        var track = EffectTargetTrack();
+        if (track is null)
         {
-            Notify?.Invoke("Select a clip to apply an effect");
-            return;
-        }
-        var clip = Editor.Document.Tracks.SelectMany(t => t.Clips).FirstOrDefault(c => c.Id == clipId);
-        if (clip is not VideoClip)
-        {
-            Notify?.Invoke("Effects apply to video clips");
+            Notify?.Invoke("Select a video track or clip to apply an effect");
             return;
         }
         var instance = entry.CreateInstance();
-        Editor.AddEffect(clipId, instance);
+        instance.StartSec = Math.Max(0, Editor.SnapTime(PlayheadTimeSec));
+        instance.DurSec = 3;
+        Editor.AddEffect(track.Id, instance);
         Preview.RefreshFrame();
-        Properties.Refresh();
-        Properties.SelectEffect(clipId, instance.Id);
+        Properties.SelectEffect(track.Id, instance.Id);
         Notify?.Invoke(entry.TypeId == EffectCatalog.Transform
             ? "Added Transform \u2014 press the stopwatch to animate it with keyframes"
             : $"Added {entry.DisplayName}");
@@ -814,6 +824,8 @@ public partial class EditorViewModel : ViewModelBase
     public void LoadProject(Project project, ProjectStore store)
     {
         _store = store;
+        EffectMigration.Migrate(project);
+        EffectMigration.MoveClipEffectsToTracks(project);
         Project = project;
         ProjectManager = new ProjectManager(project, new MediaService(), store.CacheDirectory(project.Id));
 
@@ -829,6 +841,7 @@ public partial class EditorViewModel : ViewModelBase
 
     private void ActivateTimeline(TimelineModel timeline)
     {
+        Beats.Cancel();
         UnwireEditorEvents(Editor);
         Editor = new TimelineEditor(timeline);
         Editor.MediaResolver = FindAssetById;
@@ -1338,87 +1351,10 @@ public partial class EditorViewModel : ViewModelBase
     }
 
 
-    [ObservableProperty]
-    private double _beatSensitivity = 50;
+    /// <summary>Analysis for the beat-marker session; the view model owns the analysis, not the host.</summary>
+    internal BeatAnalysisService CreateBeatAnalyzer() => new(_mediaService);
 
-    [ObservableProperty]
-    private bool _beatKicksOnly;
-
-    [RelayCommand]
-    private async Task GenerateMarkersFromBeats()
-    {
-        var selectedIds = Editor.Selection.SelectedClipIds;
-        var clip = Editor.Document.Tracks
-            .SelectMany(track => track.Clips)
-            .OfType<AudioClip>()
-            .FirstOrDefault(clip => selectedIds.Contains(clip.Id));
-
-        if (clip is null)
-        {
-            Notify?.Invoke("Select an audio clip first");
-            return;
-        }
-
-        var asset = FindAssetById(clip.SourceId);
-        if (asset is null || asset.Offline)
-        {
-            Notify?.Invoke("Source audio is unavailable");
-            return;
-        }
-
-        // Match the source-time advance used by AudioMixer, including frame-rate conform.
-        var editor = Editor;
-        double sourceIn = clip.SrcInSec;
-        double duration = clip.DurSec;
-        double speed = clip.Speed;
-        var sourceRate = clip.SourceRate;
-        var timelineRate = editor.Document.Rate;
-        double playRate = (speed <= 0 ? 1 : speed)
-            * (sourceRate is { } rate ? rate.Fps / timelineRate.Fps : 1);
-        double sourceDuration = Math.Min(duration * playRate,
-            Math.Min(clip.SrcOutSec, asset.DurationSec) - sourceIn);
-        double sourceOut = clip.SrcOutSec;
-        string sourceId = clip.SourceId;
-        if (!double.IsFinite(playRate) || playRate <= 0 || sourceDuration <= 0)
-        {
-            Notify?.Invoke("The clip has no audio range to analyze");
-            return;
-        }
-
-        Notify?.Invoke("Analyzing beats...");
-        double sensitivity = BeatSensitivity / 100;
-        bool kicksOnly = BeatKicksOnly;
-        try
-        {
-            var analyzer = new BeatAnalysisService(_mediaService);
-            var sourceTimes = await Task.Run(() =>
-                analyzer.GenerateBeatTimes(asset.Url, sourceIn, sourceDuration, sensitivity, kicksOnly));
-
-            // Analysis is asynchronous: don't apply results to a deleted or retimed clip.
-            if (!ReferenceEquals(Editor, editor)
-                || !editor.Document.Tracks.SelectMany(track => track.Clips).Contains(clip)
-                || clip.SrcInSec != sourceIn || clip.SrcOutSec != sourceOut
-                || clip.DurSec != duration || clip.Speed != speed
-                || !Nullable.Equals(clip.SourceRate, sourceRate) || !editor.Document.Rate.Equals(timelineRate)
-                || clip.SourceId != sourceId)
-            {
-                Notify?.Invoke("Clip changed during analysis; generate beats again");
-                return;
-            }
-
-            var localTimes = sourceTimes.Select(time => (time - sourceIn) / playRate)
-                .Where(time => time >= 0 && time < duration).ToArray();
-            var markers = editor.AddBeatMarkers(clip, localTimes);
-            Properties.Refresh();
-            Notify?.Invoke($"Added {markers.Count} {(kicksOnly ? "kick" : "beat")} markers");
-        }
-        catch (Exception ex)
-        {
-            var description = CrashLog.Write("beat-analysis", ex);
-            Notify?.Invoke($"Beat analysis failed: {description}");
-        }
-    }
-
+    internal MediaAsset? FindAsset(string sourceId) => FindAssetById(sourceId);
 
     public void UseMarkerAsRangeStart(string markerId) => AddRangeFromBookmark(markerId, true);
 
@@ -1465,6 +1401,21 @@ public partial class EditorViewModel : ViewModelBase
         var marker = Editor.AddRangeMarker(start, length, $"Range {count}", "#5f9cf8");
         Editor.Selection.SelectMarker(marker.Id);
         Notify?.Invoke($"Added \"{marker.Name}\" \u2014 drag its edges on the timeline to adjust");
+    }
+
+    [RelayCommand]
+    private void SplitVideoAtSelectedMarkers()
+    {
+        if (Editor.Selection.SelectedMarkerIds.Count == 0)
+        {
+            Notify?.Invoke("Select one or more markers first");
+            return;
+        }
+        int count = Editor.SplitVideoAtSelectedMarkers();
+        Properties.Refresh();
+        Preview.RefreshFrame();
+        Notify?.Invoke(count == 0 ? "No video clips cross the selected marker positions"
+            : $"Made {count} video cut{(count == 1 ? "" : "s")} at selected markers");
     }
 
     [RelayCommand]

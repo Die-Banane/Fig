@@ -33,6 +33,8 @@ public sealed class GpuLayer
 {
     public required GpuSource Source { get; init; }
     public GpuSource? Incoming { get; init; }
+    /// <summary>Track effects applied after crop and any transition.</summary>
+    public IReadOnlyList<GpuEffectCall> Effects { get; init; } = Array.Empty<GpuEffectCall>();
     public string? TransitionTypeId { get; init; }
     public double Progress { get; init; }
     public IReadOnlyDictionary<string, ParamValue>? TransitionParams { get; init; }

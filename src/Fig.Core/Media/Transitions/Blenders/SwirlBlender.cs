@@ -9,7 +9,7 @@ namespace Fig.Core.Media
     /// up as it fades out and the incoming picture unwinds as it fades in. The twist is strongest
     /// at the center and fades to nothing at the radius.
     /// </summary>
-    [Transition(TransitionCatalog.Swirl, "Swirl", Icon = "tornado", DefaultDurationSec = 1.4,
+    [Transition(TransitionCatalog.Swirl, "Swirl", Category = "Camera", Icon = "tornado", DefaultDurationSec = 1.4,
         Description = "Spin the picture around a point while dissolving.")]
     [TransitionParam("centerX", "Center X", Default = 0.5, Min = 0, Max = 1)]
     [TransitionParam("centerY", "Center Y", Default = 0.5, Min = 0, Max = 1)]

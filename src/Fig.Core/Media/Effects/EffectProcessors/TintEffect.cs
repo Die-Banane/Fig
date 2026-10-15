@@ -8,7 +8,7 @@ namespace Fig.Core.Media
     /// Tints the image toward a target color. "strength" blends the tint in; "preserve_luma"
     /// rebalances the result so the original luma is roughly kept.
     /// </summary>
-    [Effect(EffectCatalog.Tint, "Tint", Icon = "palette", Description = "Tint the image toward a color.")]
+    [Effect(EffectCatalog.Tint, "Tint", Category = "Color", Icon = "palette", Description = "Tint the image toward a color.")]
     [EffectParam("color", "Color", Kind = ParamKind.Color, Default = 0xFF0080FF)]
     [EffectParam("strength", "Strength", Default = 0.5, Min = 0, Max = 1)]
     [EffectParam("preserve_luma", "Preserve luma", Kind = ParamKind.Bool, Default = 0)]

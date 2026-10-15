@@ -157,6 +157,223 @@ public sealed class UiSmokeTests : IDisposable
         vm.DisposePlayback();
     }
 
+    [AvaloniaFact]
+    public void MarkersPanel_SplitVideoButton_CutsAtSelectedMarkers_AndUndoesTogether()
+    {
+        var vm = OpenSampleEditor(out var window);
+        try
+        {
+            var markers = new[] { vm.Editor.AddMarker(vm.Editor.Document, 2), vm.Editor.AddMarker(vm.Editor.Document, 4) };
+            vm.Editor.Selection.SelectMarkers(markers.Select(marker => marker.Id));
+            vm.SelectedLibraryTab = vm.LibraryTabs.First(tab => tab.Tab == LibraryPanelTab.Markers);
+            window.UpdateLayout();
+            var button = window.GetVisualDescendants().OfType<Button>()
+                .First(control => Equals(control.Content, "Split video at markers"));
+            Assert.True(button.IsEnabled);
+            int videosBefore = vm.Editor.Document.Tracks.SelectMany(track => track.Clips).OfType<Fig.Core.Timeline.VideoClip>().Count();
+            int audioBefore = vm.Editor.Document.Tracks.SelectMany(track => track.Clips).OfType<Fig.Core.Timeline.AudioClip>().Count();
+            var point = button.TranslatePoint(new Point(button.Bounds.Width / 2, button.Bounds.Height / 2), window)!.Value;
+            window.MouseDown(point, Avalonia.Input.MouseButton.Left);
+            window.MouseUp(point, Avalonia.Input.MouseButton.Left);
+            Assert.Equal(videosBefore + 2, vm.Editor.Document.Tracks.SelectMany(track => track.Clips).OfType<Fig.Core.Timeline.VideoClip>().Count());
+            Assert.Equal(audioBefore + 2, vm.Editor.Document.Tracks.SelectMany(track => track.Clips).OfType<Fig.Core.Timeline.AudioClip>().Count());
+            vm.Editor.Undo();
+            Assert.Equal(videosBefore, vm.Editor.Document.Tracks.SelectMany(track => track.Clips).OfType<Fig.Core.Timeline.VideoClip>().Count());
+            Assert.Equal(audioBefore, vm.Editor.Document.Tracks.SelectMany(track => track.Clips).OfType<Fig.Core.Timeline.AudioClip>().Count());
+        }
+        finally { window.Close(); vm.DisposePlayback(); }
+    }
+
+    [AvaloniaFact]
+    public void EditorSpace_DoesNotClickFocusedDeleteButton()
+    {
+        var vm = OpenSampleEditor(out var window);
+        try
+        {
+            var marker = vm.Editor.AddMarker(vm.Editor.Document, 2);
+            vm.Editor.Selection.SelectMarker(marker.Id);
+            vm.SelectedLibraryTab = vm.LibraryTabs.First(tab => tab.Tab == LibraryPanelTab.Markers);
+            window.UpdateLayout();
+            var button = window.GetVisualDescendants().OfType<Button>()
+                .First(control => Equals(control.Content, "Delete selected"));
+            button.Focus();
+            window.KeyPress(Key.Space, RawInputModifiers.None, PhysicalKey.Space, " ");
+            window.KeyRelease(Key.Space, RawInputModifiers.None, PhysicalKey.Space, " ");
+            Assert.NotNull(vm.Editor.FindMarker(marker.Id));
+            Assert.NotNull(vm.TogglePlaybackCommand.ExecutionTask);
+        }
+        finally { window.Close(); vm.DisposePlayback(); }
+    }
+
+    [AvaloniaFact]
+    public void CreativeLibrary_CategoriesSearchAndActualThumbnailsLoad()
+    {
+        var vm = OpenSampleEditor(out var window);
+        try
+        {
+            vm.SelectedLibraryTab = vm.LibraryTabs.First(t => t.Tab == LibraryPanelTab.Effects);
+            vm.SelectedEffectCategory = "Light";
+            Assert.Contains(vm.FilteredEffects, e => e.TypeId == "glow");
+            Assert.All(vm.FilteredEffects, e => Assert.Equal("Light", e.Category));
+            Assert.Contains(vm.FilteredPresets, p => p.Id == "glow-hit");
+            Assert.Contains(vm.FilteredPresets, p => p.Id == "white-flash-hit");
+            window.UpdateLayout();
+            Shot(window, "creative-light-effects");
+            Assert.NotEmpty(window.GetVisualDescendants().OfType<EffectPreview>());
+
+            vm.SelectedEffectCategory = "Motion";
+            Assert.Contains(vm.FilteredEffects, e => e.TypeId == "camera-shake");
+            vm.SelectedEffectCategory = "All";
+            vm.EffectSearchText = "glitch";
+            Assert.Contains(vm.FilteredEffects, e => e.TypeId == "digital-glitch");
+            Assert.Contains(vm.FilteredPresets, p => p.Id == "glitch-burst");
+
+            vm.SelectedLibraryTab = vm.LibraryTabs.First(t => t.Tab == LibraryPanelTab.Transitions);
+            vm.SelectedTransitionCategory = "Camera";
+            vm.TransitionSearchText = "Zoom";
+            Assert.Contains(vm.FilteredTransitions, t => t.TypeId == "zoom-in");
+            Assert.Contains(vm.FilteredTransitions, t => t.TypeId == "zoom-out");
+            Assert.All(vm.FilteredTransitions, t => Assert.Equal("Camera", t.Category));
+            vm.TransitionSearchText = "";
+            window.UpdateLayout();
+            Shot(window, "creative-camera-transitions");
+            Assert.NotEmpty(window.GetVisualDescendants().OfType<TransitionPreview>());
+        }
+        finally { window.Close(); vm.DisposePlayback(); }
+    }
+
+    [AvaloniaFact]
+    public void Beats_WithoutAnAudioClipSelected_ExplainsAndLeavesTheTimelineAlone()
+    {
+        var vm = OpenSampleEditor(out var window);
+        try
+        {
+            string? toast = null;
+            vm.Notify = message => toast = message;
+            vm.Editor.Selection.Clear();
+            int changes = 0;
+            vm.Editor.TimelineChanged += () => changes++;
+
+            vm.Beats.AnalyzeCommand.Execute(null);
+
+            Assert.False(vm.Beats.HasPreview);
+            Assert.Equal("Select an audio clip first.", vm.Beats.Status);
+            Assert.Equal(vm.Beats.Status, toast);
+            Assert.Equal("Beats", vm.Beats.ButtonLabel);
+            Assert.Null(vm.Editor.BeatPreview);
+            Assert.Equal(0, changes);
+            vm.Beats.CancelCommand.Execute(null);
+            Assert.Equal("", vm.Beats.Status);
+        }
+        finally { window.Close(); vm.DisposePlayback(); }
+    }
+
+    [AvaloniaFact]
+    public void MarkerPanel_ModifierSelection_DeleteAndUndo_WorkWithMouseAndKeyboard()
+    {
+        var vm = OpenSampleEditor(out var window);
+        try
+        {
+            vm.Editor.Document.Markers.Clear();
+            foreach (var clip in vm.Editor.Document.Tracks.SelectMany(track => track.Clips))
+                vm.Editor.ClearClipMarkers(clip);
+            var a = vm.Editor.AddMarker(vm.Editor.Document, 1, "First");
+            var b = vm.Editor.AddMarker(vm.Editor.Document, 2, "Middle");
+            var c = vm.Editor.AddMarker(vm.Editor.Document, 3, "Last");
+            vm.SelectedLibraryTab = vm.LibraryTabs.First(t => t.Title == "Markers");
+            window.UpdateLayout();
+
+            void ClickRow(string id, RawInputModifiers modifiers = RawInputModifiers.None)
+            {
+                var button = window.GetVisualDescendants().OfType<Button>()
+                    .First(control => control.Classes.Contains("marker-row")
+                        && control.DataContext is MarkerRowViewModel row && row.Id == id);
+                var point = button.TranslatePoint(new Point(button.Bounds.Width / 2, button.Bounds.Height / 2), window)!.Value;
+                window.MouseDown(point, Avalonia.Input.MouseButton.Left, modifiers);
+                window.MouseUp(point, Avalonia.Input.MouseButton.Left, modifiers);
+            }
+
+            ClickRow(a.Id);
+            ClickRow(c.Id, RawInputModifiers.Control);
+            Assert.Equal(2, vm.Markers.SelectedCount);
+            Assert.True(vm.Markers.SequenceMarkers.First(row => row.Id == a.Id).IsSelected);
+            ClickRow(c.Id, RawInputModifiers.Shift);
+            Assert.Equal(3, vm.Markers.SelectedCount);
+            window.KeyPress(Key.Delete, RawInputModifiers.None, PhysicalKey.Delete, null);
+            window.KeyRelease(Key.Delete, RawInputModifiers.None, PhysicalKey.Delete, null);
+            Assert.Empty(vm.Editor.Document.Markers);
+            Assert.Equal(0, vm.Markers.SelectedCount);
+            Assert.NotEmpty(vm.Editor.Document.Tracks.SelectMany(track => track.Clips));
+            vm.Editor.Undo();
+            Assert.Equal(new[] { a, b, c }, vm.Editor.Document.Markers);
+
+            // Ctrl+A in the panel selects visible filtered results, not clips.
+            vm.Markers.SearchText = "Middle";
+            window.UpdateLayout();
+            var panel = window.GetVisualDescendants().OfType<DockPanel>().First(control => control.Name == "MarkerPanelRoot");
+            panel.Focus();
+            window.KeyPress(Key.A, RawInputModifiers.Control, PhysicalKey.A, null);
+            window.KeyRelease(Key.A, RawInputModifiers.Control, PhysicalKey.A, null);
+            Assert.Equal(new[] { b.Id }, vm.Editor.Selection.SelectedMarkerIds);
+            Assert.Empty(vm.Editor.Selection.SelectedClipIds);
+            var search = panel.GetVisualDescendants().OfType<TextBox>().First();
+            search.Focus();
+            search.SelectAll();
+            window.KeyPress(Key.Delete, RawInputModifiers.None, PhysicalKey.Delete, null);
+            window.KeyRelease(Key.Delete, RawInputModifiers.None, PhysicalKey.Delete, null);
+            Assert.Equal(3, vm.Editor.Document.Markers.Count);
+            Assert.Equal(new[] { b.Id }, vm.Editor.Selection.SelectedMarkerIds);
+            Shot(window, "markers-multiselect");
+        }
+        finally
+        {
+            window.Close();
+            vm.DisposePlayback();
+        }
+    }
+
+    [AvaloniaFact]
+    public void Timeline_MarkerModifierSelection_AndSelectAllDelete_KeepClips()
+    {
+        var vm = OpenSampleEditor(out var window);
+        try
+        {
+            vm.Editor.Document.Markers.Clear();
+            var a = vm.Editor.AddMarker(vm.Editor.Document, 1);
+            var b = vm.Editor.AddMarker(vm.Editor.Document, 2);
+            var c = vm.Editor.AddMarker(vm.Editor.Document, 3);
+            int clipCount = vm.Editor.Document.Tracks.Sum(track => track.Clips.Count);
+            var timeline = window.GetVisualDescendants().OfType<TimelineView>().First();
+            window.UpdateLayout();
+            void Click(double time, RawInputModifiers modifiers = RawInputModifiers.None)
+            {
+                // Center of the marker lane, after the track header.
+                var point = timeline.TranslatePoint(new Point(118 + timeline.Viewport.TimeToX(time), 10), window)!.Value;
+                window.MouseDown(point, Avalonia.Input.MouseButton.Left, modifiers);
+                window.MouseUp(point, Avalonia.Input.MouseButton.Left, modifiers);
+            }
+            Click(1);
+            Click(3, RawInputModifiers.Control);
+            Assert.Equal(2, vm.Editor.Selection.SelectedMarkerIds.Count);
+            Click(3, RawInputModifiers.Shift);
+            Assert.Equal(new[] { a.Id, b.Id, c.Id }, vm.Editor.Selection.SelectedMarkerIds);
+            window.KeyPress(Key.A, RawInputModifiers.Control, PhysicalKey.A, null);
+            window.KeyRelease(Key.A, RawInputModifiers.Control, PhysicalKey.A, null);
+            Assert.Equal(vm.Editor.AllMarkers().Count(), vm.Editor.Selection.SelectedMarkerIds.Count);
+            window.KeyPress(Key.Delete, RawInputModifiers.None, PhysicalKey.Delete, null);
+            window.KeyRelease(Key.Delete, RawInputModifiers.None, PhysicalKey.Delete, null);
+            Assert.Empty(vm.Editor.AllMarkers());
+            Assert.Equal(clipCount, vm.Editor.Document.Tracks.Sum(track => track.Clips.Count));
+            vm.Editor.Undo();
+            Assert.Equal(new[] { a, b, c }, vm.Editor.Document.Markers);
+        }
+        finally
+        {
+            window.Close();
+            vm.DisposePlayback();
+        }
+    }
+
     /// <summary>Where a point inside the picture (0..1 from its top-left) lands in window coordinates.</summary>
     private static Point PicturePoint(Control overlay, Window window, double aspect, double nx, double ny)
     {
@@ -324,6 +541,163 @@ public sealed class UiSmokeTests : IDisposable
         Assert.DoesNotContain(fx.Keyframes["zoom"], k => Math.Abs(k.TimeSec - first) < 1e-6);
 
         Shot(window, "transform-bar-keyframes");
+        window.Close();
+        vm.DisposePlayback();
+    }
+
+    [AvaloniaFact]
+    public void EditorView_TrackEffects_ShareARowUnlessTheyOverlap()
+    {
+        var vm = OpenSampleEditor(out var window);
+        try
+        {
+            var track = vm.Editor.Document.Tracks.First(t => t.Kind == Fig.Core.Timeline.TrackKind.Video);
+            Fig.Core.Timeline.EffectInstance Add(double start, double dur)
+            {
+                var fx = Fig.Core.Media.EffectCatalog.Find("camera-shake")!.CreateInstance();
+                fx.StartSec = start;
+                fx.DurSec = dur;
+                vm.Editor.AddEffect(track.Id, fx);
+                return fx;
+            }
+            var a = Add(1, 0.5);
+            var b = Add(3, 0.5);
+            var c = Add(5, 0.5);
+            var overlapsA = Add(1.25, 1);
+            window.UpdateLayout();
+            var timeline = window.GetVisualDescendants().OfType<TimelineView>().First();
+
+            double Y(Fig.Core.Timeline.EffectInstance fx) => timeline.RackPointFor(track.Id, fx.Id)!.Value.Y;
+            Assert.Equal(Y(a), Y(b), 3);
+            Assert.Equal(Y(a), Y(c), 3);
+            Assert.True(Y(overlapsA) > Y(a) + 1, "an overlapping region needs its own row");
+        }
+        finally { window.Close(); vm.DisposePlayback(); }
+    }
+
+    [AvaloniaFact]
+    public void EditorView_TrackEffectCanCrossCutsAndDuplicateWithoutSelectingClips()
+    {
+        var vm = OpenSampleEditor(out var window);
+        try
+        {
+            var video = vm.Editor.Document.Tracks.SelectMany(t => t.Clips).OfType<Fig.Core.Timeline.VideoClip>().First();
+            var track = vm.Editor.FindTrackForClip(video);
+            vm.Editor.Selection.SelectOnly(video.Id);
+            vm.PlayheadTimeSec = 11;
+            vm.ApplyPresetFromLibraryCommand.Execute(Fig.Core.Media.BuiltInEffectPresets.Find("zoom-in-out"));
+            var effect = Assert.Single(track.Effects);
+            Assert.Empty(video.Effects);
+            Assert.Equal(11, effect.StartSec!.Value);
+            Assert.True(effect.StartSec + effect.DurSec > video.StartSec + video.DurSec);
+            Assert.Equal(track.Id, vm.Editor.Selection.SelectedEffect?.ClipId);
+            Assert.Empty(vm.Editor.Selection.SelectedClipIds);
+            Assert.Equal(effect.Id, vm.Properties.SelectedEffect?.EffectId);
+            Assert.True(vm.Properties.Transform.IsActive);
+
+            vm.Editor.Cut(video.Id, 11.5);
+            Assert.Same(effect, Assert.Single(track.Effects));
+            Assert.Equal(11, effect.Keyframes["zoom"][0].TimeSec);
+            window.UpdateLayout();
+            var timeline = window.GetVisualDescendants().OfType<TimelineView>().First();
+            var key = timeline.RackPointFor(track.Id, effect.Id, 11)!.Value;
+            var from = timeline.TranslatePoint(key + new Vector(12, -18), window)!.Value;
+            var target = from + new Vector(50, 0);
+            window.MouseDown(from, Avalonia.Input.MouseButton.Left, RawInputModifiers.Control);
+            window.MouseMove(target, RawInputModifiers.Control);
+            window.MouseUp(target, Avalonia.Input.MouseButton.Left, RawInputModifiers.Control);
+            Assert.Equal(2, track.Effects.Count);
+            var copy = track.Effects.Single(fx => fx.Id != effect.Id);
+            Assert.Equal(11.5, copy.StartSec!.Value, 6);
+            Assert.Equal(effect.DurSec, copy.DurSec);
+            Assert.Empty(vm.Editor.Selection.SelectedClipIds);
+            timeline.Focus();
+            window.KeyPress(Key.Delete, RawInputModifiers.None, PhysicalKey.Delete, null);
+            window.KeyRelease(Key.Delete, RawInputModifiers.None, PhysicalKey.Delete, null);
+            Assert.Same(effect, Assert.Single(track.Effects));
+            Assert.NotEmpty(track.Clips);
+            vm.Editor.Undo();
+            Assert.Equal(2, track.Effects.Count);
+        }
+        finally { window.Close(); vm.DisposePlayback(); }
+    }
+
+    [AvaloniaFact]
+    public void EditorView_ControlDragCopiesEffectBarsAndClips()
+    {
+        var vm = OpenSampleEditor(out var window);
+        var (clip, fx) = AddMotion(vm, "shake-hit", 0.2);
+        clip.DurSec = 2;
+        foreach (var partner in vm.Editor.LinkGroup(clip.Id)) partner.DurSec = 2;
+        window.UpdateLayout();
+        var timeline = window.GetVisualDescendants().OfType<TimelineView>().First();
+        Point ToWindow(Point p) => timeline.TranslatePoint(p, window)!.Value;
+        var lane = timeline.RackPointFor(clip.Id, fx.Id)!.Value;
+        // Label row rather than the keyframe diamonds below it.
+        var from = ToWindow(lane - new Vector(0, 18));
+        var target = from + new Vector(70, 0);
+        window.MouseDown(from, Avalonia.Input.MouseButton.Left, RawInputModifiers.Control);
+        window.MouseMove(target, RawInputModifiers.Control);
+        Assert.Single(clip.Effects); // preview only until release
+        window.MouseUp(target, Avalonia.Input.MouseButton.Left, RawInputModifiers.Control);
+        var track = vm.Editor.FindTrackForClip(clip);
+        var copy = Assert.Single(track.Effects);
+        Assert.Single(clip.Effects);
+        Assert.Equal(0.2, fx.StartSec!.Value, 6);
+        Assert.Equal(0.9, copy.StartSec!.Value, 6);
+        vm.Editor.Undo();
+        Assert.Empty(track.Effects);
+        Assert.Single(clip.Effects);
+
+        // Video body above its rack; copy into free space three seconds later.
+        from = ToWindow(new Point(118 + timeline.Viewport.TimeToX(0.5), lane.Y - 60));
+        target = from + new Vector(300, 0);
+        int before = vm.Editor.Document.Tracks.Sum(t => t.Clips.Count);
+        window.MouseDown(from, Avalonia.Input.MouseButton.Left, RawInputModifiers.Control);
+        window.MouseMove(target, RawInputModifiers.Control);
+        Assert.Equal(before, vm.Editor.Document.Tracks.Sum(t => t.Clips.Count));
+        window.MouseUp(target, Avalonia.Input.MouseButton.Left, RawInputModifiers.Control);
+        Assert.Equal(before + 2, vm.Editor.Document.Tracks.Sum(t => t.Clips.Count));
+        Assert.Equal(0, clip.StartSec);
+        Assert.Equal(2, vm.Editor.Selection.SelectedClipIds.Count);
+        vm.Editor.Undo();
+        Assert.Equal(before, vm.Editor.Document.Tracks.Sum(t => t.Clips.Count));
+        window.Close();
+        vm.DisposePlayback();
+    }
+
+    [AvaloniaFact]
+    public void EditorView_EffectSelectionAndCopyLeaveClipUnselected()
+    {
+        var vm = OpenSampleEditor(out var window);
+        var (clip, fx) = AddMotion(vm);
+        window.UpdateLayout();
+        var timeline = window.GetVisualDescendants().OfType<TimelineView>().First();
+        Point ToWindow(Point p) => timeline.TranslatePoint(p, window)!.Value;
+        var first = fx.Keyframes["zoom"][0].TimeSec;
+        var diamond = ToWindow(timeline.RackPointFor(clip.Id, fx.Id, first)!.Value);
+        window.MouseDown(diamond, Avalonia.Input.MouseButton.Left);
+        window.MouseUp(diamond, Avalonia.Input.MouseButton.Left);
+        Assert.Empty(vm.Editor.Selection.SelectedClipIds);
+        Assert.Equal(fx.Id, vm.Editor.Selection.SelectedEffect?.EffectId);
+        Assert.Equal(fx.Id, vm.Properties.SelectedEffect?.EffectId);
+
+        var count = fx.Keyframes["zoom"].Count;
+        var target = diamond + new Vector(50, 0);
+        window.MouseDown(diamond, Avalonia.Input.MouseButton.Left, RawInputModifiers.Control);
+        window.MouseMove(target, RawInputModifiers.Control);
+        window.MouseUp(target, Avalonia.Input.MouseButton.Left, RawInputModifiers.Control);
+        Assert.Equal(count + 1, fx.Keyframes["zoom"].Count);
+        Assert.Contains(fx.Keyframes["zoom"], k => Math.Abs(k.TimeSec - first) < 1e-6);
+        Assert.Empty(vm.Editor.Selection.SelectedClipIds);
+
+        timeline.Focus();
+        window.KeyPress(Key.Delete, RawInputModifiers.None, PhysicalKey.Delete, null);
+        window.KeyRelease(Key.Delete, RawInputModifiers.None, PhysicalKey.Delete, null);
+        Assert.DoesNotContain(clip.Effects, effect => effect.Id == fx.Id);
+        Assert.NotNull(vm.Editor.FindClipForView(clip.Id));
+        vm.Editor.Undo();
+        Assert.Contains(clip.Effects, effect => effect.Id == fx.Id);
         window.Close();
         vm.DisposePlayback();
     }

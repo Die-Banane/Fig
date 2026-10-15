@@ -131,7 +131,7 @@ namespace Fig.App.Views
                 menu.Items.Add(new Separator());
                 menu.Items.Add(Item("Select all markers on this clip", () => ed.Selection.SelectMarkers(clip.Markers.Select(m => m.Id))));
                 menu.Items.Add(Item("Clear generated beats on this clip", () => ed.ClearClipMarkers(clip, true),
-                    clip.Markers.Any(m => m.Metadata?.ContainsKey("fig.beatAnalysis") == true), danger: true));
+                    clip.Markers.Any(m => m.IsGeneratedBeat), danger: true));
                 menu.Items.Add(Item("Clear all markers on this clip", () => ed.ClearClipMarkers(clip), danger: true));
             }
         }
@@ -245,6 +245,8 @@ namespace Fig.App.Views
 
             menu.Items.Add(Item("Jump to marker", () => vm.SelectMarker(id)));
             menu.Items.Add(Item("Edit marker...", () => vm.EditMarker(id)));
+            menu.Items.Add(Item("Split video at selected markers", () => vm.SplitVideoAtSelectedMarkersCommand.Execute(null),
+                hint: "Cut video on all tracks at these marker positions; linked audio follows. Undo restores all cuts."));
             menu.Items.Add(Item("Place keyframe here", () => vm.PlaceKeyframeAtMarker(id), vm.CanPlaceKeyframeAtMarker,
                 vm.CanPlaceKeyframeAtMarker ? null : "Select an effect on a clip first"));
             if (isBookmark)
@@ -259,7 +261,7 @@ namespace Fig.App.Views
             {
                 menu.Items.Add(Item("Select all markers on this clip", () => Editor.Selection.SelectMarkers(clip.Markers.Select(m => m.Id))));
                 menu.Items.Add(Item("Clear generated beats on this clip", () => Editor.ClearClipMarkers(clip, true),
-                    clip.Markers.Any(m => m.Metadata?.ContainsKey("fig.beatAnalysis") == true), danger: true));
+                    clip.Markers.Any(m => m.IsGeneratedBeat), danger: true));
                 menu.Items.Add(Item("Clear all markers on this clip", () => Editor.ClearClipMarkers(clip), danger: true));
             }
         }

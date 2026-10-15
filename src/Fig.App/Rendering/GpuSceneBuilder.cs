@@ -32,6 +32,34 @@ public static class GpuSceneBuilder
             .ToList();
     }
 
+    /// <summary>Applies a track stack to its finished layer, including both sides of a transition.</summary>
+    public static GpuLayer WithTrackEffects(GpuLayer layer, Track track, double timelineSec, int width, int height)
+    {
+        var calls = EffectsAt(track.Effects, timelineSec);
+        if (calls.Count == 0) return layer;
+        if (calls.All(call => GpuEffects.Supports(call.TypeId)))
+            return new GpuLayer
+            {
+                Source = layer.Source, Incoming = layer.Incoming, TransitionTypeId = layer.TransitionTypeId,
+                Progress = layer.Progress, TransitionParams = layer.TransitionParams, Opacity = layer.Opacity,
+                Effects = calls,
+            };
+
+        // A CPU-only effect must see the completed track image, not its individual transition inputs.
+        using var scene = new GpuScene
+        {
+            Width = width, Height = height,
+            Layers = new[] { new GpuLayer
+            {
+                Source = layer.Source, Incoming = layer.Incoming, TransitionTypeId = layer.TransitionTypeId,
+                Progress = layer.Progress, TransitionParams = layer.TransitionParams,
+            } },
+        };
+        var frame = new DecodedFrame { Width = width, Height = height, Pixels = GpuSceneRenderer.RenderToBgra(scene) };
+        var processed = EffectPipeline.ApplyStack(frame, track.Effects, timelineSec);
+        return new GpuLayer { Source = new GpuSource { Image = ToImage(processed) }, Opacity = layer.Opacity };
+    }
+
     /// <summary>The clip's crop at a clip-relative time (automation sampled), or none.</summary>
     public static CropInsets CropAt(VideoClip clip, double localT)
     {

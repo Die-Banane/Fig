@@ -5,7 +5,7 @@ using Fig.Core.Timeline;
 namespace Fig.Core.Media
 {
     /// <summary>An expanding circle reveals the incoming clip from the center.</summary>
-    [Transition(TransitionCatalog.Iris, "Iris", Icon = "circle-dot", Description = "Expand a circle from the center.")]
+    [Transition(TransitionCatalog.Iris, "Iris", Category = "Wipe", Icon = "circle-dot", Description = "Expand a circle from the center.")]
     [TransitionParam("soft", "Soft edge", Default = 0.1, Min = 0, Max = 0.5)]
     internal sealed class IrisBlender : ITransitionBlender
     {

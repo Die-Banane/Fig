@@ -31,6 +31,13 @@ namespace Fig.Core.Timeline
         /// <summary>For range markers: the output file name to use when exporting (null = derived from the name).</summary>
         public string? OutputName { get; set; }
 
+        /// <summary>Metadata key that tags a marker as produced by beat analysis (so regenerating replaces it).</summary>
+        public const string BeatAnalysisKey = "fig.beatAnalysis";
+
+        /// <summary>True for markers produced by beat analysis rather than placed by hand.</summary>
+        [System.Text.Json.Serialization.JsonIgnore]
+        public bool IsGeneratedBeat => Metadata?.ContainsKey(BeatAnalysisKey) == true;
+
         /// <summary>Optional source-format provenance (e.g. cmx_3600 reel / color).</summary>
         public Dictionary<string, JsonElement>? Metadata { get; set; }
 

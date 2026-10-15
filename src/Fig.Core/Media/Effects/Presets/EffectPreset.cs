@@ -30,6 +30,8 @@ namespace Fig.Core.Media
 
         /// <summary>The effect the preset creates.</summary>
         public string TypeId { get; set; } = EffectCatalog.Transform;
+        /// <summary>Optional browser category; older presets inherit their effect's category.</summary>
+        public string? Category { get; set; }
 
         public double DefaultDurationSec { get; set; } = 3;
         public bool BuiltIn { get; set; }

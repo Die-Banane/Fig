@@ -43,6 +43,10 @@ internal static class GpuEffects
     /// </summary>
     public static bool Supports(string typeId) => GpuEffectIds.Contains(typeId);
 
+    public static bool SupportsTransition(string typeId) => typeId is TransitionCatalog.CrossDissolve
+        or TransitionCatalog.FadeToBlack or TransitionCatalog.Wipe or TransitionCatalog.Curtain
+        or TransitionCatalog.Iris or TransitionCatalog.Push or TransitionCatalog.Slide or TransitionCatalog.Swirl;
+
     // ---- parameter helpers (the CPU processors clamp the same way) ----
 
     private static double Num(IReadOnlyDictionary<string, ParamValue> p, string key, double fallback)

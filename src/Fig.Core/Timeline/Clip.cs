@@ -9,7 +9,7 @@ namespace Fig.Core.Timeline
     [JsonDerivedType(typeof(VideoClip), "video")]
     [JsonDerivedType(typeof(AudioClip), "audio")]
     [JsonDerivedType(typeof(TextClip), "text")]
-    public abstract class Clip
+    public abstract class Clip : IEffectOwner
     {
         public abstract ClipKind Kind { get; }
         public string Id { get; set; } = Guid.NewGuid().ToString();

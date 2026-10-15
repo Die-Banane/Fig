@@ -276,6 +276,13 @@ public partial class PropertiesViewModel : ViewModelBase
     {
         var ed = _editor.Editor;
 
+        if (ed.Selection.SelectedEffect is { } picked && ed.FindEffectOwner(picked.ClipId) is Track effectTrack)
+        {
+            ShowTrackEffects(effectTrack);
+            SelectedEffect = Effects.FirstOrDefault(item => item.EffectId == picked.EffectId);
+            return;
+        }
+
         if (ed.Selection.SelectedMarkerId is { } markerId
             && ed.FindMarker(markerId) is { } location)
         {
@@ -290,13 +297,15 @@ public partial class PropertiesViewModel : ViewModelBase
             return;
         }
 
-        var clipId = ed.Selection.SelectedClipIds.FirstOrDefault();
+        var clipId = ed.Selection.SelectedEffect?.ClipId ?? ed.Selection.SelectedClipIds.FirstOrDefault();
         if (clipId is not null)
         {
             var clip = FindClip(clipId);
             if (clip is not null)
             {
                 ShowClip(clip);
+                if (ed.Selection.SelectedEffect is { } selected)
+                    SelectedEffect = Effects.FirstOrDefault(item => item.EffectId == selected.EffectId);
                 return;
             }
         }
@@ -319,6 +328,19 @@ public partial class PropertiesViewModel : ViewModelBase
         }
 
         ShowEmpty();
+    }
+
+    private void ShowTrackEffects(Track track)
+    {
+        if (_clipId != track.Id) ClearSections();
+        _clipId = track.Id;
+        Kind = PropertiesContextKind.Track;
+        Title = $"{track.Name ?? "Track"} effects";
+        Subtitle = "Timeline effect regions";
+        ShowClipSection = false;
+        ShowTrackSection = false;
+        ShowEffectsSection = true;
+        BuildEffectStack(track);
     }
 
     private void ShowEmpty()
@@ -455,7 +477,7 @@ public partial class PropertiesViewModel : ViewModelBase
     [RelayCommand]
     private void BypassAllEffects()
     {
-        if (_clipId is null || FindClip(_clipId) is not { } clip || clip.Effects.Count == 0)
+        if (_clipId is null || _editor.Editor.FindEffectOwner(_clipId) is not { } clip || clip.Effects.Count == 0)
             return;
         var turnOff = clip.Effects.Any(e => e.Enabled);
         foreach (var effect in clip.Effects.Where(e => e.Enabled == turnOff).ToList())
@@ -491,7 +513,9 @@ public partial class PropertiesViewModel : ViewModelBase
             : track.Name!;
         Subtitle = label;
         ClearSections();
-        _clipId = null;
+        _clipId = track.Id;
+        BuildEffectStack(track);
+        ShowEffectsSection = true;
         ShowTrackSection = true;
         TrackNameLabel = label;
         KindLabel = track.Kind == TrackKind.Video ? "Video" : "Audio";
@@ -818,7 +842,7 @@ public partial class PropertiesViewModel : ViewModelBase
 
     // ---- effect stack + schema-driven param editors ----
 
-    private void BuildEffectStack(Clip clip)
+    private void BuildEffectStack(IEffectOwner clip)
     {
         // Same clip as last time: only rebuild the list when the stack actually changed
         // (add/remove/reorder/toggle). The signature covers ids + order + enabled state;
@@ -851,7 +875,7 @@ public partial class PropertiesViewModel : ViewModelBase
         RebuildEffectParams();
     }
 
-    private static string EffectSignature(Clip clip)
+    private static string EffectSignature(IEffectOwner clip)
     {
         var sb = new System.Text.StringBuilder();
         foreach (var effect in clip.Effects)
@@ -897,7 +921,7 @@ public partial class PropertiesViewModel : ViewModelBase
         _lastBuiltEffectId = _selectedEffectId;
         if (_clipId is null || _selectedEffectId is null)
             return;
-        var clip = FindClip(_clipId);
+        var clip = _editor.Editor.FindEffectOwner(_clipId);
         if (clip is null)
             return;
         var effect = FindEffect(clip, _selectedEffectId);
@@ -971,7 +995,7 @@ public partial class PropertiesViewModel : ViewModelBase
 
     private (T Value, int Count) EvalParam<T>(string clipId, string effectId, string key, Func<ParamValue, T> convert)
     {
-        var clip = FindClip(clipId);
+        var clip = _editor.Editor.FindEffectOwner(clipId);
         if (clip is null)
             return (default!, 0);
         var effect = FindEffect(clip, effectId);
@@ -987,9 +1011,9 @@ public partial class PropertiesViewModel : ViewModelBase
     }
 
     /// <summary>The clip and effect currently selected in the Effects tab, if any.</summary>
-    internal (Clip Clip, EffectInstance Effect)? SelectedEffectInstance()
+    internal (IEffectOwner Clip, EffectInstance Effect)? SelectedEffectInstance()
     {
-        if (_clipId is null || _selectedEffectId is null || FindClip(_clipId) is not { } clip
+        if (_clipId is null || _selectedEffectId is null || _editor.Editor.FindEffectOwner(_clipId) is not { } clip
             || FindEffect(clip, _selectedEffectId) is not { } effect)
             return null;
         return (clip, effect);
@@ -1015,7 +1039,7 @@ public partial class PropertiesViewModel : ViewModelBase
 
     private void WriteEffectParam(string clipId, string effectId, string key, ParamValue value)
     {
-        var clip = FindClip(clipId);
+        var clip = _editor.Editor.FindEffectOwner(clipId);
         if (clip is null)
             return;
         var effect = FindEffect(clip, effectId);
@@ -1028,7 +1052,7 @@ public partial class PropertiesViewModel : ViewModelBase
 
     private void AddEffectKeyframe(string clipId, string effectId, string key)
     {
-        var clip = FindClip(clipId);
+        var clip = _editor.Editor.FindEffectOwner(clipId);
         if (clip is null)
             return;
         var effect = FindEffect(clip, effectId);
@@ -1044,7 +1068,7 @@ public partial class PropertiesViewModel : ViewModelBase
 
     private void StepEffectKeyframe(string clipId, string effectId, string key, bool forward)
     {
-        var clip = FindClip(clipId);
+        var clip = _editor.Editor.FindEffectOwner(clipId);
         if (clip is null)
             return;
         var effect = FindEffect(clip, effectId);
@@ -1165,7 +1189,7 @@ public partial class PropertiesViewModel : ViewModelBase
         }
     }
 
-    private static EffectInstance? FindEffect(Clip clip, string effectId)
+    private static EffectInstance? FindEffect(IEffectOwner clip, string effectId)
     {
         foreach (var effect in clip.Effects)
             if (effect.Id == effectId)
@@ -1173,15 +1197,12 @@ public partial class PropertiesViewModel : ViewModelBase
         return null;
     }
 
-    /// <summary>Selects a clip (if needed) and focuses the given effect in the stack.</summary>
+    /// <summary>Focuses an effect without selecting its owning clip.</summary>
     public void SelectEffect(string clipId, string effectId)
     {
         var editor = _editor.Editor;
-        if (!(editor.Selection.SelectedClipIds.Count == 1 && editor.Selection.SelectedClipIds[0] == clipId))
-        {
-            editor.Selection.SelectOnly(clipId);   // Selection.Changed -> Refresh() -> BuildEffectStack
-            Refresh();
-        }
+        editor.Selection.SelectEffect(clipId, effectId);
+        Refresh();
         foreach (var item in Effects)
             if (item.EffectId == effectId)
             {

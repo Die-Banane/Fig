@@ -836,7 +836,7 @@
                         <!-- Effects catalog -->
                         <DockPanel IsVisible="{Binding IsLibraryEffects}">
                             <TextBlock DockPanel.Dock="Bottom" Classes="field-label" Margin="0,10,0,0"
-                                       Text="Drag onto a clip, or select a clip and press +." TextWrapping="Wrap"/>
+                                       Text="Drag onto a video track, or select a track or clip and press +." TextWrapping="Wrap"/>
                             <StackPanel DockPanel.Dock="Top" Spacing="10" Margin="0,0,0,10">
                                 <TextBox Text="{Binding EffectSearchText}" PlaceholderText="Search effects"
                                          AutomationProperties.Name="Search effects"/>
@@ -927,11 +927,8 @@
                                                         </ContextMenu>
                                                     </Border.ContextMenu>
                                                     <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
-                                                        <Border Width="28" Height="28" CornerRadius="14" VerticalAlignment="Center"
-                                                                Background="{StaticResource AccentSofter}">
-                                                            <local:StrokeIcon Icon="{Binding Icon}" Width="15" Height="15"
-                                                                              HorizontalAlignment="Center" VerticalAlignment="Center"
-                                                                              IconBrush="{StaticResource AccentText}"/>
+                                                        <Border Width="64" Height="44" CornerRadius="4" ClipToBounds="True" VerticalAlignment="Center">
+                                                            <local:EffectPreview TypeId="{Binding TypeId}"/>
                                                         </Border>
                                                         <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
                                                             <TextBlock Text="{Binding DisplayName}" Foreground="{StaticResource TextPrimary}"
@@ -960,6 +957,8 @@
                             <StackPanel DockPanel.Dock="Top" Spacing="8" Margin="0,0,0,10">
                                 <TextBox Text="{Binding TransitionSearchText}" PlaceholderText="Search transitions"
                                          AutomationProperties.Name="Search transitions"/>
+                                <ComboBox ItemsSource="{Binding TransitionCategories}" SelectedItem="{Binding SelectedTransitionCategory, Mode=TwoWay}"
+                                          HorizontalAlignment="Stretch" AutomationProperties.Name="Transition category"/>
                                 <TextBlock Classes="field-label" Text="Drag a transition onto a cut."/>
                             </StackPanel>
                             <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
@@ -997,7 +996,7 @@
                         </DockPanel>
 
                         <!-- Markers: bookmarks and ranges on the sequence, plus markers attached to clips -->
-                        <DockPanel IsVisible="{Binding IsLibraryMarkers}">
+                        <DockPanel x:Name="MarkerPanelRoot" Focusable="True" IsVisible="{Binding IsLibraryMarkers}">
                             <Button DockPanel.Dock="Bottom" Classes="fig primary" Margin="0,12,0,0"
                                     Content="Export marked ranges"
                                     Command="{Binding ExportMarkedRangesCommand}"
@@ -1011,6 +1010,17 @@
                                     <Button Grid.Column="2" Classes="fig" Content="+ Range" Command="{Binding Markers.AddRangeCommand}"
                                             ToolTip.Tip="Add a range that starts at the playhead"/>
                                 </Grid>
+                                <TextBlock Text="{Binding Markers.SelectionSummary}" Classes="field-label"/>
+                                <WrapPanel Orientation="Horizontal">
+                                    <Button Classes="fig" Content="Select all" Command="{Binding Markers.SelectAllCommand}" Margin="0,0,6,0"/>
+                                    <Button Classes="fig" Content="Delete selected" Command="{Binding Markers.DeleteSelectedCommand}"
+                                            IsEnabled="{Binding Markers.HasSelection}"/>
+                                </WrapPanel>
+                                <Button Classes="fig" Content="Split video at markers" Command="{Binding Markers.SplitVideoCommand}"
+                                        IsEnabled="{Binding Markers.HasSelection}" HorizontalAlignment="Stretch"
+                                        ToolTip.Tip="Split video on all tracks at selected marker positions. Linked audio follows; all cuts undo together."/>
+                                <TextBlock Text="Ctrl-click to toggle · Shift-click for a range · Delete to remove"
+                                           TextWrapping="Wrap" Classes="field-label"/>
                             </StackPanel>
                             <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
                                 <StackPanel Spacing="8">
@@ -1033,8 +1043,14 @@
                                                         <ContextMenu>
                                                             <MenuItem Header="Jump to marker" Command="{Binding SelectCommand}"/>
                                                             <MenuItem Header="Edit marker..." Command="{Binding EditCommand}"/>
+                                                            <MenuItem Header="Split video at selected markers" Command="{Binding SplitVideoCommand}"/>
                                                             <Separator/>
-                                                            <MenuItem Header="Delete marker" Foreground="{StaticResource Danger}" Command="{Binding DeleteCommand}"/>
+                                                            <MenuItem Header="Delete selected markers" Foreground="{StaticResource Danger}" Command="{Binding DeleteCommand}"/>
+                                                            <Separator IsVisible="{Binding IsClipMarker}"/>
+                                                            <MenuItem Header="Clear generated beats on this clip" IsVisible="{Binding IsClipMarker}"
+                                                                      Command="{Binding ClearGeneratedCommand}"/>
+                                                            <MenuItem Header="Clear all markers on this clip" IsVisible="{Binding IsClipMarker}"
+                                                                      Command="{Binding ClearClipCommand}"/>
                                                         </ContextMenu>
                                                     </Button.ContextMenu>
                                                     <Grid ColumnDefinitions="4,*" MinHeight="50">
@@ -1062,8 +1078,14 @@
                                                         <ContextMenu>
                                                             <MenuItem Header="Jump to marker" Command="{Binding SelectCommand}"/>
                                                             <MenuItem Header="Edit marker..." Command="{Binding EditCommand}"/>
+                                                            <MenuItem Header="Split video at selected markers" Command="{Binding SplitVideoCommand}"/>
                                                             <Separator/>
-                                                            <MenuItem Header="Delete marker" Foreground="{StaticResource Danger}" Command="{Binding DeleteCommand}"/>
+                                                            <MenuItem Header="Delete selected markers" Foreground="{StaticResource Danger}" Command="{Binding DeleteCommand}"/>
+                                                            <Separator IsVisible="{Binding IsClipMarker}"/>
+                                                            <MenuItem Header="Clear generated beats on this clip" IsVisible="{Binding IsClipMarker}"
+                                                                      Command="{Binding ClearGeneratedCommand}"/>
+                                                            <MenuItem Header="Clear all markers on this clip" IsVisible="{Binding IsClipMarker}"
+                                                                      Command="{Binding ClearClipCommand}"/>
                                                         </ContextMenu>
                                                     </Button.ContextMenu>
                                                     <Grid ColumnDefinitions="4,*" MinHeight="50">
@@ -1453,7 +1475,7 @@
                                             </ListBox.ItemTemplate>
                                         </ListBox>
 
-                                        <!-- Transform: one effect for the whole clip, animated with keyframes -->
+                                        <!-- Transform: track effect region, animated with keyframes -->
                                         <Border IsVisible="{Binding Transform.IsActive}" Classes="inspector-card">
                                             <StackPanel Spacing="12" DataContext="{Binding Transform}" x:DataType="vm:TransformControlsViewModel">
                                                 <TextBlock Text="{Binding ClipLabel}" Classes="field-label"/>
@@ -1461,7 +1483,7 @@
                                                 <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
                                                     <ToggleButton Classes="fig" Width="40" Padding="0" IsChecked="{Binding IsAnimated, Mode=OneWay}"
                                                                   Command="{Binding ToggleAnimateCommand}"
-                                                                  ToolTip.Tip="Animate: changes at the playhead become keyframes. Turn off to keep one look for the whole clip."
+                                                                  ToolTip.Tip="Animate: changes at the playhead become keyframes. Turn off to keep one look throughout the effect."
                                                                   AutomationProperties.Name="Animate with keyframes">
                                                         <local:StrokeIcon Icon="timer" Width="16" Height="16" HorizontalAlignment="Center"/>
                                                     </ToggleButton>
@@ -1530,7 +1552,7 @@
 
                                                 <Border Height="1" Background="#2B2D31"/>
                                                 <CheckBox IsChecked="{Binding HasLimit}" Content="Limit to part of the clip"
-                                                          ToolTip.Tip="Off: the effect covers the whole clip. On: it applies only between the ends of its bar."/>
+                                                          ToolTip.Tip="Off: the effect covers the track. On: it applies only between the ends of its bar."/>
                                                 <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10" IsVisible="{Binding HasLimit}">
                                                     <TextBlock Text="Length" Classes="field-label" VerticalAlignment="Center"/>
                                                     <TextBox Grid.Column="1" Width="136" TextAlignment="Center"
@@ -1859,23 +1881,45 @@
                                         AutomationProperties.Name="Zoom in">
                                     <local:StrokeIcon Icon="plus" Width="12" Height="12" HorizontalAlignment="Center"/>
                                 </Button>
-                                <Button Classes="fig compact" Content="Beats" ToolTip.Tip="Generate beat or kick markers">
+                                <Button Classes="fig compact" Content="{Binding Beats.ButtonLabel}"
+                                        ToolTip.Tip="Preview beat or kick markers, then apply them">
                                     <Button.Flyout>
                                         <Flyout Placement="BottomEdgeAlignedRight">
-                                            <StackPanel Width="240" Spacing="10">
+                                            <StackPanel Width="260" Spacing="10">
                                                 <TextBlock Text="Beat markers" FontWeight="SemiBold"/>
-                                                <TextBlock Text="Sensitivity"/>
-                                                <Slider Minimum="0" Maximum="100" Value="{Binding BeatSensitivity, Mode=TwoWay}"
-                                                        AutomationProperties.Name="Beat sensitivity"/>
-                                                <Grid ColumnDefinitions="*,*">
-                                                    <TextBlock Text="Strong hits" FontSize="11"/>
-                                                    <TextBlock Grid.Column="1" Text="More hits" FontSize="11" HorizontalAlignment="Right"/>
-                                                </Grid>
-                                                <CheckBox Content="Focus on kicks" IsChecked="{Binding BeatKicksOnly, Mode=TwoWay}"/>
-                                                <TextBlock Text="Favors sudden bass attacks. Bass notes may also be detected."
+
+                                                <StackPanel Spacing="8" IsVisible="{Binding Beats.IsIdle}">
+                                                    <TextBlock Text="Analyze the selected audio clip, then tune which hits become markers. Nothing is added until you apply."
+                                                               TextWrapping="Wrap" FontSize="11"/>
+                                                    <Button Classes="fig primary" Content="Analyze selected clip"
+                                                            Command="{Binding Beats.AnalyzeCommand}"
+                                                            HorizontalAlignment="Stretch"/>
+                                                </StackPanel>
+
+                                                <StackPanel Spacing="10" IsVisible="{Binding Beats.HasPreview}">
+                                                    <TextBlock Text="Sensitivity"/>
+                                                    <Slider Minimum="0" Maximum="100" Value="{Binding Beats.Sensitivity, Mode=TwoWay}"
+                                                            AutomationProperties.Name="Beat sensitivity"/>
+                                                    <Grid ColumnDefinitions="*,*">
+                                                        <TextBlock Text="Strong hits" FontSize="11"/>
+                                                        <TextBlock Grid.Column="1" Text="More hits" FontSize="11" HorizontalAlignment="Right"/>
+                                                    </Grid>
+                                                    <CheckBox Content="Focus on kicks" IsChecked="{Binding Beats.KicksOnly, Mode=TwoWay}"/>
+                                                    <TextBlock Text="Favors sudden bass attacks. Bass notes may also be detected."
+                                                               TextWrapping="Wrap" FontSize="11"/>
+                                                    <TextBlock Text="{Binding Beats.MarkerCount, StringFormat='{}{0} markers shown on the clip'}"
+                                                               FontSize="11"/>
+                                                    <Grid ColumnDefinitions="*,8,*">
+                                                        <Button Content="Cancel" Command="{Binding Beats.CancelCommand}"
+                                                                HorizontalAlignment="Stretch"/>
+                                                        <Button Grid.Column="2" Classes="fig primary" Content="Apply"
+                                                                Command="{Binding Beats.ApplyCommand}"
+                                                                HorizontalAlignment="Stretch"/>
+                                                    </Grid>
+                                                </StackPanel>
+
+                                                <TextBlock Text="{Binding Beats.Status}" IsVisible="{Binding Beats.HasStatus}"
                                                            TextWrapping="Wrap" FontSize="11"/>
-                                                <Button Content="Generate markers" Command="{Binding GenerateMarkersFromBeatsCommand}"
-                                                        HorizontalAlignment="Stretch"/>
                                             </StackPanel>
                                         </Flyout>
                                     </Button.Flyout>
@@ -1887,8 +1931,8 @@
                                                       Command="{Binding ToggleClipEnabledSelectedCommand}"/>
                                             <MenuItem Header="Delete selected marker" InputGesture="Shift+Delete"
                                                       Command="{Binding DeleteSelectedMarkerCommand}"/>
-                                            <MenuItem Header="Generate Markers at beats"
-                                                      Command="{Binding GenerateMarkersFromBeatsCommand}"/>
+                                            <MenuItem Header="Analyze beats for markers"
+                                                      Command="{Binding Beats.AnalyzeCommand}"/>
                                         </MenuFlyout>
                                     </Button.Flyout>
                                 </Button>

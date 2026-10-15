@@ -15,7 +15,14 @@ namespace Fig.Core.Media
             var rented = new List<byte[]>();
             try
             {
-                return ApplyStack(frame, effects, localT, rented);
+                var processed = ApplyStack(frame, effects, localT, rented);
+                if (ReferenceEquals(processed, frame))
+                    return frame;
+                // This overload owns its temporaries. Return an owned copy before returning
+                // pooled output; otherwise the next effect render can overwrite the result.
+                var pixels = new byte[processed.Width * processed.Height * 4];
+                Buffer.BlockCopy(processed.Pixels, 0, pixels, 0, pixels.Length);
+                return new DecodedFrame { Width = processed.Width, Height = processed.Height, Pixels = pixels };
             }
             finally
             {

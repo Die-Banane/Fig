@@ -751,6 +751,8 @@ public partial class PreviewViewModel : ViewModelBase
                 {
                     built = null;
                 }
+                if (built is not null && document is not null)
+                    built = GpuSceneBuilder.WithTrackEffects(built, document.Tracks[layer.TrackIndex], target, _targetWidth, _targetHeight);
                 ordered.Add((layer.TrackIndex, built));
             }
 
@@ -758,7 +760,9 @@ public partial class PreviewViewModel : ViewModelBase
             {
                 if (TryBuildTransitionScene(active, target, needsSeek, decodeMode, out var txLayer))
                 {
-                    ordered.Add((trackIndex, txLayer));
+                    ordered.Add((trackIndex, txLayer is not null && document is not null
+                        ? GpuSceneBuilder.WithTrackEffects(txLayer, document.Tracks[trackIndex], target, _targetWidth, _targetHeight)
+                        : txLayer));
                     transitionCount++;
                 }
             }
@@ -802,6 +806,31 @@ public partial class PreviewViewModel : ViewModelBase
         ActiveTransition active, double target, bool needsSeek, PreviewDecodeMode mode, out GpuLayer? layer)
     {
         layer = null;
+        // New CPU transitions must retain their actual appearance in the GPU preview.
+        if (!GpuEffects.SupportsTransition(active.TypeId))
+        {
+            var rented = new List<byte[]>();
+            try
+            {
+                if (!TryBuildTransitionLayer(active, target, needsSeek, mode,
+                    new HashSet<byte[]>(), rented, out var cpuLayer, includeTrackEffects: false) || cpuLayer.Frame is null)
+                    return false;
+                // Same contract as the GPU path: a mismatched frame would be drawn at its native size.
+                if (cpuLayer.Frame.Width != _targetWidth || cpuLayer.Frame.Height != _targetHeight)
+                    return false;
+                layer = new GpuLayer
+                {
+                    Source = new GpuSource { Image = GpuSceneBuilder.ToImage(cpuLayer.Frame) },
+                    Opacity = cpuLayer.Opacity,
+                };
+                return true;
+            }
+            finally
+            {
+                foreach (var pixels in rented)
+                    FramePool.Return(pixels);
+            }
+        }
         if (active.Outgoing is not VideoClip outgoing
             || active.Incoming is not VideoClip incoming
             || TransitionCatalog.Resolve(active.TypeId) is null
@@ -887,6 +916,11 @@ public partial class PreviewViewModel : ViewModelBase
                             frame = FramePool.MakeDistinct(frame, seen, rented);
                             var localT = target - layer.Clip.StartSec;
                             frame = EffectPipeline.ApplyStack(frame, layer.Clip.Effects, localT, rented);
+                            if (document is not null && document.Tracks[layer.TrackIndex].Effects.Count > 0)
+                            {
+                                frame = ApplyCrop(frame, layer.Clip, localT, rented);
+                                frame = EffectPipeline.ApplyStack(frame, document.Tracks[layer.TrackIndex].Effects, target, rented);
+                            }
                         }
                     }
                     catch
@@ -897,7 +931,8 @@ public partial class PreviewViewModel : ViewModelBase
                     {
                         Frame = frame,
                         Opacity = layer.Opacity,
-                        Crop = ToPixelCrop(layer.Clip, target - layer.Clip.StartSec, _targetWidth, _targetHeight),
+                        Crop = document is not null && document.Tracks[layer.TrackIndex].Effects.Count > 0 ? null
+                            : ToPixelCrop(layer.Clip, target - layer.Clip.StartSec, _targetWidth, _targetHeight),
                     }));
                 }
 
@@ -1065,7 +1100,7 @@ public partial class PreviewViewModel : ViewModelBase
 
     private bool TryBuildTransitionLayer(
         ActiveTransition active, double target, bool needsSeek, PreviewDecodeMode mode,
-        HashSet<byte[]> seen, List<byte[]> rented, out CompositeLayer layer)
+        HashSet<byte[]> seen, List<byte[]> rented, out CompositeLayer layer, bool includeTrackEffects = true)
     {
         layer = new CompositeLayer();
         if (active.Outgoing is not VideoClip outgoing
@@ -1086,6 +1121,9 @@ public partial class PreviewViewModel : ViewModelBase
 
         var blended = blender.Blend(outFrame, inFrame, active.Progress01, active.Params);
         rented.Add(blended.Pixels);
+        var effectTrack = _editor?.Editor.Document.Tracks.FirstOrDefault(track => track.Clips.Contains(outgoing));
+        if (includeTrackEffects && effectTrack is not null)
+            blended = EffectPipeline.ApplyStack(blended, effectTrack.Effects, target, rented);
         var outOpacity = ClipFade.EffectiveOpacity(outgoing, Math.Clamp(outLocal, 0, outgoing.DurSec));
         var inOpacity = ClipFade.EffectiveOpacity(incoming, Math.Clamp(inLocal, 0, incoming.DurSec));
         layer = new CompositeLayer

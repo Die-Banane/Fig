@@ -24,17 +24,32 @@ namespace Fig.Core.Project
                         ConvertZoomRegion(clip, effect);
                         changed++;
                     }
-
-                    // An animated Transform covers the whole clip (its keyframes hold before and after), so an
-                    // earlier time-limiting bar would make it snap back. Drop the limit.
-                    if (effect.TypeId == EffectCatalog.Transform && effect.Keyframes.Count > 0 && effect.HasRange)
-                    {
-                        effect.StartSec = null;
-                        effect.DurSec = null;
-                        changed++;
-                    }
                 }
             return changed;
+        }
+
+        /// <summary>Moves legacy video clip stacks onto their tracks without changing their timeline positions.</summary>
+        public static int MoveClipEffectsToTracks(Project project)
+        {
+            int moved = 0;
+            foreach (var track in project.Timelines.SelectMany(t => t.Tracks).Where(t => t.Kind == TrackKind.Video))
+                foreach (var clip in track.Clips)
+                {
+                    foreach (var effect in clip.Effects)
+                    {
+                        var copy = effect.CloneKeepId();
+                        copy.StartSec = clip.StartSec + (effect.StartSec ?? 0);
+                        copy.DurSec = effect.DurSec ?? clip.DurSec;
+                        foreach (var key in copy.Keyframes.Keys.ToArray())
+                            copy.Keyframes[key] = copy.Keyframes[key].Select(point => point with
+                            { TimeSec = point.TimeSec + clip.StartSec }).ToList();
+                        copy.Order = track.Effects.Select(fx => fx.Order).DefaultIfEmpty(-1).Max() + 1;
+                        track.Effects.Add(copy);
+                        moved++;
+                    }
+                    clip.Effects.Clear();
+                }
+            return moved;
         }
 
         private static void ConvertZoomRegion(Clip clip, EffectInstance fx)

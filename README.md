@@ -22,6 +22,7 @@ Actively developed. Expect rough edges, incomplete features, and frequent change
 - **Resizable workspace**: media library, preview, inspector and timeline are separated by draggable splitters, scale with the window, collapse out of the way, and remember their sizes. Focus the preview with one click.
 - **Markers**: bookmarks and range markers on the sequence, a Markers panel in the sidebar, snapping to markers, and "Export marked ranges" to save each range as its own video.
 - **Effects and keyframes**: effects apply to the whole clip and can be animated with keyframes (a stopwatch switches animating on; values hold before the first and after the last keyframe). Each effect gets a row under its clip with its keyframes, and a keyframe ruler in the inspector; an effect can optionally be limited to part of the clip. Transform zooms, pans and rotates with keyframes (zoom in, hold and zoom back out are just keyframes), with an on-preview frame, easing, and reusable presets; the Swirl transition has draggable center, radius and rotation handles.
+- **Creative library**: 30 effects, 20 transitions, and 13 presets, including camera shake, glow, glitch, VHS, blur, zoom transitions, and short musical-hit animations. Search and category filters help find them; catalog thumbnails use the actual renderers. See the [creative library guide](docs/creative-library.md) for usage and rendering limitations.
 
 ## Requirements
 

@@ -23,7 +23,7 @@ namespace Fig.Core.Timeline
 
         public void Execute()
         {
-            var clip = _editor.FindClip(_clipId)
+            var clip = _editor.FindEffectOwner(_clipId)
                 ?? throw new InvalidOperationException($"Clip '{_clipId}' not found");
             if (clip.Effects.Any(e => e.Id == _effect.Id))
                 return;
@@ -36,7 +36,7 @@ namespace Fig.Core.Timeline
         {
             if (!_added)
                 return;
-            var clip = _editor.FindClip(_clipId);
+            var clip = _editor.FindEffectOwner(_clipId);
             if (clip is null)
                 return;
             clip.Effects.RemoveAll(e => e.Id == _effect.Id);
@@ -65,7 +65,7 @@ namespace Fig.Core.Timeline
 
         public void Execute()
         {
-            var clip = _editor.FindClip(_clipId)
+            var clip = _editor.FindEffectOwner(_clipId)
                 ?? throw new InvalidOperationException($"Clip '{_clipId}' not found");
             _index = clip.Effects.FindIndex(e => e.Id == _effectId);
             if (_index < 0)
@@ -78,7 +78,7 @@ namespace Fig.Core.Timeline
         {
             if (_removed is null)
                 return;
-            var clip = _editor.FindClip(_clipId);
+            var clip = _editor.FindEffectOwner(_clipId);
             if (clip is null)
                 return;
             var i = Math.Clamp(_index, 0, clip.Effects.Count);
@@ -284,7 +284,7 @@ namespace Fig.Core.Timeline
 
         private EffectInstance? FindEffect()
         {
-            var clip = _editor.FindClip(_clipId);
+            var clip = _editor.FindEffectOwner(_clipId);
             if (clip is null)
                 return null;
             foreach (var effect in clip.Effects)
@@ -333,7 +333,7 @@ namespace Fig.Core.Timeline
 
         private EffectInstance? FindEffect()
         {
-            var clip = _editor.FindClip(_clipId);
+            var clip = _editor.FindEffectOwner(_clipId);
             if (clip is null)
                 return null;
             foreach (var effect in clip.Effects)
@@ -413,7 +413,7 @@ namespace Fig.Core.Timeline
 
         private EffectInstance? FindEffect()
         {
-            var clip = _editor.FindClip(_clipId);
+            var clip = _editor.FindEffectOwner(_clipId);
             if (clip is null)
                 return null;
             foreach (var effect in clip.Effects)
@@ -475,7 +475,7 @@ namespace Fig.Core.Timeline
 
         private EffectInstance? FindEffect()
         {
-            var clip = _editor.FindClip(_clipId);
+            var clip = _editor.FindEffectOwner(_clipId);
             if (clip is null)
                 return null;
             foreach (var effect in clip.Effects)
@@ -526,7 +526,7 @@ namespace Fig.Core.Timeline
 
         private EffectInstance? FindEffect()
         {
-            var clip = _editor.FindClip(_clipId);
+            var clip = _editor.FindEffectOwner(_clipId);
             if (clip is null)
                 return null;
             foreach (var effect in clip.Effects)

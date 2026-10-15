@@ -9,7 +9,7 @@ namespace Fig.Core.Media
     /// (0 = fully outgoing, 1 = fully incoming); "soft" (fraction of the frame width)
     /// controls how wide the blended edge is.
     /// </summary>
-    [Transition(TransitionCatalog.Wipe, "Wipe", Icon = "arrow-right-left", Description = "Sweep the incoming clip in from the left.")]
+    [Transition(TransitionCatalog.Wipe, "Wipe", Category = "Wipe", Icon = "arrow-right-left", Description = "Sweep the incoming clip in from the left.")]
     [TransitionParam("soft", "Soft edge", Default = 0.1, Min = 0, Max = 0.5)]
     internal sealed class WipeBlender : ITransitionBlender
     {

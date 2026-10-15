@@ -5,7 +5,7 @@ using Fig.Core.Timeline;
 namespace Fig.Core.Media
 {
     /// <summary>Rotates hue by an angle in degrees (standard RGB rotation matrix).</summary>
-    [Effect(EffectCatalog.Hue, "Hue", Icon = "rotate-ccw-clock", Description = "Rotate the hue of the image.")]
+    [Effect(EffectCatalog.Hue, "Hue", Category = "Color", Icon = "rotate-ccw-clock", Description = "Rotate the hue of the image.")]
     [EffectParam("degrees", "Degrees", Default = 0, Min = 0, Max = 360)]
     internal sealed class HueEffect : IEffectProcessor
     {

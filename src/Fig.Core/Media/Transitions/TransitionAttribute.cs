@@ -14,7 +14,10 @@ namespace Fig.Core.Media
         public string DisplayName { get; }
         public string Icon { get; set; } = "blend";
         public string Description { get; set; } = "";
+        public string Category { get; set; } = "Basic";
         public double DefaultDurationSec { get; set; } = 0.5;
+        /// <summary>Progress at which catalog thumbnails sample this transition (0..1).</summary>
+        public double PreviewProgress { get; set; } = 0.5;
 
         public TransitionAttribute(string typeId, string displayName)
         {

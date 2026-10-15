@@ -1,0 +1,69 @@
+@startuml
+' fig Effect graphs: how a graph effect renders (preview + export) and how it is saved.
+skinparam sequenceMessageAlign left
+
+participant "EffectPipeline" as P
+participant "EffectCatalog" as C
+participant "GraphEffectProcessor" as G
+participant "GraphCompiler" as K
+participant "GraphPlan" as Plan
+participant "Primitive (CPU)" as Cpu
+participant "GpuEffects (App)" as Gpu
+participant "FramePool" as Pool
+
+== Render a clip frame ==
+P -> P : ResolveParams(fx, localT)\n(keyframes; promoted params included)
+P -> C : Resolve("graph:<id>")
+C --> P : GraphEffectProcessor
+P -> G : Apply(frame, params, localT)
+
+G -> G : plan cached for this graph revision?
+alt cache miss
+  G -> K : Compile(EffectGraph)
+  K --> G : CompileResult (plan | errors)
+  note right of K
+    topological order, port-type check,
+    cycle rejection, dangling-input check
+  end note
+end
+
+alt plan invalid
+  G --> P : input frame unchanged\n(effect shown as broken in the stack)
+else plan valid
+  G -> G : bind promoted params to node params
+  loop each step in topological order
+    G -> Cpu : Evaluate(inputs, nodeParams, localT)
+    Cpu -> Pool : Rent(output)
+    Cpu --> G : frame
+    G -> Pool : Return(inputs no longer needed)
+  end
+  G --> P : output frame (pooled, owned by caller)
+end
+
+== Preview on the GPU path ==
+P -> Gpu : SupportsGraph(plan)?
+alt plan.allShaderCapable
+  Gpu -> Gpu : fuse shader fragments into one\nSKRuntimeEffect (cached by plan.Hash)
+  Gpu --> P : drawn without a CPU readback
+else contains CPU primitive
+  Gpu --> P : fall back to CPU path above\n(whole stack, as with other CPU effects)
+end
+
+== Save as effect ==
+actor User
+participant "GraphEditorViewModel" as VM
+participant "GraphEffectLibrary" as Lib
+
+User -> VM : Promote params, name it, Save
+VM -> K : Compile(graph)
+K --> VM : CompileResult
+alt errors
+  VM --> User : show errors on the offending nodes
+else ok
+  VM -> Lib : Save(graph)
+  Lib -> Lib : build ParamDef schema from PromotedParam[]
+  Lib -> C : publish EffectCatalogEntry (category "My effects")
+  C --> User : effect appears in the library,\nusable on clips, keyframable, presettable
+end
+
+@enduml

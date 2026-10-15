@@ -14,6 +14,7 @@ namespace Fig.Core.Media
         public string DisplayName { get; }
         public string Icon { get; set; } = "wand-sparkles";
         public string Description { get; set; } = "";
+        public string Category { get; set; } = "Stylize";
         public EffectKind Kind { get; set; } = EffectKind.Video;
 
         public EffectAttribute(string typeId, string displayName)

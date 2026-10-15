@@ -5,7 +5,7 @@ using Fig.Core.Timeline;
 namespace Fig.Core.Media
 {
     /// <summary>Adjusts contrast around mid-gray (128).</summary>
-    [Effect(EffectCatalog.Contrast, "Contrast", Icon = "contrast", Description = "Adjust contrast around mid-gray.")]
+    [Effect(EffectCatalog.Contrast, "Contrast", Category = "Color", Icon = "contrast", Description = "Adjust contrast around mid-gray.")]
     [EffectParam("amount", "Amount", Default = 1, Min = 0, Max = 2)]
     internal sealed class ContrastEffect : IEffectProcessor
     {

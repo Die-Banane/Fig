@@ -57,7 +57,9 @@ public sealed class TransitionPreview : Control
 
         var outgoing = MakeFrame(incoming: false);
         var incoming = MakeFrame(incoming: true);
-        var blended = blender.Blend(outgoing, incoming, 0.5, entry.DefaultParams());
+        DecodedFrame blended;
+        try { blended = blender.Blend(outgoing, incoming, entry.PreviewProgress, entry.DefaultParams()); }
+        catch (Exception) { return; } // a broken blender leaves the card blank rather than failing the render pass
         try
         {
             _bitmap = new WriteableBitmap(

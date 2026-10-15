@@ -260,6 +260,7 @@ namespace Fig.Core.Media
                         inFrame = ApplyCrop(inFrame, inVc, inLocal, width, height, rented);
                         var blended = blender.Blend(outFrame, inFrame, activeTx.Progress01, activeTx.Params);
                         rented.Add(blended.Pixels);
+                        blended = EffectPipeline.ApplyStack(blended, track.Effects, t, rented);
                         var outOpacity = ClipFade.EffectiveOpacity(outVc, Math.Clamp(outLocal, 0, outVc.DurSec));
                         var inOpacity = ClipFade.EffectiveOpacity(inVc, Math.Clamp(inLocal, 0, inVc.DurSec));
                         composites.Add(new CompositeLayer
@@ -281,11 +282,16 @@ namespace Fig.Core.Media
                             continue;
                         frame = FramePool.MakeDistinct(frame!, seen, rented);
                         frame = EffectPipeline.ApplyStack(frame!, vc.Effects, localT, rented);
+                        if (track.Effects.Count > 0)
+                        {
+                            frame = ApplyCrop(frame, vc, localT, width, height, rented);
+                            frame = EffectPipeline.ApplyStack(frame, track.Effects, t, rented);
+                        }
                         composites.Add(new CompositeLayer
                         {
                             Frame = frame,
                             Opacity = ClipFade.EffectiveOpacity(vc, localT),
-                            Crop = ToPixelCrop(vc, localT, width, height),
+                            Crop = track.Effects.Count > 0 ? null : ToPixelCrop(vc, localT, width, height),
                         });
                     }
                 }

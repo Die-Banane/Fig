@@ -5,7 +5,7 @@ using Fig.Core.Timeline;
 namespace Fig.Core.Media
 {
     /// <summary>Applies the classic sepia transform, blendable via "amount".</summary>
-    [Effect(EffectCatalog.Sepia, "Sepia", Icon = "image-down", Description = "Warm, brown-toned monochrome.")]
+    [Effect(EffectCatalog.Sepia, "Sepia", Category = "Color", Icon = "image-down", Description = "Warm, brown-toned monochrome.")]
     [EffectParam("amount", "Amount", Default = 1, Min = 0, Max = 1)]
     internal sealed class SepiaEffect : IEffectProcessor
     {

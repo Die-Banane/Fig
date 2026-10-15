@@ -10,7 +10,7 @@ namespace Fig.Core.Media
     /// back out is just a handful of keyframes on one bar. Behaviours like "Zoom in" or "Pan" are
     /// presets of this effect rather than separate effects.
     /// </summary>
-    [Effect(EffectCatalog.Transform, "Transform", Icon = "focus",
+    [Effect(EffectCatalog.Transform, "Transform", Category = "Motion", Icon = "focus",
         Description = "Zoom, pan and rotate the picture. Keyframe it to animate.")]
     [EffectParam("centerX", "Center X", Default = 0.5, Min = 0, Max = 1)]
     [EffectParam("centerY", "Center Y", Default = 0.5, Min = 0, Max = 1)]

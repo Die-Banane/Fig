@@ -1,10 +1,12 @@
 using System;
+using System.Linq;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Markup.Xaml;
 using Avalonia.Platform.Storage;
+using Avalonia.VisualTree;
 using Fig.App.Services;
 using Fig.App.ViewModels;
 using Fig.Core.Media;
@@ -24,16 +26,84 @@ public partial class EditorView : UserControl
     private Point _pressPoint;
     private PointerPressedEventArgs? _pressEvent;
     private EditorViewModel? _boundVm;
+    private EditorTransportKeys? _transportKeys;
+
+    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnAttachedToVisualTree(e);
+        _transportKeys?.Dispose();
+        _transportKeys = new EditorTransportKeys(this,
+            () => (DataContext as EditorViewModel)?.TogglePlaybackCommand, () => Timeline.Focus());
+    }
+
+    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        _transportKeys?.Dispose();
+        _transportKeys = null;
+        base.OnDetachedFromVisualTree(e);
+    }
 
     public EditorView()
     {
         InitializeComponent();
+        MarkerPanelRoot.AddHandler(PointerPressedEvent, MarkerPanel_PointerPressed, RoutingStrategies.Tunnel);
+        MarkerPanelRoot.AddHandler(KeyDownEvent, MarkerPanel_KeyDown, RoutingStrategies.Tunnel);
         Focusable = true;
         DataContextChanged += OnDataContextChanged;
         Timeline.PlayheadChanged += OnTimelinePlayheadChanged;
         Timeline.Viewport.Changed += UpdateZoomText;
         UpdateZoomText();
         PreviewHost.ContextMenu = BuildPreviewMenu();
+    }
+
+    private void MarkerPanel_PointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (_boundVm is not { } vm || e.Source is not Visual visual)
+            return;
+        var button = visual.GetSelfAndVisualAncestors().OfType<Button>()
+            .FirstOrDefault(control => control.Classes.Contains("marker-row"));
+        if (button?.DataContext is not MarkerRowViewModel row)
+            return;
+        var point = e.GetCurrentPoint(MarkerPanelRoot);
+        if (point.Properties.IsRightButtonPressed)
+        {
+            if (!vm.Editor.Selection.IsMarkerSelected(row.Id))
+                vm.Editor.Selection.SelectMarker(row.Id);
+            return;
+        }
+        if (!point.Properties.IsLeftButtonPressed)
+            return;
+        bool toggle = e.KeyModifiers.HasFlag(KeyModifiers.Control) || e.KeyModifiers.HasFlag(KeyModifiers.Meta);
+        bool extend = e.KeyModifiers.HasFlag(KeyModifiers.Shift);
+        vm.Editor.SelectMarker(row.Id, toggle, extend, vm.Markers.VisibleMarkerIds);
+        if (!toggle && !extend)
+            vm.SelectMarker(row.Id);
+        MarkerPanelRoot.Focus();
+        e.Handled = true;
+    }
+
+    private void MarkerPanel_KeyDown(object? sender, KeyEventArgs e)
+    {
+        if (_boundVm is not { } vm || e.Source is not Visual visual
+            || visual.GetSelfAndVisualAncestors().OfType<TextBox>().Any())
+            return;
+        if (e.Key == Key.A && (e.KeyModifiers.HasFlag(KeyModifiers.Control) || e.KeyModifiers.HasFlag(KeyModifiers.Meta)))
+        {
+            vm.Markers.SelectAllCommand.Execute(null);
+            e.Handled = true;
+        }
+        // Without a marker selection these keys belong to the editor (delete clips, clear clip selection).
+        else if (e.Key is Key.Delete or Key.Back && vm.Editor.Selection.SelectedMarkerIds.Count > 0)
+        {
+            vm.DeleteSelectedMarkerCommand.Execute(null);
+            MarkerPanelRoot.Focus();
+            e.Handled = true;
+        }
+        else if (e.Key == Key.Escape && vm.Editor.Selection.SelectedMarkerIds.Count > 0)
+        {
+            vm.Editor.Selection.Clear();
+            e.Handled = true;
+        }
     }
 
     /// <summary>Right-click the preview: the things you reach for while looking at it.</summary>

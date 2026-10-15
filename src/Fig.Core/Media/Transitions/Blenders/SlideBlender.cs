@@ -5,7 +5,7 @@ using Fig.Core.Timeline;
 namespace Fig.Core.Media
 {
     /// <summary>Slides the incoming clip in over the outgoing from a chosen side.</summary>
-    [Transition(TransitionCatalog.Slide, "Slide", Icon = "move-horizontal", Description = "Slide the incoming clip over the outgoing.")]
+    [Transition(TransitionCatalog.Slide, "Slide", Category = "Camera", Icon = "move-horizontal", Description = "Slide the incoming clip over the outgoing.")]
     [TransitionParam("direction", "Direction", Kind = ParamKind.List, Default = 0, Min = 0, Max = 3, Choices = new[] { "Left", "Right", "Up", "Down" })]
     internal sealed class SlideBlender : ITransitionBlender
     {

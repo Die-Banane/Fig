@@ -5,7 +5,7 @@ using Fig.Core.Timeline;
 namespace Fig.Core.Media
 {
     /// <summary>Lifts or crushes midtones by adding a fixed delta to every channel.</summary>
-    [Effect(EffectCatalog.Brightness, "Brightness", Icon = "sun", Description = "Lift or crush midtones.")]
+    [Effect(EffectCatalog.Brightness, "Brightness", Category = "Color", Icon = "sun", Description = "Lift or crush midtones.")]
     [EffectParam("amount", "Amount", Default = 0.15, Min = -1, Max = 1)]
     internal sealed class BrightnessEffect : IEffectProcessor
     {

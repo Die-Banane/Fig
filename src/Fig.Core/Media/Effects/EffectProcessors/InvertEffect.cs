@@ -5,7 +5,7 @@ using Fig.Core.Timeline;
 namespace Fig.Core.Media
 {
     /// <summary>Inverts (negates) the RGB channels, blendable via "amount".</summary>
-    [Effect(EffectCatalog.Invert, "Invert", Icon = "circle-slash-2", Description = "Invert the image colors.")]
+    [Effect(EffectCatalog.Invert, "Invert", Category = "Color", Icon = "circle-slash-2", Description = "Invert the image colors.")]
     [EffectParam("amount", "Amount", Default = 1, Min = 0, Max = 1)]
     internal sealed class InvertEffect : IEffectProcessor
     {

@@ -88,4 +88,70 @@ public class BeatAnalysisTests
         editor.Redo();
         Assert.Equal(ids, clip.Markers.Skip(1).Select(m => m.Id));
     }
+
+    [Fact]
+    public void Analysis_ReselectsFromTheSameResult_AsSensitivityMoves()
+    {
+        double[] onsets = new double[300];
+        onsets[25] = 10;
+        onsets[100] = 2;
+        double[] kicks = new double[300];
+        kicks[25] = 10;
+        kicks[30] = 5;
+        kicks[100] = 3;
+        var analysis = new BeatAnalysis(onsets, kicks, [0.25, 1], 100, 0);
+
+        Assert.Equal(new[] { 0.25 }, analysis.Select(0, false));
+        Assert.Equal(new[] { 0.25, 1.0 }, analysis.Select(1, false));
+        Assert.True(analysis.Select(1, true).Count >= analysis.Select(0, true).Count);
+        Assert.Equal(BeatAnalysisService.PickAttacks(kicks, 100, 0, 0.5), analysis.Select(0.5, true));
+    }
+
+    [Fact]
+    public void Preview_IsOutsideTheDocument_AndCommitIsOneUndoStep()
+    {
+        var (editor, track) = TimelineFixtures.Create();
+        var clip = new AudioClip { DurSec = 4 };
+        editor.AddClip(track.Id, clip);
+        var generated = editor.AddBeatMarkers(clip, [1.0]).ToArray();
+        int changes = 0, previews = 0;
+        editor.TimelineChanged += () => changes++;
+        editor.BeatPreviewChanged += () => previews++;
+
+        editor.SetBeatPreview(clip, [0.5, 2.0, 2.0, 9]);
+        editor.SetBeatPreview(clip, [0.5, 2.0]);
+
+        Assert.Equal(0, changes);
+        Assert.Equal(2, previews);
+        Assert.Equal(generated, clip.Markers);
+        Assert.Equal(new[] { 0.5, 2.0 }, editor.BeatPreview!.LocalTimes);
+        Assert.True(editor.IsSupersededByPreview(clip, generated[0]));
+        Assert.False(editor.IsSupersededByPreview(clip, new Marker()));
+
+        var committed = editor.CommitBeatPreview();
+        Assert.Null(editor.BeatPreview);
+        Assert.Equal(new[] { 0.5, 2.0 }, clip.Markers.Select(m => m.StartSec));
+        Assert.Equal(2, committed.Count);
+
+        editor.Undo();
+        Assert.Equal(generated, clip.Markers);
+    }
+
+    [Fact]
+    public void Preview_IsDroppedWhenItsClipIsRemoved_AndClearIsIdempotent()
+    {
+        var (editor, track) = TimelineFixtures.Create();
+        var clip = new AudioClip { DurSec = 4 };
+        editor.AddClip(track.Id, clip);
+        editor.SetBeatPreview(clip, [1]);
+
+        editor.RippleDelete(clip.Id);
+
+        Assert.Null(editor.BeatPreview);
+        int previews = 0;
+        editor.BeatPreviewChanged += () => previews++;
+        editor.ClearBeatPreview();
+        Assert.Equal(0, previews);
+        Assert.Empty(editor.CommitBeatPreview());
+    }
 }

@@ -56,6 +56,13 @@ public partial class BeatAnalysisService
     /// <summary>Returns beat timestamps in source seconds for the requested source range.</summary>
     public List<double> GenerateBeatTimes(string sourcePath, double startSec = 0, double? durationSec = null,
         double sensitivity = 0.5, bool kicksOnly = false)
+        => Analyze(sourcePath, startSec, durationSec).Select(sensitivity, kicksOnly);
+
+    /// <summary>
+    /// Decodes and analyzes a source range once. The result answers any sensitivity cheaply, which
+    /// is what lets the UI move a slider and see markers follow in real time.
+    /// </summary>
+    public BeatAnalysis Analyze(string sourcePath, double startSec = 0, double? durationSec = null)
     {
         /*
         Index:   0   1   2   3   4   5
@@ -67,7 +74,7 @@ public partial class BeatAnalysisService
 
         double duration = durationSec ?? (_media.Probe(sourcePath).DurationSec - startSec);
         if (!double.IsFinite(startSec) || startSec < 0 || !double.IsFinite(duration) || duration <= 0)
-            return [];
+            return BeatAnalysis.Empty;
         float[] stereo = _media.DecodeSamples(sourcePath, startSec, duration, sampleRate);
         float[] mono = new float[stereo.Length / 2]; // one channel
 
@@ -155,11 +162,8 @@ public partial class BeatAnalysisService
 
         double framesPerSecond = (double)sampleRate / hopSize;
         double offset = startSec + windowSize / (2.0 * sampleRate);
-        if (kicksOnly)
-            return PickAttacks(kickStrengths, framesPerSecond, offset, sensitivity);
-
         var beats = TrackBeats(onsetStrengths, framesPerSecond, offset);
-        return FilterBeatStrengths(beats, onsetStrengths, framesPerSecond, offset, sensitivity);
+        return new BeatAnalysis(onsetStrengths, kickStrengths, beats, framesPerSecond, offset);
     }
 
     internal static List<double> FilterBeatStrengths(List<double> beats, IReadOnlyList<double> onsets,

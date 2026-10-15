@@ -59,12 +59,16 @@ public static class GpuSceneRenderer
     private static SKShader BuildLayer(GpuLayer layer, int width, int height, ShaderScope scope)
     {
         var a = BuildSource(layer.Source, width, height, scope);
-        if (layer.Incoming is null || layer.TransitionTypeId is null)
-            return a;
-        var b = BuildSource(layer.Incoming, width, height, scope);
-        return GpuEffects.Transition(a, b, layer.TransitionTypeId, layer.Progress,
-            layer.TransitionParams ?? new System.Collections.Generic.Dictionary<string, Fig.Core.Timeline.ParamValue>(),
-            width, height, scope);
+        if (layer.Incoming is not null && layer.TransitionTypeId is not null)
+        {
+            var b = BuildSource(layer.Incoming, width, height, scope);
+            a = GpuEffects.Transition(a, b, layer.TransitionTypeId, layer.Progress,
+                layer.TransitionParams ?? new System.Collections.Generic.Dictionary<string, Fig.Core.Timeline.ParamValue>(),
+                width, height, scope);
+        }
+        foreach (var effect in layer.Effects)
+            a = GpuEffects.Apply(a, effect, width, height, scope);
+        return a;
     }
 
     private static SKShader BuildSource(GpuSource source, int width, int height, ShaderScope scope)

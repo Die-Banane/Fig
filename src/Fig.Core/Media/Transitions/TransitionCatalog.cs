@@ -67,10 +67,12 @@ namespace Fig.Core.Media
                 var entry = new TransitionCatalogEntry
                 {
                     TypeId = descriptor.TypeId,
+                    Category = descriptor.Category,
                     DisplayName = descriptor.DisplayName,
                     Icon = descriptor.Icon,
                     Description = descriptor.Description,
                     DefaultDurationSec = descriptor.DefaultDurationSec,
+                    PreviewProgress = descriptor.PreviewProgress,
                     ParamSchema = type.GetCustomAttributes<TransitionParamAttribute>()
                         .Select(p => new ParamDef
                         {

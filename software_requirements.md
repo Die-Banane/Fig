@@ -171,7 +171,7 @@ The primary user is a solo creator (hobbyist to semi-professional) who edits sho
 | --- | --- | --- | --- |
 | FR-070 | The mixer SHALL sum audible clips into interleaved stereo at 48 kHz, honoring track mute, clip volume, and fade envelopes. | P0 | X |
 | FR-071 | Clip speed ≠ 1 SHALL resample the decoded audio so pitch and duration match the timeline (no truncation). | P0 | X |
-| FR-072 | Per-clip speed editing SHALL be exposed in the UI (currently only supported in the engine). | P1 | O |
+| FR-072 | Per-clip speed editing SHALL be exposed in the UI. | P1 | X |
 
 ### 3.7 Effects and transitions
 | ID | Requirement | Priority | Status |
@@ -182,7 +182,7 @@ The primary user is a solo creator (hobbyist to semi-professional) who edits sho
 | FR-083 | The application SHALL ship a transition catalog (cross-dissolve, wipe, slide, push, fade-to-black, iris, curtain) applied across abutting cuts. | P0 | X |
 | FR-084 | A transition SHALL be applicable by dragging a catalog entry onto a cut. | P0 | X |
 | FR-085 | Transitions SHALL be selectable, resizable (drag or slider), and removable, all undoable. | P0 | X |
-| FR-086 | The transition catalog SHALL keep growing (wipes, irises, slide, etc.). | P1 | O |
+| FR-086 | The transition catalog SHALL keep growing (wipes, irises, slide, etc.). | P1 | X |
 | FR-087 | Effect and transition parameters SHALL be typed (Double, Int, Bool, Color, List) with schema-defined ranges, defaults, and choices, and SHALL persist (legacy bare-number params keep loading). | P0 | X |
 | FR-088 | The properties panel SHALL render each effect's parameters as controls generated from its schema (slider, checkbox, color, list) that write through the timeline editor with undo. | P0 | X |
 | FR-089 | The applied effect stack SHALL be visible on the selected clip with per-effect enable/disable and remove controls; adding an effect SHALL be a single self-describing class with no separate registration. | P0 | X |
@@ -196,6 +196,10 @@ The primary user is a solo creator (hobbyist to semi-professional) who edits sho
 | FR-093 | Markers SHALL be renameable and recolorable via the properties panel. | P0 | X |
 | FR-094 | Markers SHALL be deletable (Delete key / context menu / panel). | P0 | X |
 | FR-095 | Markers SHALL render on clips, tracks, and the timeline ruler. | P0 | X |
+| FR-096 | Markers SHALL be multi-selectable (Ctrl/Cmd toggles, Shift selects a range, Ctrl/Cmd+A selects all visible); deleting a selection SHALL be one undo step, and Delete/Escape in the Markers panel SHALL act on markers only while markers are selected. | P0 | X |
+| FR-097 | Range markers (a start and a duration) SHALL be creatable at the playhead or between two bookmarks, drawn as bars on the ruler, editable by dragging, and undoable. | P1 | X |
+| FR-098 | Video SHALL be splittable at the selected markers (a range marker contributes its start) as one undo step, with linked audio following. | P1 | X |
+| FR-099 | The Markers panel SHALL list sequence and clip markers with search, selection, rename, delete, and per-clip clearing of generated markers. | P1 | X |
 
 ### 3.9 Interoperability
 | ID | Requirement | Priority | Status |
@@ -214,6 +218,7 @@ The primary user is a solo creator (hobbyist to semi-professional) who edits sho
 | FR-113 | The software encoder SHALL use all available cores and expose Fast/Medium/Best quality presets. | P1 | O |
 | FR-114 | Export SHALL support hardware encoders (NVENC/VAAPI/QSV/VideoToolbox) with a software fallback. | P1 | - |
 | FR-115 | For timelines with no effects/transitions/speed changes, a "fast export" SHALL re-encode only around edit points and stream-copy the rest. | P2 | - |
+| FR-116 | The application SHALL export each included range marker as a separate file, with an editable output name per range, using the same encode path as a full export. | P1 | X |
 
 ### 3.11 Input and configuration
 | ID | Requirement | Priority | Status |
@@ -232,6 +237,31 @@ The primary user is a solo creator (hobbyist to semi-professional) who edits sho
 | FR-134 | The template workflow SHALL provide explicit per-slot media assignment, preview, trim/fill behavior, and a non-destructive choice of new sequence or new project. | P1 | - |
 | FR-135 | Templates SHALL support author-exposed text, color, font, and optional media variables. | P2 | - |
 | FR-136 | Templates SHALL be importable/exportable as portable packages with dependency and licensing metadata. | P2 | - |
+
+### 3.13 Beat markers
+| ID | Requirement | Priority | Status |
+| --- | --- | --- | --- |
+| FR-150 | The application SHALL analyze the selected audio clip's source range for beats and kick-like bass attacks in the background without blocking the UI, honoring the clip's trim, speed, and frame-rate conform. | P1 | X |
+| FR-151 | Analysis SHALL run once per request; changing sensitivity or kick focus SHALL re-select markers from the cached analysis without re-decoding the audio. | P1 | X |
+| FR-152 | Candidate markers SHALL be previewed on the clip before they are committed, outside the document (no undo entry, autosave, or change notification per adjustment), with the clip's existing generated markers hidden while previewed. | P1 | O |
+| FR-153 | Apply SHALL replace the clip's previously generated beat markers with the previewed set as one undo step and leave manually placed markers alone; Cancel SHALL leave the document untouched. | P1 | X |
+| FR-154 | A pending preview SHALL be discarded, with an explanation, when the analyzed clip is deleted, retimed, or trimmed, or when the project changes. | P1 | O |
+| FR-155 | Generated markers SHALL be tagged so they can be cleared separately from manual markers. | P1 | X |
+
+### 3.14 Effect graphs (planned)
+| ID | Requirement | Priority | Status |
+| --- | --- | --- | --- |
+| FR-160 | A user SHALL be able to build an effect as a directed acyclic graph of primitive nodes with typed image/mask ports and typed node parameters. | P2 | - |
+| FR-161 | Primitives SHALL be self-describing classes discovered like effects, declaring their ports and parameter schemas; existing stock effects SHALL be usable as nodes. | P2 | - |
+| FR-162 | A saved graph SHALL appear in the effect catalog as a first-class effect that stacks, toggles, keyframes, and takes presets exactly like a built-in. | P2 | - |
+| FR-163 | The author SHALL promote chosen node parameters as the effect's controls, with optional range and default overrides. | P2 | - |
+| FR-164 | A graph SHALL be validated on edit and on save (port types, cycles, unconnected inputs); an invalid graph SHALL fail safe (input frame unchanged) and report errors on the offending nodes. | P2 | - |
+| FR-165 | Graph evaluation SHALL be a pure function of the input frame, parameters, and clip time (no feedback in the first version) so preview, scrubbing, and export match. | P2 | - |
+| FR-166 | A graph made only of shader-capable primitives SHALL run on the GPU as one fused shader; any other graph SHALL fall back to the CPU path. | P2 | - |
+| FR-167 | Graphs SHALL persist with a schema version and be importable/exportable as portable files. | P2 | - |
+| FR-168 | A node-graph editor SHALL support add, connect, promote, and undo with a live preview. | P2 | - |
+
+Design: `uml/media/effects-graph-schema.puml`, `uml/media/effects-graph-pipeline.puml`.
 
 ---
 
@@ -254,23 +284,24 @@ The primary user is a solo creator (hobbyist to semi-professional) who edits sho
 
 ## 5. Roadmap / future requirements
 
-These requirements are captured for extensibility but are not yet implemented.
+These requirements are captured for extensibility. Rows marked X have shipped and stay here for traceability; the rest are not yet implemented. A row that repeats a §3 ID (FR-072, FR-086, FR-113 to FR-115) is the same requirement, listed here for roadmap visibility; the roadmap-only items use their own IDs (FR-140 and up) so they never collide with §3.
 
 | ID | Requirement | Priority | Status |
 | --- | --- | --- | --- |
-| FR-072 | Per-clip speed control with UI (video + audio pitch handling). | P1 | O |
-| FR-086 | Additional transition types (wipes, irises, slide, etc.). | P1 | O |
+| FR-072 | Per-clip speed control with UI (video + audio pitch handling). | P1 | X |
+| FR-086 | Additional transition types (wipes, irises, slide, etc.). | P1 | X |
 | FR-113 | Encoder threading + Fast/Medium/Best presets. | P1 | O |
 | FR-114 | Hardware-accelerated export (NVENC/VAAPI/QSV/VideoToolbox). | P1 | - |
 | FR-115 | Stream-copy fast export for simple timelines. | P2 | - |
-| FR-130 | Clip transform (scale, position, rotation) and richer color-grading effects. | P1 | - |
-| FR-131 | Audio pan/balance and per-track audio effects. | P2 | - |
-| FR-132 | Timeline project resolution settings (explicit canvas size) instead of media-derived. | P1 | - |
-| FR-133 | Hardware video decode (NVDEC/VAAPI) for 4K/HEVC scrubbing. | P2 | - |
-| FR-134 | Parallel per-layer decoding for stacked-track preview/export. | P2 | - |
-| FR-135 | Template library and niche starter kits ("quick start for creators"). | P2 | - |
-| FR-136 | Smart editing aids: automatic cuts on silent spans. | P2 | - |
-| FR-137 | AI transcription and subtitle generation. | P2 | - |
+| FR-140 | Clip transform (scale, position, rotation) and richer color-grading effects. | P1 | O |
+| FR-141 | Audio pan/balance and per-track audio effects. | P2 | - |
+| FR-142 | Timeline project resolution settings (explicit canvas size) instead of media-derived. | P1 | - |
+| FR-143 | Hardware video decode (NVDEC/VAAPI) for 4K/HEVC scrubbing. | P2 | - |
+| FR-144 | Parallel per-layer decoding for stacked-track preview/export. | P2 | - |
+| FR-145 | Template library and niche starter kits ("quick start for creators"). | P2 | - |
+| FR-146 | Smart editing aids: automatic cuts on silent spans. | P2 | - |
+| FR-147 | AI transcription and subtitle generation. | P2 | - |
+| FR-160 to FR-168 | Effect graphs: user-built effects composed from primitive nodes, saved to the catalog (see §3.14). | P2 | - |
 
 ---
 
@@ -279,4 +310,4 @@ These requirements are captured for extensibility but are not yet implemented.
 - **Status updates:** when a requirement changes status, update both this document and the README Goals table.
 - **New requirements:** assign the next free ID in the relevant module range; never reuse a retired ID.
 - **Rationale:** every requirement's "why" should remain traceable to either the README goals, a UML note, or a recorded design decision.
-- **Related artifacts:** see `uml/domain/core-schema.puml` (editing commands), `uml/media/media-pipeline.puml`, `uml/playback/playback-engine.puml`, `uml/persistence/persistence.puml`, `uml/persistence/otio-import.puml`, `uml/export/export-pipeline.puml`, and `uml/input/gestures-input.puml`.
+- **Related artifacts:** see `uml/domain/core-schema.puml` (editing commands), `uml/media/media-pipeline.puml`, `uml/playback/playback-engine.puml`, `uml/persistence/persistence.puml`, `uml/persistence/otio-import.puml`, `uml/export/export-pipeline.puml`, `uml/input/gestures-input.puml`, and (planned effect graphs) `uml/media/effects-graph-schema.puml` and `uml/media/effects-graph-pipeline.puml`.

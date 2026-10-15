@@ -5,7 +5,7 @@ using Fig.Core.Timeline;
 namespace Fig.Core.Media
 {
     /// <summary>The incoming clip pushes the outgoing off-canvas from a chosen side.</summary>
-    [Transition(TransitionCatalog.Push, "Push", Icon = "move-right", Description = "Incoming pushes the outgoing off-screen.")]
+    [Transition(TransitionCatalog.Push, "Push", Category = "Camera", Icon = "move-right", Description = "Incoming pushes the outgoing off-screen.")]
     [TransitionParam("direction", "Direction", Kind = ParamKind.List, Default = 0, Min = 0, Max = 3, Choices = new[] { "Left", "Right", "Up", "Down" })]
     internal sealed class PushBlender : ITransitionBlender
     {

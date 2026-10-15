@@ -5,7 +5,7 @@ using Fig.Core.Timeline;
 namespace Fig.Core.Media
 {
     /// <summary>Quantizes each channel to a number of levels.</summary>
-    [Effect(EffectCatalog.Posterize, "Posterize", Icon = "sliders-horizontal", Description = "Quantize colors to fewer levels.")]
+    [Effect(EffectCatalog.Posterize, "Posterize", Category = "Color", Icon = "sliders-horizontal", Description = "Quantize colors to fewer levels.")]
     [EffectParam("levels", "Levels", Kind = ParamKind.Int, Default = 4, Min = 2, Max = 32)]
     internal sealed class PosterizeEffect : IEffectProcessor
     {

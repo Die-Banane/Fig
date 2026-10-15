@@ -17,6 +17,10 @@ public sealed partial class MarkerRowViewModel : ObservableObject
     public IRelayCommand SelectCommand { get; }
     public IRelayCommand EditCommand { get; }
     public IRelayCommand DeleteCommand { get; }
+    public IRelayCommand? SplitVideoCommand { get; init; }
+    public bool IsClipMarker { get; init; }
+    public IRelayCommand? ClearGeneratedCommand { get; init; }
+    public IRelayCommand? ClearClipCommand { get; init; }
 
     [ObservableProperty]
     private bool _isSelected;
@@ -74,6 +78,9 @@ public sealed partial class MarkersPanelViewModel : ViewModelBase
     [RelayCommand]
     private void DeleteSelected() => _host.DeleteSelectedMarkerCommand.Execute(null);
 
+    [RelayCommand]
+    private void SplitVideo() => _host.SplitVideoAtSelectedMarkersCommand.Execute(null);
+
     partial void OnSearchTextChanged(string value) => Refresh();
 
     /// <summary>Rebuilds both lists from the timeline (called whenever it or the selection changes).</summary>
@@ -107,7 +114,7 @@ public sealed partial class MarkersPanelViewModel : ViewModelBase
                     continue;
                 var clipName = ClipLabel(clip);
                 foreach (var m in clip.Markers.OrderBy(m => m.StartSec).Where(m => Matches(m, clipName)))
-                    ClipMarkers.Add(Row(m, $"{clipName} · {Clock(clip.StartSec + m.StartSec)}", selected));
+                    ClipMarkers.Add(Row(m, $"{clipName} · {Clock(clip.StartSec + m.StartSec)}", selected, isClipMarker: true));
             }
 
         OnPropertyChanged(nameof(HasSequenceMarkers));
@@ -119,11 +126,27 @@ public sealed partial class MarkersPanelViewModel : ViewModelBase
         RefreshSelection();
     }
 
-    private MarkerRowViewModel Row(Marker m, string subtitle, string? selectedId)
+    // The caller already knows which list a marker came from, so no per-row lookup is needed.
+    private MarkerRowViewModel Row(Marker m, string subtitle, string? selectedId, bool isClipMarker = false)
         => new(m.Id, string.IsNullOrWhiteSpace(m.Name) ? (m.IsRange ? "Range" : "Marker") : m.Name, m.Color, subtitle, _host.SelectMarker, _host.EditMarker, _host.DeleteMarkerSelectionOrOne)
         {
             IsSelected = m.Id == selectedId,
+            SplitVideoCommand = new RelayCommand(() =>
+            {
+                if (!_host.Editor.Selection.IsMarkerSelected(m.Id))
+                    _host.Editor.Selection.SelectMarker(m.Id);
+                _host.SplitVideoAtSelectedMarkersCommand.Execute(null);
+            }),
+            IsClipMarker = isClipMarker,
+            ClearGeneratedCommand = isClipMarker ? new RelayCommand(() => ClearClip(m.Id, true)) : null,
+            ClearClipCommand = isClipMarker ? new RelayCommand(() => ClearClip(m.Id, false)) : null,
         };
+
+    private void ClearClip(string id, bool generatedOnly)
+    {
+        if (_host.Editor.FindMarker(id)?.Clip is { } clip)
+            _host.Editor.ClearClipMarkers(clip, generatedOnly);
+    }
 
     private static string DescribeSequence(Marker m)
         => m.IsRange

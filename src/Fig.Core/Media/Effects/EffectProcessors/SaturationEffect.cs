@@ -5,7 +5,7 @@ using Fig.Core.Timeline;
 namespace Fig.Core.Media
 {
     /// <summary>Adjusts color saturation (0 = grayscale, 2 = oversaturated).</summary>
-    [Effect(EffectCatalog.Saturation, "Saturation", Icon = "droplet", Description = "Adjust color saturation.")]
+    [Effect(EffectCatalog.Saturation, "Saturation", Category = "Color", Icon = "droplet", Description = "Adjust color saturation.")]
     [EffectParam("amount", "Amount", Default = 1, Min = 0, Max = 2)]
     internal sealed class SaturationEffect : IEffectProcessor
     {

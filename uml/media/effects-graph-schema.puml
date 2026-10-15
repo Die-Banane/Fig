@@ -1,0 +1,197 @@
+@startuml
+' fig Effect graphs: user-built effects composed from primitives, saved as catalog effects.
+' Design rule: a graph effect is just another catalog entry. It reuses EffectInstance, ParamDef,
+' keyframes, presets and the effect stack unchanged; only the processor behind the typeId differs.
+
+package "Timeline (persisted)" {
+
+  class EffectInstance <<existing>> {
+    typeId : string          ' stock id, or "graph:<graphId>"
+    params : map<string, ParamValue>
+    keyframes : map<string, KeyframePoint[]>
+  }
+
+  class EffectGraph {
+    * id : string
+    --
+    name : string
+    schemaVersion : int
+    outputNodeId : string
+    nodes : GraphNode[]
+    edges : GraphEdge[]
+    promoted : PromotedParam[]
+  }
+
+  class GraphNode {
+    * id : string
+    --
+    primitiveId : string      ' "blur", "mix", "uv-offset", "effect" ...
+    params : map<string, ParamValue>
+    editorPos : (x, y)        ' view state only; never read by rendering
+  }
+
+  class GraphEdge {
+    fromNodeId : string
+    fromPort : string
+    toNodeId : string
+    toPort : string
+  }
+
+  class PromotedParam {
+    key : string               ' becomes the effect's own ParamDef.key
+    label : string
+    targetNodeId : string
+    targetParam : string
+    min / max / default : double?   ' optional override of the node param's range
+  }
+
+  enum PortType {
+    Image
+    Mask
+  }
+
+  EffectGraph "1" *-- "1..*" GraphNode
+  EffectGraph "1" *-- "0..*" GraphEdge
+  EffectGraph "1" *-- "0..*" PromotedParam : "exposed sliders"
+  PromotedParam ..> GraphNode : "targets one param"
+  EffectInstance ..> EffectGraph : "typeId graph:<id>"
+}
+
+package "Media (core library)" {
+
+  interface IGraphPrimitive {
+    Id : string
+    Describe() : PrimitiveDescriptor
+  }
+
+  class PrimitiveDescriptor {
+    id / displayName / category / icon
+    inputs : PortDef[]
+    output : PortType
+    paramSchema : ParamDef[]
+  }
+
+  class PortDef {
+    name : string
+    type : PortType
+    required : bool
+  }
+
+  interface ICpuPrimitive {
+    Evaluate(inputs : frame[], params, localT) : frame
+  }
+
+  interface IShaderPrimitive {
+    Emit(ShaderBuilder, params) : ShaderFragment
+  }
+
+  class StockEffectPrimitive {
+    ' wraps any existing IEffectProcessor as a node
+    effectTypeId : string
+  }
+
+  class PrimitiveCatalog {
+    {static} All / Find / Resolve / Discover
+  }
+
+  class GraphCompiler {
+    + Compile(EffectGraph) : CompileResult
+    - TopologicalOrder()
+    - CheckPorts()
+    - RejectCycles()
+  }
+
+  class CompileResult {
+    plan : GraphPlan?
+    errors : GraphError[]
+  }
+
+  class GraphPlan {
+    steps : PlanStep[]
+    allShaderCapable : bool
+    + Hash : string          ' cache key for compiled shader
+  }
+
+  class GraphEffectProcessor {
+    ' IEffectProcessor bound to one EffectGraph
+    + Apply(frame, params, localT) : frame
+  }
+
+  class GraphEffectLibrary {
+    + Entries : EffectCatalogEntry[]
+    + Save(EffectGraph)
+    + Delete(id)
+    + Export(id) / Import(file)
+  }
+
+  interface IEffectProcessor <<existing>>
+  class EffectCatalog <<existing>>
+  class EffectCatalogEntry <<existing>> {
+    paramSchema : ParamDef[]   ' built from PromotedParam
+  }
+
+  IGraphPrimitive <|.. ICpuPrimitive
+  IGraphPrimitive <|.. IShaderPrimitive
+  ICpuPrimitive <|.. StockEffectPrimitive
+  IGraphPrimitive --> PrimitiveDescriptor
+  PrimitiveDescriptor *-- PortDef
+  PortDef --> PortType
+  PrimitiveCatalog ..> IGraphPrimitive : "discovers [Primitive]"
+
+  GraphCompiler --> PrimitiveCatalog : "resolve node primitives"
+  GraphCompiler ..> EffectGraph : "reads"
+  GraphCompiler --> CompileResult
+  CompileResult o-- GraphPlan
+
+  IEffectProcessor <|.. GraphEffectProcessor
+  GraphEffectProcessor --> GraphPlan : "executes"
+  GraphEffectLibrary --> GraphCompiler : "validates on save"
+  GraphEffectLibrary --> GraphEffectProcessor : "creates"
+  GraphEffectLibrary --> EffectCatalogEntry : "publishes"
+  EffectCatalog --> GraphEffectLibrary : "merges 'My effects'"
+}
+
+package "Editor (app)" {
+
+  class GraphEditorViewModel {
+    graph : EffectGraph
+    selection : GraphNode[]
+    previewFrame : image
+    + AddNode(primitiveId, pos)
+    + Connect(from, to)       ' rejects type mismatch / cycle live
+    + Promote(node, param)
+    + SaveAsEffect(name)
+    + Undo() / Redo()
+  }
+
+  class GraphCanvasView <<Avalonia>> {
+    nodes, wires, pan/zoom
+  }
+
+  GraphEditorViewModel --> EffectGraph : "edits"
+  GraphEditorViewModel --> GraphCompiler : "live validation + preview"
+  GraphEditorViewModel --> GraphEffectLibrary : "SaveAsEffect"
+  GraphCanvasView --> GraphEditorViewModel
+}
+
+note bottom of PromotedParam
+  Promoted params are the saved effect's
+  schema. Because they are ordinary ParamDefs,
+  keyframes, presets and the properties panel
+  work on them with no new code.
+end note
+
+note bottom of StockEffectPrimitive
+  Graphs can contain today's stock effects
+  on day one. A graph made only of shader
+  primitives can run fully on the GPU; any
+  StockEffectPrimitive forces the CPU path.
+end note
+
+note bottom of EffectGraph
+  Acyclic by construction (no feedback in v1):
+  evaluation stays a pure function of the frame
+  and clip time, so scrubbing and export match.
+end note
+
+@enduml

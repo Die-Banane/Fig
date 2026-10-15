@@ -89,6 +89,6 @@ namespace Fig.Core.Timeline
             }
         }
 
-        private EffectInstance? Find() => _editor.FindClip(_clipId)?.Effects.FirstOrDefault(e => e.Id == _effectId);
+        private EffectInstance? Find() => _editor.FindEffectOwner(_clipId)?.Effects.FirstOrDefault(e => e.Id == _effectId);
     }
 }

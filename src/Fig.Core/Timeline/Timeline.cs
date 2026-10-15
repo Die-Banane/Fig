@@ -1,3 +1,4 @@
+using System.Linq;
 using System;
 using System.Collections.Generic;
 using System.Text.Json;
@@ -81,7 +82,7 @@ namespace Fig.Core.Timeline
         public Dictionary<string, JsonElement> Metadata { get; set; } = new();
     }
 
-    public class Track
+    public class Track : IEffectOwner
     {
         public string Id { get; set; } = Guid.NewGuid().ToString();
         public TrackKind Kind { get; set; }
@@ -93,6 +94,13 @@ namespace Fig.Core.Timeline
 
         /// <summary>Audio tracks: mutes the track's audio.</summary>
         public bool Muted { get; set; }
+        /// <summary>Independent effect regions on this track, timed in timeline seconds.</summary>
+        public List<EffectInstance> Effects { get; set; } = new();
+        [JsonIgnore] public double StartSec => 0;
+        [JsonIgnore] public double DurSec => Math.Max(0.1,
+            Math.Max(Clips.Select(c => c.StartSec + c.DurSec).DefaultIfEmpty(0).Max(),
+                Effects.Select(e => (e.StartSec ?? 0) + (e.DurSec ?? 0)).DefaultIfEmpty(0).Max()));
+
         public List<Clip> Clips { get; set; } = new();
 
         /// <summary>Editorial annotations pinned to the track (absolute seconds).</summary>

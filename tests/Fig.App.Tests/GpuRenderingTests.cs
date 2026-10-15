@@ -13,6 +13,48 @@ namespace Fig.App.Tests;
 /// </summary>
 public class GpuRenderingTests
 {
+    [Theory]
+    [InlineData("invert")]
+    [InlineData("lens-distortion")]
+    public void TrackEffectsApplyAfterTransitionsAtAbsoluteTimelineTime(string typeId)
+    {
+        var outgoing = MakeFrame(1);
+        var incoming = MakeFrame(2);
+        var track = new Track { Kind = TrackKind.Video };
+        var effect = EffectCatalog.Find(typeId)!.CreateInstance();
+        effect.StartSec = 5;
+        effect.DurSec = 2;
+        track.Effects.Add(effect);
+        var parameters = new Dictionary<string, ParamValue>();
+        var blended = TransitionCatalog.Resolve(TransitionCatalog.CrossDissolve)!.Blend(outgoing, incoming, 0.37, parameters);
+        var expected = EffectPipeline.ApplyStack(blended, track.Effects, 5.5);
+        var layer = new GpuLayer
+        {
+            Source = new GpuSource { Image = ToImage(outgoing) },
+            Incoming = new GpuSource { Image = ToImage(incoming) },
+            TransitionTypeId = TransitionCatalog.CrossDissolve, Progress = 0.37, TransitionParams = parameters,
+        };
+        using var scene = new GpuScene
+        {
+            Width = W, Height = H,
+            Layers = new[] { GpuSceneBuilder.WithTrackEffects(layer, track, 5.5, W, H) },
+        };
+        AssertClose(expected.Pixels, GpuSceneRenderer.RenderToBgra(scene), typeId, meanLimit: 2, badFraction: 0.03);
+    }
+
+    [Fact]
+    public void TrackEffectsAreInactiveOutsideTheirTimelineRange()
+    {
+        var track = new Track { Kind = TrackKind.Video };
+        var effect = EffectCatalog.Find("invert")!.CreateInstance();
+        effect.StartSec = 5;
+        effect.DurSec = 2;
+        track.Effects.Add(effect);
+        Assert.Empty(GpuSceneBuilder.EffectsAt(track.Effects, 4.9));
+        Assert.Single(GpuSceneBuilder.EffectsAt(track.Effects, 5.5));
+        Assert.Empty(GpuSceneBuilder.EffectsAt(track.Effects, 7.1));
+    }
+
     private const int W = 96;
     private const int H = 54;
 

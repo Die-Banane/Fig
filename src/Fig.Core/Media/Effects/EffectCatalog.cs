@@ -75,6 +75,7 @@ namespace Fig.Core.Media
                 var entry = new EffectCatalogEntry
                 {
                     TypeId = descriptor.TypeId,
+                    Category = descriptor.Category,
                     Kind = descriptor.Kind,
                     DisplayName = descriptor.DisplayName,
                     Icon = descriptor.Icon,

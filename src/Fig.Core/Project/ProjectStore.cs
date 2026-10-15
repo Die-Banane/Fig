@@ -125,7 +125,10 @@ namespace Fig.Core.Project
                 return null;
             var project = JsonSerializer.Deserialize<Project>(File.ReadAllText(jsonPath), Options);
             if (project is not null)
+            {
                 EffectMigration.Migrate(project);
+                EffectMigration.MoveClipEffectsToTracks(project);
+            }
             return project;
         }
 

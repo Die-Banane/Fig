@@ -231,9 +231,17 @@ namespace Fig.App.Views
             if (change.Property == EditorProperty)
             {
                 if (change.OldValue is TimelineEditor oldEditor)
+                {
                     oldEditor.TimelineChanged -= OnTimelineChanged;
+                    oldEditor.Selection.Changed -= OnTimelineSelectionChanged;
+                    oldEditor.BeatPreviewChanged -= OnBeatPreviewChanged;
+                }
                 if (change.NewValue is TimelineEditor newEditor)
+                {
                     newEditor.TimelineChanged += OnTimelineChanged;
+                    newEditor.Selection.Changed += OnTimelineSelectionChanged;
+                    newEditor.BeatPreviewChanged += OnBeatPreviewChanged;
+                }
                 // project/editor swap — drop any in-flight slide offsets
                 ClearRippleSlides();
                 InvalidateMeasure();
@@ -262,7 +270,7 @@ namespace Fig.App.Views
         }
 
         private double TrackHeight(Track track) =>
-            track.Clips.Count == 0 && track.Markers.Count == 0
+            track.Clips.Count == 0 && track.Markers.Count == 0 && track.Effects.Count == 0
                 ? EmptyTrackHeight
                 : TimelineGeometry.LaneHeight(track.Kind) + TrackRackHeight(track);
 
@@ -314,6 +322,10 @@ namespace Fig.App.Views
             if (_editorVm is not null)
                 _editorVm.RippleSlideStarted += OnRippleSlideStarted;
         }
+
+        private void OnTimelineSelectionChanged() => InvalidateVisual();
+
+        private void OnBeatPreviewChanged() => InvalidateVisual();
 
         private void OnTimelineChanged()
         {
@@ -474,6 +486,12 @@ namespace Fig.App.Views
             if (e.GetCurrentPoint(this).Properties.IsRightButtonPressed)
             {
                 OpenContextMenu(pos);
+                e.Handled = true;
+                return;
+            }
+
+            if (TryArmCopyDrag(e, pos))
+            {
                 e.Handled = true;
                 return;
             }
@@ -677,6 +695,8 @@ namespace Fig.App.Views
                 return;
 
             var pos = e.GetPosition(this);
+
+            if (UpdateCopyDrag(pos)) return;
 
             if (_panning)
             {
@@ -970,6 +990,11 @@ namespace Fig.App.Views
         protected override void OnPointerReleased(PointerReleasedEventArgs e)
         {
             base.OnPointerReleased(e);
+            if (FinishCopyDrag(e))
+            {
+                e.Handled = true;
+                return;
+            }
             ClearSnapGuide();
 
             FinishMarquee(e.KeyModifiers);
@@ -1199,6 +1224,13 @@ namespace Fig.App.Views
             if (Editor is null)
                 return;
 
+            if (e.Key == Key.Escape && _copyDrag is not null)
+            {
+                CancelCopyDrag();
+                e.Handled = true;
+                return;
+            }
+
             // M = add a marker at the playhead (selected clip / active track / timeline)
             if (e.Key == Key.M && !e.KeyModifiers.HasFlag(KeyModifiers.Control))
             {
@@ -1207,7 +1239,7 @@ namespace Fig.App.Views
                 return;
             }
 
-            if (e.Key == Key.A && e.KeyModifiers == KeyModifiers.Control)
+            if (e.Key == Key.A && (e.KeyModifiers == KeyModifiers.Control || e.KeyModifiers == KeyModifiers.Meta))
             {
                 if (Editor.Selection.SelectedMarkerIds.Count > 0)
                     Editor.Selection.SelectMarkers(Editor.AllMarkers().Select(marker => marker.Marker.Id));
@@ -1235,7 +1267,15 @@ namespace Fig.App.Views
 
             if (e.Key == Key.Delete || e.Key == Key.Back)
             {
-                if (Editor.Selection.SelectedTransitionKey is not null)
+                if (Editor.Selection.SelectedEffect is { } selectedEffect)
+                {
+                    Editor.RemoveEffect(selectedEffect.ClipId, selectedEffect.EffectId);
+                    Editor.Selection.Clear();
+                    InvalidateMeasure();
+                    InvalidateVisual();
+                    e.Handled = true;
+                }
+                else if (Editor.Selection.SelectedTransitionKey is not null)
                 {
                     _editorVm?.RemoveSelectedTransitionCommand.Execute(null);
                     InvalidateVisual();
@@ -1470,6 +1510,8 @@ namespace Fig.App.Views
                         if (hoverFadeOut || (isClipSelected && clip.FadeOutSec > 1e-6))
                             DrawResizeHandle(context, x + w - Math.Min(clip.FadeOutSec, clip.DurSec) * px, rect.Y, rect.Height);
                     }   // foreach clip
+                    DrawRack(context, track, TrackHeaderWidth + Viewport.TimeToX(0),
+                        track.DurSec * Viewport.PixelsPerSecond, top + TimelineGeometry.ClipInset, track.Kind);
                 }   // PushClip(clipArea)
             }   // for tracks
 
@@ -1497,6 +1539,19 @@ namespace Fig.App.Views
                     new RoundedRect(ghostRect, ClipCornerRadius));
                 context.DrawRectangle(Brushes.Transparent, new Pen(SelectionBrush, 2),
                     new RoundedRect(ghostRect, ClipCornerRadius));
+            }
+
+            if (_dropPreviewTrack is not null && _dropPreviewAsset is null && _dropPreviewTime >= 0)
+            {
+                var trackTop = TrackTop(Editor.Document.Tracks.IndexOf(_dropPreviewTrack));
+                var height = TrackHeight(_dropPreviewTrack);
+                context.DrawRectangle(new SolidColorBrush(Color.FromArgb(35, 199, 154, 61)), null,
+                    new Rect(TrackHeaderWidth, trackTop, Math.Max(0, Bounds.Width - TrackHeaderWidth), height));
+                var ghost = new Rect(TrackHeaderWidth + Viewport.TimeToX(_dropPreviewTime),
+                    trackTop + TimelineGeometry.ClipInset + TimelineGeometry.ClipTotal(_dropPreviewTrack.Kind) + 4,
+                    Math.Max(4, _dropEffectDuration * px), 24);
+                context.DrawRectangle(new SolidColorBrush(Color.FromArgb(140, 199, 154, 61)),
+                    new Pen(Brushes.White, 1), ghost, 3, 3);
             }
 
             // drop indicator line (media into empty space)
@@ -1538,6 +1593,7 @@ namespace Fig.App.Views
             DrawEmptyHint(context);
             DrawSnapGuide(context);
             DrawMarquee(context);
+            DrawCopyPreview(context);
 
             var playheadX = TrackHeaderWidth + Viewport.TimeToX(PlayheadTimeSec);
             if (playheadX >= TrackHeaderWidth)

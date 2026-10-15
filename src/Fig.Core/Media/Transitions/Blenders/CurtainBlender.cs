@@ -5,7 +5,7 @@ using Fig.Core.Timeline;
 namespace Fig.Core.Media
 {
     /// <summary>Vertical curtain panels sweep in opposite directions to reveal the incoming clip.</summary>
-    [Transition(TransitionCatalog.Curtain, "Curtain", Icon = "columns-2", Description = "Open vertical curtain panels.")]
+    [Transition(TransitionCatalog.Curtain, "Curtain", Category = "Wipe", Icon = "columns-2", Description = "Open vertical curtain panels.")]
     [TransitionParam("panels", "Panels", Kind = ParamKind.Int, Default = 6, Min = 2, Max = 24)]
     [TransitionParam("soft", "Soft edge", Default = 0.1, Min = 0, Max = 0.5)]
     internal sealed class CurtainBlender : ITransitionBlender

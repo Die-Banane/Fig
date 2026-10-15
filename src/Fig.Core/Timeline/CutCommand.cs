@@ -25,6 +25,7 @@ namespace Fig.Core.Timeline
 
         private double _snapStart, _snapDur, _snapSrcIn, _snapSrcOut;
         private double _snapFadeIn, _snapFadeOut;
+        private double _sourceAdvance;
         private TransitionRef? _snapTransitionIn, _snapTransitionOut;
         private List<Marker> _snapMarkers = new();
 
@@ -58,7 +59,9 @@ namespace Fig.Core.Timeline
             _snapFadeOut = _first.FadeOutSec;
             _snapTransitionIn = _first.TransitionIn?.Clone();
             _snapTransitionOut = _first.TransitionOut?.Clone();
-            _snapMarkers = _first.Markers.Select(m => m.Clone()).ToList();
+            _snapMarkers = _first.Markers.Select(CopyMarker).ToList();
+            _sourceAdvance = (_first.Speed <= 0 ? 1 : _first.Speed)
+                * (_first.SourceRate is { } rate ? rate.Fps / _editor.Document.Rate.Fps : 1);
 
             _second = Split(_first, offset);
 
@@ -82,7 +85,7 @@ namespace Fig.Core.Timeline
             _first.FadeOutSec = _snapFadeOut;
             _first.TransitionIn = _snapTransitionIn?.Clone();
             _first.TransitionOut = _snapTransitionOut?.Clone();
-            _first.Markers = _snapMarkers.Select(m => m.Clone()).ToList();
+            _first.Markers = _snapMarkers.Select(CopyMarker).ToList();
         }
 
         public void Redo()
@@ -106,14 +109,14 @@ namespace Fig.Core.Timeline
         private void ApplyFirstHalf(Clip clip, double offset)
         {
             clip.DurSec = offset;
-            SetSourceRange(clip, clip.SourceIn, clip.SourceIn + offset * clip.Speed);
+            SetSourceRange(clip, _snapSrcIn, _snapSrcIn + offset * _sourceAdvance);
             clip.FadeInSec = _snapFadeIn;
             ClipFade.ApplySplitLeft(clip);
             // left keeps transition-in; clears transition-out (cut breaks the out edge)
             clip.TransitionIn = _snapTransitionIn?.Clone();
             clip.TransitionOut = null;
             // markers before the cut stay with the left half, at their original offsets
-            clip.Markers = _snapMarkers.Where(m => m.StartSec < offset).Select(m => m.Clone()).ToList();
+            clip.Markers = _snapMarkers.Where(m => m.StartSec < offset).Select(CopyMarker).ToList();
         }
 
         private Clip CloneSecondHalf(Clip first, double offset)
@@ -124,7 +127,7 @@ namespace Fig.Core.Timeline
             result.DurSec = _snapDur - offset;
             result.FadeInSec = 0;
             result.FadeOutSec = _snapFadeOut;
-            ClipFactory.SetSourceRange(result, _snapSrcIn + offset * first.Speed, _snapSrcOut);
+            ClipFactory.SetSourceRange(result, _snapSrcIn + offset * _sourceAdvance, _snapSrcOut);
             ClipFade.ApplySplitRight(result);
             // right keeps transition-out; clears transition-in
             result.TransitionIn = null;
@@ -134,7 +137,7 @@ namespace Fig.Core.Timeline
             // markers at/after the cut move to the right half, re-anchored to its start
             result.Markers = _snapMarkers.Where(m => m.StartSec >= offset).Select(m =>
             {
-                var marker = m.Clone();
+                var marker = CopyMarker(m);
                 marker.StartSec -= offset;
                 return marker;
             }).ToList();
@@ -154,6 +157,15 @@ namespace Fig.Core.Timeline
                     a.SrcOutSec = outSec;
                     break;
             }
+        }
+
+        // Splitting redistributes markers; it doesn't duplicate them. Keep their identities
+        // so multi-selection and subsequent marker edits survive execute/undo/redo.
+        private static Marker CopyMarker(Marker original)
+        {
+            var copy = original.Clone();
+            copy.Id = original.Id;
+            return copy;
         }
     }
 }

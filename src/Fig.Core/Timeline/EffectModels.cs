@@ -204,12 +204,12 @@ namespace Fig.Core.Timeline
     }
 
     /// <summary>
-    /// One keyframe on a parameter track, in seconds relative to the clip start.
+    /// One keyframe in its owner's time domain: absolute timeline seconds for track effects, local seconds for legacy clip effects.
     /// <see cref="Easing"/> shapes the movement from this keyframe to the next.
     /// </summary>
     public readonly record struct KeyframePoint(double TimeSec, ParamValue Value, KeyframeEasing Easing = KeyframeEasing.Linear);
 
-    /// <summary>One effect in a clip's ordered filter stack.</summary>
+    /// <summary>One effect in an ordered track or legacy clip filter stack.</summary>
     public sealed class EffectInstance
     {
         public string Id { get; set; } = Guid.NewGuid().ToString();
@@ -218,9 +218,9 @@ namespace Fig.Core.Timeline
         public int Order { get; set; }
 
         /// <summary>
-        /// Optionally limits the effect to part of the clip (seconds from the clip start). Both null,
-        /// the default, means the whole clip. Keyframes are separate from this: they animate the
-        /// effect's values along the clip, and hold their first and last values outside their range.
+        /// Optional active range in the owner's time domain. Track ranges use absolute timeline seconds;
+        /// legacy clip ranges use seconds from the clip start. Both null means the whole owner.
+        /// Keyframes use the same time domain and hold their first and last values outside their range.
         /// </summary>
         public double? StartSec { get; set; }
         public double? DurSec { get; set; }
@@ -228,7 +228,7 @@ namespace Fig.Core.Timeline
         [System.Text.Json.Serialization.JsonIgnore]
         public bool HasRange => StartSec is not null && DurSec is > 0;
 
-        /// <summary>True when the effect is in force at a clip-relative time (always, unless it was limited to part of the clip).</summary>
+        /// <summary>True when the effect is in force at a time in its owner's time domain.</summary>
         public bool IsActiveAt(double localT)
             => !HasRange || (localT >= StartSec!.Value - 1e-9 && localT <= StartSec.Value + DurSec!.Value + 1e-9);
 
@@ -330,6 +330,7 @@ namespace Fig.Core.Timeline
 
     public sealed class EffectCatalogEntry
     {
+        public string Category { get; init; } = "Stylize";
         public string TypeId { get; init; } = "";
         public EffectKind Kind { get; init; }
         public string DisplayName { get; init; } = "";
@@ -359,11 +360,13 @@ namespace Fig.Core.Timeline
 
     public sealed class TransitionCatalogEntry
     {
+        public string Category { get; init; } = "Basic";
         public string TypeId { get; init; } = "";
         public string DisplayName { get; init; } = "";
         public string Icon { get; init; } = "blend";
         public string Description { get; init; } = "";
         public double DefaultDurationSec { get; init; } = 0.5;
+        public double PreviewProgress { get; init; } = 0.5;
         public IReadOnlyList<ParamDef> ParamSchema { get; init; } = Array.Empty<ParamDef>();
 
         public Dictionary<string, ParamValue> DefaultParams()

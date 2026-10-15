@@ -231,17 +231,20 @@ namespace Fig.Core.Timeline
         {
             _clip = clip;
             _replaced = clip.Markers.Select((marker, index) => (Marker: marker, Index: index))
-                .Where(item => item.Marker.Metadata?.ContainsKey("fig.beatAnalysis") == true).ToList();
-            _markers = times.Where(t => double.IsFinite(t) && t >= 0 && t < clip.DurSec)
-                .Distinct().OrderBy(t => t)
+                .Where(item => item.Marker.IsGeneratedBeat).ToList();
+            _markers = CleanTimes(times, clip.DurSec)
                 .Select((t, index) => new Marker
                 {
                     StartSec = t,
                     Name = $"Beat {index + 1}",
                     Color = "#ffd60a",
-                    Metadata = new() { ["fig.beatAnalysis"] = System.Text.Json.JsonSerializer.SerializeToElement(true) }
+                    Metadata = new() { [Marker.BeatAnalysisKey] = System.Text.Json.JsonSerializer.SerializeToElement(true) }
                 }).ToList();
         }
+
+        /// <summary>The clip-local times that become markers: finite, inside the clip, distinct and ordered.</summary>
+        public static List<double> CleanTimes(IEnumerable<double> times, double clipDurSec)
+            => times.Where(t => double.IsFinite(t) && t >= 0 && t < clipDurSec).Distinct().OrderBy(t => t).ToList();
 
         public string Description => "Generate markers from beats";
         public IReadOnlyList<Marker> Markers => _markers;

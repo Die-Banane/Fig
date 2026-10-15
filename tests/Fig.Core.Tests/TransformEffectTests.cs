@@ -175,15 +175,18 @@ public class EffectPresetTests : IDisposable
     }
 
     [Fact]
-    public void EveryBuiltInPreset_BuildsAWholeClipEffect_WithKeyframes()
+    public void EveryBuiltInPreset_BuildsARangedEffect_WithKeyframes()
     {
         Assert.NotEmpty(BuiltInEffectPresets.All);
         foreach (var preset in BuiltInEffectPresets.All)
         {
             var fx = EffectPresetInstantiator.Create(preset, clipDurSec: 10, atLocalSec: 2);
-            Assert.False(fx.HasRange);
+            Assert.True(fx.HasRange);
+            Assert.Equal(2, fx.StartSec!.Value, 6);
+            Assert.Equal(2, fx.Keyframes.Values.SelectMany(k => k).Min(k => k.TimeSec), 6);
             Assert.Equal(preset.TypeId, fx.TypeId);
-            Assert.NotEmpty(fx.Keyframes["zoom"]);
+            Assert.NotEmpty(fx.Keyframes);
+            Assert.All(fx.Keyframes, track => Assert.NotEmpty(track.Value));
         }
     }
 
@@ -213,12 +216,14 @@ public class EffectPresetTests : IDisposable
     }
 
     [Fact]
-    public void AMotionThatDoesNotFit_IsShortenedAndMovedBack()
+    public void AMotionThatDoesNotFit_IsShortenedAtTheDropPosition()
     {
         var preset = BuiltInEffectPresets.Find("zoom-in")!;
         var fx = EffectPresetInstantiator.Create(preset, clipDurSec: 2, atLocalSec: 1.5);
 
-        Assert.Equal(0, fx.Keyframes["zoom"][0].TimeSec, 6);
+        Assert.Equal(1.5, fx.StartSec!.Value, 6);
+        Assert.Equal(0.5, fx.DurSec!.Value, 6);
+        Assert.Equal(1.5, fx.Keyframes["zoom"][0].TimeSec, 6);
         Assert.Equal(2, fx.Keyframes["zoom"][^1].TimeSec, 6);
     }
 
@@ -462,7 +467,7 @@ public class EffectMigrationTests
     }
 
     [Fact]
-    public void AnimatedTransformsThatWereLimitedToABar_BecomeWholeClip_SoTheyStopSnappingBack()
+    public void AnimatedTransformRanges_SurviveProjectLoading()
     {
         var clip = new VideoClip { Id = "v", DurSec = 20 };
         var fx = EffectPresetInstantiator.Create(BuiltInEffectPresets.Find("zoom-in")!, 20, 2);
@@ -470,10 +475,11 @@ public class EffectMigrationTests
         fx.DurSec = 3;
         clip.Effects.Add(fx);
 
-        Assert.Equal(1, EffectMigration.Migrate(ProjectWith(clip)));
+        Assert.Equal(0, EffectMigration.Migrate(ProjectWith(clip)));
 
-        Assert.False(fx.HasRange);
-        Assert.Equal(2.0, TransformMath.ViewAt(fx, 18).Zoom, 3);
+        Assert.True(fx.HasRange);
+        Assert.Equal(2, fx.StartSec!.Value);
+        Assert.Equal(3, fx.DurSec!.Value);
     }
 
     [Fact]

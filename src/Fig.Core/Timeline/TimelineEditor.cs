@@ -806,7 +806,7 @@ namespace Fig.Core.Timeline
 
         public void AddEffect(string clipId, EffectInstance effect)
         {
-            if (FindClip(clipId) is null)
+            if (FindEffectOwner(clipId) is null)
                 return;
             History.Execute(new AddEffectCommand(this, clipId, effect));
             RaiseChanged();
@@ -814,24 +814,33 @@ namespace Fig.Core.Timeline
 
         /// <summary>
         /// Limits an effect to part of the clip (or, with null start and length, puts it back on the whole
-        /// clip). Keyframes are not affected: they keep animating the effect's values along the clip.
+        /// clip). Moving a bar can carry its keyframes; resizing its edges leaves keyframe times unchanged.
         /// </summary>
-        public void SetEffectRange(string clipId, string effectId, double? startSec, double? durSec)
+        public void SetEffectRange(string clipId, string effectId, double? startSec, double? durSec, bool moveKeyframes = false)
         {
-            var clip = FindClip(clipId);
+            var clip = FindEffectOwner(clipId);
             if (clip is null)
                 return;
             if (startSec is { } s && durSec is { } d)
             {
                 const double minLength = 0.1;
-                d = Math.Clamp(d, minLength, clip.DurSec);
-                s = Math.Clamp(s, 0, Math.Max(0, clip.DurSec - d));
+                d = Math.Clamp(d, Math.Min(minLength, clip.DurSec), EffectTimeLimit(clip));
+                s = Math.Clamp(s, 0, Math.Max(0, EffectTimeLimit(clip) - d));
                 startSec = s;
                 durSec = d;
             }
 
             ExecuteEffectEdit(clipId, effectId, "Change effect range", $"range|{clipId}|{effectId}", fx =>
             {
+                if (moveKeyframes && startSec is { } newStart)
+                {
+                    var delta = newStart - (fx.StartSec ?? 0);
+                    foreach (var key in fx.Keyframes.Keys.ToArray())
+                        fx.Keyframes[key] = fx.Keyframes[key].Select(point => point with
+                        {
+                            TimeSec = Math.Clamp(point.TimeSec + delta, 0, EffectTimeLimit(clip)),
+                        }).ToList();
+                }
                 fx.StartSec = startSec;
                 fx.DurSec = durSec;
             });
@@ -840,7 +849,7 @@ namespace Fig.Core.Timeline
         private void ExecuteEffectEdit(string clipId, string effectId, string description, string? coalesceKey,
             Action<EffectInstance> mutate)
         {
-            if (FindClip(clipId)?.Effects.Any(e => e.Id == effectId) != true)
+            if (FindEffectOwner(clipId)?.Effects.Any(e => e.Id == effectId) != true)
                 return;
             var command = new EffectEditCommand(this, clipId, effectId, description, coalesceKey, mutate);
             if (coalesceKey is null)
@@ -868,12 +877,12 @@ namespace Fig.Core.Timeline
         /// </summary>
         public double? AddEffectKeyframe(string clipId, string effectId, double localSec)
         {
-            var clip = FindClip(clipId);
+            var clip = FindEffectOwner(clipId);
             var effect = clip?.Effects.FirstOrDefault(e => e.Id == effectId);
             if (clip is null || effect is null)
                 return null;
 
-            var time = Math.Clamp(localSec, 0, clip.DurSec);
+            var time = Math.Clamp(localSec, 0, EffectTimeLimit(clip));
             ExecuteEffectEdit(clipId, effectId, "Add keyframe", null,
                 fx => UpsertKeyframes(fx, time, CurrentNumericValues(fx, time), null));
             return time;
@@ -885,10 +894,10 @@ namespace Fig.Core.Timeline
         /// </summary>
         public void SetEffectAnimated(string clipId, string effectId, bool animated, double localSec)
         {
-            var clip = FindClip(clipId);
+            var clip = FindEffectOwner(clipId);
             if (clip is null)
                 return;
-            var time = Math.Clamp(localSec, 0, clip.DurSec);
+            var time = Math.Clamp(localSec, 0, EffectTimeLimit(clip));
             ExecuteEffectEdit(clipId, effectId, animated ? "Animate effect" : "Stop animating effect", null, fx =>
             {
                 if (animated)
@@ -911,10 +920,10 @@ namespace Fig.Core.Timeline
         /// <summary>Copies the keyframe at one time to another time (same values and easing).</summary>
         public void DuplicateEffectKeyframe(string clipId, string effectId, double fromSec, double toSec)
         {
-            var clip = FindClip(clipId);
+            var clip = FindEffectOwner(clipId);
             if (clip is null)
                 return;
-            toSec = Math.Clamp(toSec, 0, clip.DurSec);
+            toSec = Math.Clamp(toSec, 0, EffectTimeLimit(clip));
             ExecuteEffectEdit(clipId, effectId, "Duplicate keyframe", null, fx =>
             {
                 foreach (var track in fx.Keyframes.Values)
@@ -984,10 +993,10 @@ namespace Fig.Core.Timeline
         /// </summary>
         public void MoveEffectKeyframe(string clipId, string effectId, double fromSec, double toSec, string gesture)
         {
-            var clip = FindClip(clipId);
+            var clip = FindEffectOwner(clipId);
             if (clip is null)
                 return;
-            toSec = Math.Clamp(toSec, 0, clip.DurSec);
+            toSec = Math.Clamp(toSec, 0, EffectTimeLimit(clip));
             ExecuteEffectEdit(clipId, effectId, "Move keyframe", $"mv|{gesture}", fx =>
             {
                 foreach (var key in fx.Keyframes.Keys.ToList())
@@ -1021,7 +1030,7 @@ namespace Fig.Core.Timeline
 
         public void RemoveEffect(string clipId, string effectId)
         {
-            if (FindClip(clipId) is null)
+            if (FindEffectOwner(clipId) is null)
                 return;
             History.Execute(new RemoveEffectCommand(this, clipId, effectId));
             RaiseChanged();
@@ -1030,7 +1039,7 @@ namespace Fig.Core.Timeline
         /// <summary>Sets a typed parameter on an effect (slider drags coalesce into one undo step).</summary>
         public void SetEffectParam(string clipId, string effectId, string key, ParamValue value)
         {
-            var clip = FindClip(clipId);
+            var clip = FindEffectOwner(clipId);
             if (clip is null)
                 return;
             EffectInstance? effect = null;
@@ -1048,7 +1057,7 @@ namespace Fig.Core.Timeline
 
         public void ToggleEffect(string clipId, string effectId)
         {
-            if (FindClip(clipId) is null)
+            if (FindEffectOwner(clipId) is null)
                 return;
             History.Execute(new ToggleEffectCommand(this, clipId, effectId));
             RaiseChanged();
@@ -1075,7 +1084,7 @@ namespace Fig.Core.Timeline
 
         public void SetKeyframe(string clipId, string effectId, string key, double timeSec, ParamValue value)
         {
-            if (FindClip(clipId) is null)
+            if (FindEffectOwner(clipId) is null)
                 return;
             History.Execute(new SetKeyframeCommand(this, clipId, effectId, key, timeSec, value));
             RaiseChanged();
@@ -1083,7 +1092,7 @@ namespace Fig.Core.Timeline
 
         public void RemoveKeyframe(string clipId, string effectId, string key, double timeSec)
         {
-            if (FindClip(clipId) is null)
+            if (FindEffectOwner(clipId) is null)
                 return;
             History.Execute(new RemoveKeyframeCommand(this, clipId, effectId, key, timeSec));
             RaiseChanged();
@@ -1091,7 +1100,7 @@ namespace Fig.Core.Timeline
 
         public void ClearKeyframes(string clipId, string effectId, string key)
         {
-            if (FindClip(clipId) is null)
+            if (FindEffectOwner(clipId) is null)
                 return;
             History.Execute(new ClearKeyframesCommand(this, clipId, effectId, key));
             RaiseChanged();
@@ -1339,6 +1348,9 @@ namespace Fig.Core.Timeline
 
         protected void RaiseChanged()
         {
+            // A preview for a clip that was deleted (or undone away) has nothing to attach to.
+            if (BeatPreview is { } preview && !Document.Tracks.Any(track => track.Clips.Contains(preview.Clip)))
+                ClearBeatPreview();
             TimelineChanged?.Invoke();
         }
 
@@ -1349,6 +1361,12 @@ namespace Fig.Core.Timeline
         }
 
         /// <summary>The clip with this id, or null.</summary>
+        public IEffectOwner? FindEffectOwner(string ownerId)
+            => (IEffectOwner?)Document.Tracks.FirstOrDefault(t => t.Id == ownerId) ?? FindClip(ownerId);
+
+        private static double EffectTimeLimit(IEffectOwner owner)
+            => owner is Track ? double.PositiveInfinity : owner.DurSec;
+
         public Clip? FindClipForView(string clipId) => FindClip(clipId);
 
         internal Clip? FindClip(string clipId)
@@ -1609,7 +1627,7 @@ namespace Fig.Core.Timeline
         public int ClearClipMarkers(Clip clip, bool generatedOnly = false)
         {
             return DeleteMarkers(clip.Markers.Where(marker => !generatedOnly
-                || marker.Metadata?.ContainsKey("fig.beatAnalysis") == true).Select(marker => marker.Id).ToArray());
+                || marker.IsGeneratedBeat).Select(marker => marker.Id).ToArray());
         }
 
         /// <summary>Adds a range marker to the timeline (one undo step).</summary>

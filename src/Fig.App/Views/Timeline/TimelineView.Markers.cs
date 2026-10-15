@@ -55,7 +55,8 @@ namespace Fig.App.Views
         /// </summary>
         private void DrawClipMarkers(DrawingContext context, double clipX, double clipTop, Clip clip)
         {
-            if (clip.Markers.Count == 0)
+            var preview = Editor?.BeatPreview is { } p && ReferenceEquals(p.Clip, clip) ? p : null;
+            if (clip.Markers.Count == 0 && preview is null)
                 return;
 
             var px = Viewport.PixelsPerSecond;
@@ -63,6 +64,9 @@ namespace Fig.App.Views
             foreach (var marker in clip.Markers)
             {
                 if (marker.StartSec < 0 || marker.StartSec > clip.DurSec)
+                    continue;
+                // The preview replaces these on apply; drawing both would show two sets of beats.
+                if (Editor?.IsSupersededByPreview(clip, marker) == true)
                     continue;
 
                 var mx = clipX + marker.StartSec * px;
@@ -84,6 +88,40 @@ namespace Fig.App.Views
                     gc.EndFigure(true);
                 }
                 context.DrawGeometry(brush, hot ? new Pen(Brushes.White, selected ? 2 : 1.5) : new Pen(new SolidColorBrush(Color.FromArgb(160, 0, 0, 0)), 1), head);
+            }
+
+            if (preview is not null)
+                DrawBeatPreview(context, clipX, clipTop, bodyBottom, preview, px);
+        }
+
+        private static readonly IBrush BeatPreviewBrush = new SolidColorBrush(Color.Parse("#5ac8fa"));
+        private static readonly IPen BeatPreviewPen = new Pen(BeatPreviewBrush, 1.5, new DashStyle([3, 3], 0));
+
+        /// <summary>Candidate beat markers: dashed poles and open pennants, visibly not yet part of the project.</summary>
+        private void DrawBeatPreview(DrawingContext context, double clipX, double clipTop, double bodyBottom,
+            BeatMarkerPreview preview, double px)
+        {
+            var clipRight = clipX + preview.Clip.DurSec * px;
+            var viewLeft = TrackHeaderWidth;
+            var viewRight = Bounds.Width;
+            foreach (var time in preview.LocalTimes)
+            {
+                var mx = clipX + time * px;
+                if (mx < viewLeft - 8 || mx > viewRight + 8 || mx > clipRight)
+                    continue;
+                context.DrawLine(BeatPreviewPen, new Point(mx, clipTop + 8), new Point(mx, bodyBottom));
+                var y = clipTop - 5;
+                var head = new StreamGeometry();
+                using (var gc = head.Open())
+                {
+                    gc.BeginFigure(new Point(mx - 5, y), true);
+                    gc.LineTo(new Point(mx + 5, y));
+                    gc.LineTo(new Point(mx + 5, y + 7));
+                    gc.LineTo(new Point(mx, y + 12));
+                    gc.LineTo(new Point(mx - 5, y + 7));
+                    gc.EndFigure(true);
+                }
+                context.DrawGeometry(new SolidColorBrush(Color.FromArgb(170, 0x5a, 0xc8, 0xfa)), null, head);
             }
         }
 
@@ -248,7 +286,8 @@ namespace Fig.App.Views
                         var px = Viewport.PixelsPerSecond;
                         foreach (var m in candidate.Markers)
                         {
-                            if (m.StartSec < 0 || m.StartSec > candidate.DurSec)
+                            if (m.StartSec < 0 || m.StartSec > candidate.DurSec
+                                || Editor.IsSupersededByPreview(candidate, m))
                                 continue;
                             if (HitsClipMarker(pos, clipLeft + m.StartSec * px, clipTop, clipTotal))
                                 return new MarkerLocation(m, candidate, track, Editor.Document);

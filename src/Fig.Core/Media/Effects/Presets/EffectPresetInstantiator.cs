@@ -10,8 +10,8 @@ namespace Fig.Core.Media
     {
         /// <summary>
         /// Builds the effect a preset describes, with its keyframes starting at <paramref name="atLocalSec"/> on a
-        /// clip <paramref name="clipDurSec"/> long (the motion is shortened and shifted back to fit). The effect covers
-        /// the whole clip: its first and last keyframes hold their values before and after the motion.
+        /// clip <paramref name="clipDurSec"/> long. The effect begins at the requested position and is shortened
+        /// to the remaining space, with its bar and animation sharing the same range.
         /// </summary>
         public static EffectInstance Create(EffectPreset preset, double clipDurSec, double atLocalSec)
         {
@@ -19,8 +19,11 @@ namespace Fig.Core.Media
                 ?? throw new InvalidOperationException($"Unknown effect '{preset.TypeId}' in preset '{preset.Name}'");
 
             var instance = entry.CreateInstance();
-            var duration = Math.Min(Math.Max(0.1, preset.DefaultDurationSec), Math.Max(0.1, clipDurSec));
-            var start = Math.Clamp(atLocalSec, 0, Math.Max(0, clipDurSec - duration));
+            var length = Math.Max(0, clipDurSec);
+            var start = Math.Clamp(atLocalSec, 0, Math.Max(0, length - Math.Min(0.001, length)));
+            var duration = Math.Min(Math.Max(0.1, preset.DefaultDurationSec), length - start);
+            instance.StartSec = start;
+            instance.DurSec = duration;
 
             var keys = preset.Keyframes.OrderBy(k => k.At).ToList();
             foreach (var key in keys)
@@ -62,6 +65,7 @@ namespace Fig.Core.Media
             {
                 Name = name,
                 TypeId = effect.TypeId,
+                Category = EffectCatalog.Find(effect.TypeId)?.Category,
                 Icon = EffectCatalog.Find(effect.TypeId)?.Icon ?? "wand-sparkles",
                 DefaultDurationSec = duration,
             };

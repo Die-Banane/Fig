@@ -30,6 +30,7 @@ namespace Fig.App.Views
 
         // catalog drop targets (effect → clip, transition → cut)
         private string? _dropEffectClipId;
+        private double _dropEffectDuration = 3;
 
         private double _dropTransitionCutSec = -1;
 
@@ -81,20 +82,11 @@ namespace Fig.App.Views
                 _dropTransitionCutSec = -1;
                 _dropTransitionTrack = null;
 
-                Clip? clip = null;
-                if (track is not null)
-                    clip = HitTestClip(track, time, pos.X);
-
-                if (clip is VideoClip)
-                {
-                    e.DragEffects = DragDropEffects.Copy;
-                    _dropEffectClipId = clip.Id;
-                }
-                else
-                {
-                    e.DragEffects = DragDropEffects.None;
-                    _dropEffectClipId = null;
-                }
+                e.DragEffects = track?.Kind == TrackKind.Video ? DragDropEffects.Copy : DragDropEffects.None;
+                _dropEffectClipId = null;
+                _dropPreviewTrack = track?.Kind == TrackKind.Video ? track : null;
+                _dropPreviewTime = Snap(time);
+                _dropEffectDuration = e.DataTransfer.TryGetValue(PresetFormat)?.DefaultDurationSec ?? 3;
                 InvalidateVisual();
                 return;
             }
@@ -201,13 +193,12 @@ namespace Fig.App.Views
                 var preset = e.DataTransfer.TryGetValue(PresetFormat);
                 var pos = e.GetPosition(this);
                 var track = HitTestTrack(pos.Y);
-                var clip = track is not null ? HitTestClip(track, XToTime(pos.X), pos.X) : null;
-                if (preset is not null && clip is VideoClip)
+                if (preset is not null && track?.Kind == TrackKind.Video)
                 {
-                    var dropped = EffectPresetInstantiator.Create(preset, clip.DurSec, XToTime(pos.X) - clip.StartSec);
-                    Editor.AddEffect(clip.Id, dropped);
-                    Editor.Selection.SelectOnly(clip.Id);
-                    _editorVm?.Properties.SelectEffect(clip.Id, dropped.Id);
+                    var start = Snap(XToTime(pos.X));
+                    var dropped = EffectPresetInstantiator.Create(preset, start + preset.DefaultDurationSec, start);
+                    Editor.AddEffect(track.Id, dropped);
+                    _editorVm?.Properties.SelectEffect(track.Id, dropped.Id);
                     InvalidateMeasure();
                 }
                 ClearDropPreview();
@@ -221,13 +212,13 @@ namespace Fig.App.Views
                 var entry = e.DataTransfer.TryGetValue(EffectFormat);
                 var pos = e.GetPosition(this);
                 var track = HitTestTrack(pos.Y);
-                var clip = track is not null ? HitTestClip(track, XToTime(pos.X), pos.X) : null;
-                if (entry is not null && clip is VideoClip)
+                if (entry is not null && track?.Kind == TrackKind.Video)
                 {
                     var dropped = entry.CreateInstance();
-                    Editor.AddEffect(clip.Id, dropped);
-                    Editor.Selection.SelectOnly(clip.Id);
-                    _editorVm?.Properties.SelectEffect(clip.Id, dropped.Id);
+                    dropped.StartSec = Snap(XToTime(pos.X));
+                    dropped.DurSec = 3;
+                    Editor.AddEffect(track.Id, dropped);
+                    _editorVm?.Properties.SelectEffect(track.Id, dropped.Id);
                     InvalidateMeasure();
                 }
                 ClearDropPreview();

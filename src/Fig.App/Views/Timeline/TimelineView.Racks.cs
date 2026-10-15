@@ -41,13 +41,13 @@ namespace Fig.App.Views
         private static readonly Color LevelEdge = Color.Parse("#589b74");
 
         private sealed record RackItem(string Key, string Label, Color Fill, Color Edge,
-            EffectInstance? Effect, double StartSec, double DurSec, bool Enabled, bool Ranged, int Tab);
+            EffectInstance? Effect, double StartSec, double DurSec, bool Enabled, bool Ranged, int Tab, int Row = 0);
 
         private enum RackPart { None, Body, Left, Right, Power, Remove, Keyframe, Animate }
 
         /// <param name="KeyframeSec">For <see cref="RackPart.Keyframe"/>: its clip-relative time.</param>
         /// <param name="InKeyLane">The pointer is in the bar's keyframe lane (the strip under the label).</param>
-        private readonly record struct RackHit(Clip Clip, RackItem? Item, RackPart Part, Rect Rect,
+        private readonly record struct RackHit(IEffectOwner Clip, RackItem? Item, RackPart Part, Rect Rect,
             double KeyframeSec = 0, bool InKeyLane = false);
 
         private sealed record KeyDrag(string ClipId, string EffectId, double CurrentSec, string Gesture);
@@ -62,7 +62,7 @@ namespace Fig.App.Views
 
         private RackDrag? _rackDrag;
 
-        private static List<RackItem> BuildRack(Clip clip)
+        private static List<RackItem> BuildRack(IEffectOwner clip)
         {
             var items = new List<RackItem>();
             foreach (var fx in clip.Effects.OrderBy(e => e.Order))
@@ -76,17 +76,49 @@ namespace Fig.App.Views
                     fx, start, dur, fx.Enabled, motion, 4));
             }
 
-            if (clip is AudioClip)
+            if (clip is AudioClip audio)
             {
-                if (Math.Abs(clip.Volume - 1) > 0.01 || clip.Keyframes.ContainsKey(AutomationKeys.Volume))
-                    items.Add(new RackItem("level", "Level", LevelFill, LevelEdge, null, 0, clip.DurSec, true, false, 1));
-                if (clip.FadeInSec > 1e-3)
-                    items.Add(new RackItem("fade-in", "Fade in", ZoomFill, ZoomEdge, null, 0, clip.FadeInSec, true, false, 3));
-                if (clip.FadeOutSec > 1e-3)
+                if (Math.Abs(audio.Volume - 1) > 0.01 || audio.Keyframes.ContainsKey(AutomationKeys.Volume))
+                    items.Add(new RackItem("level", "Level", LevelFill, LevelEdge, null, 0, audio.DurSec, true, false, 1));
+                if (audio.FadeInSec > 1e-3)
+                    items.Add(new RackItem("fade-in", "Fade in", ZoomFill, ZoomEdge, null, 0, audio.FadeInSec, true, false, 3));
+                if (audio.FadeOutSec > 1e-3)
                     items.Add(new RackItem("fade-out", "Fade out", ZoomFill, ZoomEdge, null,
-                        Math.Max(0, clip.DurSec - clip.FadeOutSec), clip.FadeOutSec, true, false, 3));
+                        Math.Max(0, audio.DurSec - audio.FadeOutSec), audio.FadeOutSec, true, false, 3));
             }
-            return items;
+            return AssignRows(items, pack: clip is Track);
+        }
+
+        /// <summary>
+        /// Gives every bar a row. A clip's rack stacks its bars one per row. A track's effects are
+        /// independent regions in timeline time, so bars that do not overlap share a row (the lane only
+        /// grows when regions actually overlap) instead of one row per effect.
+        /// </summary>
+        private static List<RackItem> AssignRows(List<RackItem> items, bool pack)
+        {
+            if (!pack)
+            {
+                for (var i = 0; i < items.Count; i++)
+                    items[i] = items[i] with { Row = i };
+                return items;
+            }
+
+            var rowEnds = new List<double>();
+            var ordered = items.Select((item, index) => (item, index))
+                .OrderBy(x => x.item.StartSec).ThenBy(x => x.index).ToList();
+            var placed = new RackItem[items.Count];
+            foreach (var (item, index) in ordered)
+            {
+                var row = rowEnds.FindIndex(end => end <= item.StartSec + 1e-6);
+                if (row < 0)
+                {
+                    row = rowEnds.Count;
+                    rowEnds.Add(0);
+                }
+                rowEnds[row] = item.StartSec + item.DurSec;
+                placed[index] = item with { Row = row };
+            }
+            return placed.ToList();
         }
 
         /// <summary>Shows or hides the labelled effect rows for every clip on a track.</summary>
@@ -102,7 +134,7 @@ namespace Fig.App.Views
         private bool IsTrackRackExpanded(Track track) => !_collapsedTrackRacks.Contains(track.Id);
 
         /// <summary>True when any clip on the track has effect bars (so the fold toggle is worth showing).</summary>
-        private bool TrackHasRack(Track track) => track.Clips.Any(c => BuildRack(c).Count > 0);
+        private bool TrackHasRack(Track track) => track.Effects.Count > 0 || track.Clips.Any(c => BuildRack(c).Count > 0);
 
         /// <summary>The fold toggle: on the right of the track's header, level with the clips' label strip.</summary>
         private Rect RackToggleRect(Track track)
@@ -125,8 +157,8 @@ namespace Fig.App.Views
         }
 
         /// <summary>Which track a clip sits on (clips don't know).</summary>
-        private Track? TrackOf(Clip clip) =>
-            Editor?.Document.Tracks.FirstOrDefault(t => t.Clips.Any(c => ReferenceEquals(c, clip)));
+        private Track? TrackOf(IEffectOwner clip) =>
+            clip as Track ?? Editor?.Document.Tracks.FirstOrDefault(t => t.Clips.Any(c => ReferenceEquals(c, clip)));
 
         /// <summary>
         /// Test hook: where an effect bar (or one of its keyframes) is, in this control's coordinates.
@@ -139,7 +171,7 @@ namespace Fig.App.Views
             for (var t = 0; t < Editor.Document.Tracks.Count; t++)
             {
                 var track = Editor.Document.Tracks[t];
-                var clip = track.Clips.FirstOrDefault(c => c.Id == clipId);
+                IEffectOwner? clip = track.Id == clipId ? track : track.Clips.FirstOrDefault(c => c.Id == clipId);
                 if (clip is null)
                     continue;
                 var items = BuildRack(clip);
@@ -155,29 +187,30 @@ namespace Fig.App.Views
             return null;
         }
 
-        private bool IsRackExpanded(Clip clip) => TrackOf(clip) is not { } track || IsTrackRackExpanded(track);
+        private bool IsRackExpanded(IEffectOwner clip) => TrackOf(clip) is not { } track || IsTrackRackExpanded(track);
 
-        private double RackBar(Clip clip) => IsRackExpanded(clip) ? RackBarFull : RackBarCompact;
+        private double RackBar(IEffectOwner clip) => IsRackExpanded(clip) ? RackBarFull : RackBarCompact;
 
-        private double RackGap(Clip clip) => IsRackExpanded(clip) ? RackGapFull : RackGapCompact;
+        private double RackGap(IEffectOwner clip) => IsRackExpanded(clip) ? RackGapFull : RackGapCompact;
 
         /// <summary>Extra lane height a clip needs for its rack (0 when it has nothing to show).</summary>
-        private double RackHeight(Clip clip)
+        private double RackHeight(IEffectOwner clip)
         {
-            var n = BuildRack(clip).Count;
+            var items = BuildRack(clip);
+            var n = items.Count == 0 ? 0 : items.Max(i => i.Row) + 1;
             return n == 0 ? 0 : RackPad + n * (RackBar(clip) + RackGap(clip));
         }
 
-        private double TrackRackHeight(Track track) => track.Clips.Count == 0 ? 0 : track.Clips.Max(RackHeight);
+        private double TrackRackHeight(Track track) => RackHeight(track) + track.Clips.Select(c => RackHeight(c)).DefaultIfEmpty(0).Max();
 
-        private Rect RackItemRect(Clip clip, RackItem item, int index, double clipX, double clipTop, TrackKind kind)
+        private Rect RackItemRect(IEffectOwner clip, RackItem item, int index, double clipX, double clipTop, TrackKind kind)
         {
             var px = Viewport.PixelsPerSecond;
-            var top = clipTop + TimelineGeometry.ClipTotal(kind) + RackPad + index * (RackBar(clip) + RackGap(clip));
+            var top = clipTop + TimelineGeometry.ClipTotal(kind) + (clip is Track ? TrackOf(clip)!.Clips.Select(c => RackHeight(c)).DefaultIfEmpty(0).Max() : 0) + RackPad + item.Row * (RackBar(clip) + RackGap(clip));
             return new Rect(clipX + item.StartSec * px, top, Math.Max(MinRackBarWidth, item.DurSec * px), RackBar(clip));
         }
 
-        private void DrawRack(DrawingContext context, Clip clip, double clipX, double clipW, double clipTop, TrackKind kind)
+        private void DrawRack(DrawingContext context, IEffectOwner clip, double clipX, double clipW, double clipTop, TrackKind kind)
         {
             var items = BuildRack(clip);
             if (items.Count == 0)
@@ -244,7 +277,7 @@ namespace Fig.App.Views
         /// Draws an effect's keyframes on its bar: diamonds on the key lane of an open bar (joined
         /// by a line, dashed where a segment holds) or small ticks on a folded one.
         /// </summary>
-        private void DrawBarKeyframes(DrawingContext context, Clip clip, RackItem item, Rect rect, bool expanded)
+        private void DrawBarKeyframes(DrawingContext context, IEffectOwner clip, RackItem item, Rect rect, bool expanded)
         {
             if (item.Effect is not { } fx || fx.Keyframes.Count == 0)
                 return;
@@ -296,7 +329,7 @@ namespace Fig.App.Views
                     continue;
                 var clipTop = top + TimelineGeometry.ClipInset;
 
-                foreach (var clip in track.Clips)
+                foreach (var clip in track.Clips.Cast<IEffectOwner>().Append(track))
                 {
                     var items = BuildRack(clip);
                     if (items.Count == 0)
@@ -350,9 +383,6 @@ namespace Fig.App.Views
                 return false;
 
             var item = hit.Item!;
-            _selectedClipId = hit.Clip.Id;
-            _selectedTrackId = null;
-
             if (item.Effect is null)
             {
                 // audio level / fades: select the clip and open the matching inspector tab
@@ -423,7 +453,7 @@ namespace Fig.App.Views
 
         private void UpdateRackDrag(Point pos)
         {
-            if (Editor is null || _rackDrag is not { } drag || FindClipById(drag.ClipId) is not { } clip)
+            if (Editor is null || _rackDrag is not { } drag || Editor.FindEffectOwner(drag.ClipId) is not { } clip)
                 return;
 
             const double minLength = 0.1;
@@ -440,17 +470,17 @@ namespace Fig.App.Views
                 }
                 case RackPart.Right:
                     start = drag.OrigStart;
-                    dur = Math.Clamp(local - drag.OrigStart, minLength, clip.DurSec - drag.OrigStart);
+                    dur = Math.Max(minLength, clip is Track ? local - drag.OrigStart : Math.Min(local - drag.OrigStart, clip.DurSec - drag.OrigStart));
                     break;
                 default:
                 {
                     var moved = drag.OrigStart + (XToTime(pos.X) - drag.PressTime);
-                    start = Math.Clamp(Snap(clip.StartSec + moved) - clip.StartSec, 0, Math.Max(0, clip.DurSec - drag.OrigDur));
+                    start = Math.Clamp(Snap(clip.StartSec + moved) - clip.StartSec, 0, clip is Track ? double.PositiveInfinity : Math.Max(0, clip.DurSec - drag.OrigDur));
                     dur = drag.OrigDur;
                     break;
                 }
             }
-            Editor.SetEffectRange(drag.ClipId, drag.EffectId, start, dur);
+            Editor.SetEffectRange(drag.ClipId, drag.EffectId, start, dur, moveKeyframes: drag.Part == RackPart.Body);
             InvalidateVisual();
         }
 
@@ -459,10 +489,10 @@ namespace Fig.App.Views
 
         private void UpdateKeyDrag(Point pos)
         {
-            if (Editor is null || _keyDrag is not { } drag || FindClipById(drag.ClipId) is not { } clip)
+            if (Editor is null || _keyDrag is not { } drag || Editor.FindEffectOwner(drag.ClipId) is not { } clip)
                 return;
             var target = Snap(Math.Max(0, XToTime(pos.X)), null) - clip.StartSec;
-            target = Math.Clamp(target, 0, clip.DurSec);
+            target = Math.Clamp(target, 0, clip is Track ? double.PositiveInfinity : clip.DurSec);
             if (Math.Abs(target - drag.CurrentSec) < 1e-6)
                 return;
             Editor.MoveEffectKeyframe(drag.ClipId, drag.EffectId, drag.CurrentSec, target, drag.Gesture);
@@ -492,8 +522,6 @@ namespace Fig.App.Views
             if (Editor is null || HitTestRack(pos) is not { Item.Effect: { } fx } hit)
                 return false;
 
-            _selectedClipId = hit.Clip.Id;
-            _selectedTrackId = null;
             _editorVm?.Properties.SelectEffect(hit.Clip.Id, fx.Id);
             InvalidateVisual();
 
@@ -579,7 +607,7 @@ namespace Fig.App.Views
 
             if (fx.HasRange)
             {
-                var whole = new MenuItem { Header = "Apply to the whole clip" };
+                var whole = new MenuItem { Header = clip is Track ? "Apply to the whole track" : "Apply to the whole clip" };
                 whole.Click += (_, _) =>
                 {
                     Editor.SetEffectRange(clip.Id, fx.Id, null, null);
@@ -590,7 +618,7 @@ namespace Fig.App.Views
             }
             else
             {
-                var limit = new MenuItem { Header = "Limit to part of the clip" };
+                var limit = new MenuItem { Header = clip is Track ? "Limit to a timeline region" : "Limit to part on the timeline" };
                 limit.Click += (_, _) =>
                 {
                     var from = Math.Clamp((_editorVm?.PlayheadTimeSec ?? 0) - clip.StartSec, 0, Math.Max(0, clip.DurSec - 0.5));
@@ -620,9 +648,9 @@ namespace Fig.App.Views
             var tail = hit.InKeyLane ? "\nDouble-click here to add a keyframe" : "";
 
             var span = item.Effect.HasRange
-                ? $"{Clock(item.StartSec)} → {Clock(item.StartSec + item.DurSec)} of the clip"
-                : "the whole clip";
-            return $"{item.Label} · {span}\nDrag to move · drag an end to limit it to part of the clip · right-click for more" + tail;
+                ? $"{Clock(item.StartSec)} → {Clock(item.StartSec + item.DurSec)} on the timeline"
+                : "the whole track";
+            return $"{item.Label} · {span}\nDrag to move · drag an end to resize the effect · right-click for more" + tail;
         }
     }
 }

@@ -79,14 +79,14 @@ public sealed partial class TransformControlsViewModel : ViewModelBase
 
     public void NotifyControlsVisibilityChanged() => OnPropertyChanged(nameof(ShowOverlay));
 
-    private (Clip Clip, EffectInstance Effect)? Selected()
+    private (IEffectOwner Clip, EffectInstance Effect)? Selected()
         => _host.SelectedEffectInstance() is { Effect.TypeId: EffectCatalog.Transform } sel ? sel : null;
 
     private static List<double> TimesOf(EffectInstance fx)
         => fx.Keyframes.Values.SelectMany(tr => tr.Select(k => Math.Round(k.TimeSec, 6))).Distinct().OrderBy(t => t).ToList();
 
     /// <summary>Clip-relative time being edited: the playhead, snapped onto a keyframe when it is on one.</summary>
-    private double EditTime(Clip clip, EffectInstance fx)
+    private double EditTime(IEffectOwner clip, EffectInstance fx)
     {
         var t = Math.Clamp(_editor.PlayheadTimeSec - clip.StartSec, 0, clip.DurSec);
         var tolerance = 0.5 / Math.Max(1, _editor.Editor.Document.Rate.Fps);
@@ -125,7 +125,7 @@ public sealed partial class TransformControlsViewModel : ViewModelBase
             IsAnimated = times.Count > 0;
             IsOnKeyframe = times.Any(k => Math.Abs(k - t) < 1e-6);
             TimeText = Timecode.Format(clip.StartSec + t, rate);
-            ClipLabel = $"Selected clip · {_host.SelectedClipFileName ?? "clip"}";
+            ClipLabel = clip is Track track ? $"Track · {track.Name ?? "Video"}" : $"Selected clip · {_host.SelectedClipFileName ?? "clip"}";
 
             ClipDurationSec = Math.Max(0.01, clip.DurSec);
             PlayheadLocal = Math.Clamp(_editor.PlayheadTimeSec - clip.StartSec, 0, clip.DurSec);
@@ -150,7 +150,7 @@ public sealed partial class TransformControlsViewModel : ViewModelBase
                 _ => $"{times.Count} keyframes",
             };
             Hint = !IsAnimated
-                ? "The same look all the way through the clip. Press the stopwatch to animate it."
+                ? "The same look throughout the effect. Press the stopwatch to animate it."
                 : IsOnKeyframe
                     ? "Editing this keyframe. Drag the frame or change a value."
                     : "Move the playhead and drag the frame on the preview to add a keyframe there.";
@@ -381,7 +381,7 @@ public sealed partial class TransformControlsViewModel : ViewModelBase
 
     // ---- the keyframe ruler ----------------------------------------------------------------
 
-    private (Clip Clip, EffectInstance Effect)? RulerTarget() => Selected();
+    private (IEffectOwner Clip, EffectInstance Effect)? RulerTarget() => Selected();
 
     /// <summary>Moves the playhead to a time in the clip (clip-relative seconds).</summary>
     public void RulerSeek(double localSec)

@@ -5,7 +5,7 @@ using Fig.Core.Timeline;
 namespace Fig.Core.Media
 {
     /// <summary>Desaturates to monochrome using Rec. 601 luma (blendable via "amount").</summary>
-    [Effect(EffectCatalog.Grayscale, "Grayscale", Icon = "contrast", Description = "Desaturate to monochrome.")]
+    [Effect(EffectCatalog.Grayscale, "Grayscale", Category = "Color", Icon = "contrast", Description = "Desaturate to monochrome.")]
     [EffectParam("amount", "Amount", Default = 1, Min = 0, Max = 1)]
     internal sealed class GrayscaleEffect : IEffectProcessor
     {
