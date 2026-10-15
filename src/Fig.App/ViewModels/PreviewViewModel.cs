@@ -140,6 +140,8 @@ public partial class PreviewViewModel : ViewModelBase
         OnPropertyChanged(nameof(TogglePlaybackCommand));
         OnPropertyChanged(nameof(StepForwardFrameCommand));
         OnPropertyChanged(nameof(JumpToEndCommand));
+        OnPropertyChanged(nameof(ToggleLoopCommand));
+        OnPropertyChanged(nameof(LoopIconBrush));
     }
 
     /// <summary>Requests that all persistent decoders be reopened on the decode worker thread.</summary>
@@ -192,11 +194,18 @@ public partial class PreviewViewModel : ViewModelBase
     public CommunityToolkit.Mvvm.Input.IRelayCommand? TogglePlaybackCommand => _editor?.TogglePlaybackCommand;
     public CommunityToolkit.Mvvm.Input.IRelayCommand? StepForwardFrameCommand => _editor?.StepForwardFrameCommand;
     public CommunityToolkit.Mvvm.Input.IRelayCommand? JumpToEndCommand => _editor?.JumpToEndCommand;
+    public CommunityToolkit.Mvvm.Input.IRelayCommand? ToggleLoopCommand => _editor?.ToggleLoopCommand;
+
+    private static readonly Avalonia.Media.IBrush LoopOnBrush = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#5f9cf8"));
+    private static readonly Avalonia.Media.IBrush LoopOffBrush = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#c6c9ce"));
+    public Avalonia.Media.IBrush LoopIconBrush => _editor is { LoopPlayback: true } ? LoopOnBrush : LoopOffBrush;
 
     private void OnEditorPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
         if (e.PropertyName is nameof(EditorViewModel.PlayheadTimeSec) or nameof(EditorViewModel.SequenceEndSec))
             OnPropertyChanged(nameof(TimeDisplay));
+        if (e.PropertyName is nameof(EditorViewModel.LoopPlayback))
+            OnPropertyChanged(nameof(LoopIconBrush));
         if (e.PropertyName is nameof(EditorViewModel.IsPlaying))
         {
             OnPropertyChanged(nameof(PlaybackIconKey));

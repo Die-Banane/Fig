@@ -10,9 +10,11 @@ public static class ShortcutsDialog
 {
     private static readonly (string Section, (string Keys, string What)[] Items)[] Groups =
     [
-        ("Playback", [("Space", "Play / pause")]),
+        ("Playback", [("Space", "Play / pause"), ("Ctrl+L", "Loop playback")]),
         ("Editing", [
             ("Ctrl+K", "Split at playhead"),
+            ("Ctrl+C / Ctrl+X / Ctrl+V", "Copy / cut / paste clips at the playhead"),
+            ("Ctrl+D", "Duplicate the selection after itself"),
             ("Delete", "Delete selection (leave a gap)"),
             ("Ctrl+Z / Ctrl+Y", "Undo / redo"),
             ("Ctrl+E", "Enable or disable the selected clip"),

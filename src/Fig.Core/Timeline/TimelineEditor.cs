@@ -6,7 +6,7 @@ using Fig.Core.Timeline;
 
 namespace Fig.Core.Timeline
 {
-    public class TimelineEditor
+    public partial class TimelineEditor
     {
         public Timeline Document { get; }
         public CommandHistory History { get; }
@@ -1527,6 +1527,17 @@ namespace Fig.Core.Timeline
             History.Execute(cmd);
             RaiseChanged();
             return cmd.Marker;
+        }
+
+        /// <summary>Adds clip-local beat times as one undoable operation.</summary>
+        public IReadOnlyList<Marker> AddBeatMarkers(AudioClip clip, IReadOnlyList<double> times)
+        {
+            var command = new GenerateMarkersFromBeats(this, clip, times);
+            if (!command.HasChanges)
+                return Array.Empty<Marker>();
+            History.Execute(command);
+            RaiseChanged();
+            return command.Markers;
         }
 
         /// <summary>Adds a marker on a track at an absolute timeline time.</summary>

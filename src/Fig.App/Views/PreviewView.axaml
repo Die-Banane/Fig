@@ -78,6 +78,10 @@
                                 ToolTip.Tip="Jump to end">
                             <local:StrokeIcon Icon="skip-end" Width="13" Height="13"/>
                         </Button>
+                        <Button Classes="monitor-btn" Command="{Binding ToggleLoopCommand}"
+                                ToolTip.Tip="Loop playback (Ctrl+L)" AutomationProperties.Name="Loop playback">
+                            <local:StrokeIcon Icon="repeat" Width="13" Height="13" IconBrush="{Binding LoopIconBrush}"/>
+                        </Button>
                     </StackPanel>
 
                     <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6"

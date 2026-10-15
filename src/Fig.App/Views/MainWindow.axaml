@@ -16,6 +16,11 @@
         <KeyBinding Gesture="Ctrl+Z" Command="{Binding Editor.UndoCommand}"/>
         <KeyBinding Gesture="Ctrl+Y" Command="{Binding Editor.RedoCommand}"/>
         <KeyBinding Gesture="Ctrl+K" Command="{Binding Editor.SplitAtPlayheadCommand}"/>
+        <KeyBinding Gesture="Ctrl+C" Command="{Binding Editor.CopySelectedCommand}"/>
+        <KeyBinding Gesture="Ctrl+X" Command="{Binding Editor.CutSelectedCommand}"/>
+        <KeyBinding Gesture="Ctrl+V" Command="{Binding Editor.PasteCommand}"/>
+        <KeyBinding Gesture="Ctrl+D" Command="{Binding Editor.DuplicateSelectedCommand}"/>
+        <KeyBinding Gesture="Ctrl+L" Command="{Binding Editor.ToggleLoopCommand}"/>
         <KeyBinding Gesture="Ctrl+W" Command="{Binding CloseProjectCommand}"/>
         <KeyBinding Gesture="Space" Command="{Binding Editor.TogglePlaybackCommand}"/>
         <KeyBinding Gesture="L" Command="{Binding Editor.ShuttleForwardCommand}"/>

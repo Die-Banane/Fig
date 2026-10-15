@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Fig.Core.Media;
 
 namespace Fig.Core.Timeline
 {
@@ -213,6 +214,48 @@ namespace Fig.Core.Timeline
             if (color is not null)
                 _location!.Marker.Color = color;
         }
+    }
+
+    /// <summary>Adds a batch of clip-local beat markers as one undoable edit.</summary>
+    public sealed class GenerateMarkersFromBeats : IEditCommand
+    {
+        private readonly AudioClip _clip;
+        private readonly List<Marker> _markers;
+        private readonly List<(Marker Marker, int Index)> _replaced;
+
+        public GenerateMarkersFromBeats(TimelineEditor editor, AudioClip clip, IReadOnlyList<double> times)
+        {
+            _clip = clip;
+            _replaced = clip.Markers.Select((marker, index) => (Marker: marker, Index: index))
+                .Where(item => item.Marker.Metadata?.ContainsKey("fig.beatAnalysis") == true).ToList();
+            _markers = times.Where(t => double.IsFinite(t) && t >= 0 && t < clip.DurSec)
+                .Distinct().OrderBy(t => t)
+                .Select((t, index) => new Marker
+                {
+                    StartSec = t,
+                    Name = $"Beat {index + 1}",
+                    Color = "#ffd60a",
+                    Metadata = new() { ["fig.beatAnalysis"] = System.Text.Json.JsonSerializer.SerializeToElement(true) }
+                }).ToList();
+        }
+
+        public string Description => "Generate markers from beats";
+        public IReadOnlyList<Marker> Markers => _markers;
+        public bool HasChanges => _markers.Count > 0 || _replaced.Count > 0;
+        public void Execute()
+        {
+            foreach (var item in _replaced)
+                _clip.Markers.Remove(item.Marker);
+            _clip.Markers.AddRange(_markers);
+        }
+        public void Undo()
+        {
+            foreach (var marker in _markers)
+                _clip.Markers.Remove(marker);
+            foreach (var item in _replaced)
+                _clip.Markers.Insert(Math.Min(item.Index, _clip.Markers.Count), item.Marker);
+        }
+        public void Redo() => Execute();
     }
 
     /// <summary>

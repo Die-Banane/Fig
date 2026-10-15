@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Runtime.ConstrainedExecution;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Platform.Storage;
@@ -136,6 +137,10 @@ public partial class EditorViewModel : ViewModelBase
 
     [ObservableProperty]
     private bool _magneticSnap = true;
+
+    /// <summary>When playback reaches the end of the sequence it starts again from the beginning.</summary>
+    [ObservableProperty]
+    private bool _loopPlayback;
 
     /// <summary>Selecting a clip also selects the video or audio linked to it (Alt-click picks just one).</summary>
     [ObservableProperty]
@@ -875,6 +880,8 @@ public partial class EditorViewModel : ViewModelBase
     private void OnPlaybackStateChanged(PlaybackState state)
     {
         IsPlaying = state is PlaybackState.Buffering or PlaybackState.Playing;
+        if (state == PlaybackState.Ended && LoopPlayback)
+            _ = TogglePlaybackAsync();
         if (state == PlaybackState.Faulted && Playback?.Error is { Length: > 0 } error)
             Notify?.Invoke(error);
         else if (state == PlaybackState.Unavailable)
@@ -1190,6 +1197,25 @@ public partial class EditorViewModel : ViewModelBase
     private void ToggleMagneticSnap() => MagneticSnap = !MagneticSnap;
 
     [RelayCommand]
+    private void ToggleLoop() => LoopPlayback = !LoopPlayback;
+
+    [RelayCommand]
+    private void CopySelected()
+    {
+        if (Editor.CopySelected())
+            Notify?.Invoke(Editor.Selection.Count == 1 ? "Copied clip" : $"Copied {Editor.Selection.Count} clips");
+    }
+
+    [RelayCommand]
+    private void CutSelected() => Editor.CutSelected();
+
+    [RelayCommand]
+    private void Paste() => Editor.Paste(PlayheadTimeSec, Editor.Selection.ActiveTrackId);
+
+    [RelayCommand]
+    private void DuplicateSelected() => Editor.DuplicateSelected();
+
+    [RelayCommand]
     private void Redo() => RunWithRippleSlide(() => Editor.Redo());
 
     [RelayCommand]
@@ -1224,6 +1250,9 @@ public partial class EditorViewModel : ViewModelBase
         Properties.Refresh();
         Preview.RefreshFrame();
     }
+
+
+
 
     /// <summary>
     /// Adds a marker at the playhead. Attaches to the selected clip (local offset), the
@@ -1299,6 +1328,89 @@ public partial class EditorViewModel : ViewModelBase
         Editor.Selection.SelectMarker(markerId);
         Layout.RevealRight();
     }
+
+
+    [ObservableProperty]
+    private double _beatSensitivity = 50;
+
+    [ObservableProperty]
+    private bool _beatKicksOnly;
+
+    [RelayCommand]
+    private async Task GenerateMarkersFromBeats()
+    {
+        var selectedIds = Editor.Selection.SelectedClipIds;
+        var clip = Editor.Document.Tracks
+            .SelectMany(track => track.Clips)
+            .OfType<AudioClip>()
+            .FirstOrDefault(clip => selectedIds.Contains(clip.Id));
+
+        if (clip is null)
+        {
+            Notify?.Invoke("Select an audio clip first");
+            return;
+        }
+
+        var asset = FindAssetById(clip.SourceId);
+        if (asset is null || asset.Offline)
+        {
+            Notify?.Invoke("Source audio is unavailable");
+            return;
+        }
+
+        // Match the source-time advance used by AudioMixer, including frame-rate conform.
+        var editor = Editor;
+        double sourceIn = clip.SrcInSec;
+        double duration = clip.DurSec;
+        double speed = clip.Speed;
+        var sourceRate = clip.SourceRate;
+        var timelineRate = editor.Document.Rate;
+        double playRate = (speed <= 0 ? 1 : speed)
+            * (sourceRate is { } rate ? rate.Fps / timelineRate.Fps : 1);
+        double sourceDuration = Math.Min(duration * playRate,
+            Math.Min(clip.SrcOutSec, asset.DurationSec) - sourceIn);
+        double sourceOut = clip.SrcOutSec;
+        string sourceId = clip.SourceId;
+        if (!double.IsFinite(playRate) || playRate <= 0 || sourceDuration <= 0)
+        {
+            Notify?.Invoke("The clip has no audio range to analyze");
+            return;
+        }
+
+        Notify?.Invoke("Analyzing beats...");
+        double sensitivity = BeatSensitivity / 100;
+        bool kicksOnly = BeatKicksOnly;
+        try
+        {
+            var analyzer = new BeatAnalysisService(_mediaService);
+            var sourceTimes = await Task.Run(() =>
+                analyzer.GenerateBeatTimes(asset.Url, sourceIn, sourceDuration, sensitivity, kicksOnly));
+
+            // Analysis is asynchronous: don't apply results to a deleted or retimed clip.
+            if (!ReferenceEquals(Editor, editor)
+                || !editor.Document.Tracks.SelectMany(track => track.Clips).Contains(clip)
+                || clip.SrcInSec != sourceIn || clip.SrcOutSec != sourceOut
+                || clip.DurSec != duration || clip.Speed != speed
+                || !Nullable.Equals(clip.SourceRate, sourceRate) || !editor.Document.Rate.Equals(timelineRate)
+                || clip.SourceId != sourceId)
+            {
+                Notify?.Invoke("Clip changed during analysis; generate beats again");
+                return;
+            }
+
+            var localTimes = sourceTimes.Select(time => (time - sourceIn) / playRate)
+                .Where(time => time >= 0 && time < duration).ToArray();
+            var markers = editor.AddBeatMarkers(clip, localTimes);
+            Properties.Refresh();
+            Notify?.Invoke($"Added {markers.Count} {(kicksOnly ? "kick" : "beat")} markers");
+        }
+        catch (Exception ex)
+        {
+            var description = CrashLog.Write("beat-analysis", ex);
+            Notify?.Invoke($"Beat analysis failed: {description}");
+        }
+    }
+
 
     public void UseMarkerAsRangeStart(string markerId) => AddRangeFromBookmark(markerId, true);
 

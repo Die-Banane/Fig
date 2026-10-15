@@ -92,6 +92,12 @@ namespace Fig.App.Views
             menu.Items.Add(Item("Split at playhead", () => vm.SplitAtPlayheadCommand.Execute(null), playheadInside));
             menu.Items.Add(new Separator());
 
+            menu.Items.Add(Item($"Cut {noun}", () => vm.CutSelectedCommand.Execute(null)));
+            menu.Items.Add(Item($"Copy {noun}", () => vm.CopySelectedCommand.Execute(null)));
+            menu.Items.Add(Item("Paste at playhead", () => vm.PasteCommand.Execute(null), ed.HasClipboard));
+            menu.Items.Add(Item($"Duplicate {noun}", () => vm.DuplicateSelectedCommand.Execute(null)));
+            menu.Items.Add(new Separator());
+
             menu.Items.Add(Item($"Delete {noun}", () => vm.LiftSelectedCommand.Execute(null), hint: "Remove it and leave a gap"));
             menu.Items.Add(Item($"Ripple delete {noun}", () => vm.RippleDeleteSelectedCommand.Execute(null),
                 hint: "Remove it and close the gap"));
@@ -192,6 +198,11 @@ namespace Fig.App.Views
             var at = Math.Max(0, ed.SnapTime(timeSec));
 
             menu.Items.Add(Item("Move playhead here", () => SetPlayhead(at)));
+            menu.Items.Add(Item("Paste here", () =>
+            {
+                ed.Paste(at, track?.Id);
+                InvalidateVisual();
+            }, ed.HasClipboard));
             menu.Items.Add(Item("Add marker here", () =>
             {
                 var marker = ed.AddMarker(ed.Document, at, $"Marker {ed.Document.Markers.Count(m => !m.IsRange) + 1}", "#eab308");

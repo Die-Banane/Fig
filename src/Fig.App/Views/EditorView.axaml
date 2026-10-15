@@ -450,6 +450,11 @@
                     </MenuItem.Icon>
                 </MenuItem>
                 <Separator/>
+                <MenuItem Header="Cu_t" Command="{Binding CutSelectedCommand}" InputGesture="Ctrl+X"/>
+                <MenuItem Header="_Copy" Command="{Binding CopySelectedCommand}" InputGesture="Ctrl+C"/>
+                <MenuItem Header="_Paste" Command="{Binding PasteCommand}" InputGesture="Ctrl+V"/>
+                <MenuItem Header="D_uplicate" Command="{Binding DuplicateSelectedCommand}" InputGesture="Ctrl+D"/>
+                <Separator/>
                 <MenuItem Header="S_plit at Playhead" Command="{Binding SplitAtPlayheadCommand}"
                           InputGesture="Ctrl+K">
                     <MenuItem.Icon>
@@ -1787,6 +1792,23 @@
                                         <local:StrokeIcon Icon="redo" Width="15" Height="15"/>
                                     </Button>
                                     <Rectangle Width="1" Height="17" Fill="#34373c" Margin="4,5"/>
+                                    <Button Classes="tool-btn" Command="{Binding CutSelectedCommand}"
+                                            ToolTip.Tip="Cut (Ctrl+X)" AutomationProperties.Name="Cut">
+                                        <local:StrokeIcon Icon="scissors" Width="15" Height="15"/>
+                                    </Button>
+                                    <Button Classes="tool-btn" Command="{Binding CopySelectedCommand}"
+                                            ToolTip.Tip="Copy (Ctrl+C)" AutomationProperties.Name="Copy">
+                                        <local:StrokeIcon Icon="copy" Width="15" Height="15"/>
+                                    </Button>
+                                    <Button Classes="tool-btn" Command="{Binding PasteCommand}"
+                                            ToolTip.Tip="Paste at the playhead (Ctrl+V)" AutomationProperties.Name="Paste">
+                                        <local:StrokeIcon Icon="clipboard-paste" Width="15" Height="15"/>
+                                    </Button>
+                                    <Button Classes="tool-btn" Command="{Binding DuplicateSelectedCommand}"
+                                            ToolTip.Tip="Duplicate after the selection (Ctrl+D)" AutomationProperties.Name="Duplicate">
+                                        <local:StrokeIcon Icon="copy-plus" Width="15" Height="15"/>
+                                    </Button>
+                                    <Rectangle Width="1" Height="17" Fill="#34373c" Margin="4,5"/>
                                     <Button Classes="tool-btn" Command="{Binding SplitAtPlayheadCommand}"
                                             ToolTip.Tip="Split at playhead (Ctrl+K)" AutomationProperties.Name="Split at playhead">
                                         <local:StrokeIcon Icon="split" Width="15" Height="15"/>
@@ -1837,6 +1859,27 @@
                                         AutomationProperties.Name="Zoom in">
                                     <local:StrokeIcon Icon="plus" Width="12" Height="12" HorizontalAlignment="Center"/>
                                 </Button>
+                                <Button Classes="fig compact" Content="Beats" ToolTip.Tip="Generate beat or kick markers">
+                                    <Button.Flyout>
+                                        <Flyout Placement="BottomEdgeAlignedRight">
+                                            <StackPanel Width="240" Spacing="10">
+                                                <TextBlock Text="Beat markers" FontWeight="SemiBold"/>
+                                                <TextBlock Text="Sensitivity"/>
+                                                <Slider Minimum="0" Maximum="100" Value="{Binding BeatSensitivity, Mode=TwoWay}"
+                                                        AutomationProperties.Name="Beat sensitivity"/>
+                                                <Grid ColumnDefinitions="*,*">
+                                                    <TextBlock Text="Strong hits" FontSize="11"/>
+                                                    <TextBlock Grid.Column="1" Text="More hits" FontSize="11" HorizontalAlignment="Right"/>
+                                                </Grid>
+                                                <CheckBox Content="Focus on kicks" IsChecked="{Binding BeatKicksOnly, Mode=TwoWay}"/>
+                                                <TextBlock Text="Favors sudden bass attacks. Bass notes may also be detected."
+                                                           TextWrapping="Wrap" FontSize="11"/>
+                                                <Button Content="Generate markers" Command="{Binding GenerateMarkersFromBeatsCommand}"
+                                                        HorizontalAlignment="Stretch"/>
+                                            </StackPanel>
+                                        </Flyout>
+                                    </Button.Flyout>
+                                </Button>
                                 <Button Classes="fig compact" Width="44" Content="⋯" ToolTip.Tip="More timeline actions">
                                     <Button.Flyout>
                                         <MenuFlyout Placement="BottomEdgeAlignedRight">
@@ -1844,6 +1887,8 @@
                                                       Command="{Binding ToggleClipEnabledSelectedCommand}"/>
                                             <MenuItem Header="Delete selected marker" InputGesture="Shift+Delete"
                                                       Command="{Binding DeleteSelectedMarkerCommand}"/>
+                                            <MenuItem Header="Generate Markers at beats"
+                                                      Command="{Binding GenerateMarkersFromBeatsCommand}"/>
                                         </MenuFlyout>
                                     </Button.Flyout>
                                 </Button>
