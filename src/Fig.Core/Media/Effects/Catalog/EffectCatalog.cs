@@ -47,7 +47,27 @@ namespace Fig.Core.Media
             return map;
         });
 
-        public static IReadOnlyList<EffectCatalogEntry> All => Catalog.Value;
+        // Effects that are not discovered: user graph effects. Each owner (a library) replaces its own set.
+        private sealed record UserEffect(EffectCatalogEntry Entry, IEffectProcessor Processor);
+
+        private static readonly object UserLock = new();
+        private static readonly Dictionary<object, IReadOnlyList<UserEffect>> UserSources = new(ReferenceEqualityComparer.Instance);
+        private static IReadOnlyList<UserEffect> _userEffects = Array.Empty<UserEffect>();
+        private static IReadOnlyList<EffectCatalogEntry>? _combined;
+
+        /// <summary>Built-in effects, followed by user effects (graph effects) from every registered library.</summary>
+        public static IReadOnlyList<EffectCatalogEntry> All
+        {
+            get
+            {
+                lock (UserLock)
+                {
+                    if (_userEffects.Count == 0)
+                        return Catalog.Value;
+                    return _combined ??= Catalog.Value.Concat(_userEffects.Select(u => u.Entry)).ToList();
+                }
+            }
+        }
 
         public static EffectCatalogEntry? Find(string typeId)
         {
@@ -58,7 +78,40 @@ namespace Fig.Core.Media
         }
 
         public static IEffectProcessor? Resolve(string typeId)
-            => Processors.Value.TryGetValue(typeId, out var processor) ? processor : null;
+        {
+            if (Processors.Value.TryGetValue(typeId, out var processor))
+                return processor;
+            lock (UserLock)
+            {
+                foreach (var user in _userEffects)
+                    if (user.Entry.TypeId == typeId)
+                        return user.Processor;
+            }
+            return null;
+        }
+
+        /// <summary>Publishes (or replaces) the user effects owned by <paramref name="owner"/>.</summary>
+        public static void SetUserEffects(object owner, IEnumerable<(EffectCatalogEntry Entry, IEffectProcessor Processor)> effects)
+        {
+            lock (UserLock)
+            {
+                UserSources[owner] = effects.Select(e => new UserEffect(e.Entry, e.Processor)).ToList();
+                _userEffects = UserSources.Values.SelectMany(v => v).ToList();
+                _combined = null;
+            }
+        }
+
+        public static void ClearUserEffects(object owner)
+        {
+            lock (UserLock)
+            {
+                if (UserSources.Remove(owner))
+                {
+                    _userEffects = UserSources.Values.SelectMany(v => v).ToList();
+                    _combined = null;
+                }
+            }
+        }
 
         private static IReadOnlyList<EffectEntry> Discover()
         {

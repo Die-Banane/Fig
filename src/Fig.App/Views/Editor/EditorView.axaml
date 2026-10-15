@@ -420,6 +420,7 @@
 
     </UserControl.DataTemplates>
 
+    <Grid>
     <DockPanel Margin="8" Background="{StaticResource SurfaceBg}"
                DragDrop.AllowDrop="True"
                DragDrop.DragOver="OnFileDragOver"
@@ -838,27 +839,21 @@
                             <TextBlock DockPanel.Dock="Bottom" Classes="field-label" Margin="0,10,0,0"
                                        Text="Drag onto a video track, or select a track or clip and press +." TextWrapping="Wrap"/>
                             <StackPanel DockPanel.Dock="Top" Spacing="10" Margin="0,0,0,10">
-                                <TextBox Text="{Binding EffectSearchText}" PlaceholderText="Search effects"
-                                         AutomationProperties.Name="Search effects"/>
-                                <ItemsControl ItemsSource="{Binding EffectCategories}">
-                                    <ItemsControl.ItemsPanel>
-                                        <ItemsPanelTemplate><WrapPanel Orientation="Horizontal"/></ItemsPanelTemplate>
-                                    </ItemsControl.ItemsPanel>
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate x:DataType="x:String">
-                                            <ToggleButton Classes="fig" Margin="0,0,6,6" Content="{Binding}" MinWidth="0" Padding="10,0"
-                                                          Command="{Binding $parent[UserControl].((vm:EditorViewModel)DataContext).SelectEffectCategoryCommand}"
-                                                          CommandParameter="{Binding}">
-                                                <ToggleButton.IsChecked>
-                                                    <MultiBinding Converter="{x:Static conv:StringEqualsConverter.Instance}">
-                                                        <Binding Path="."/>
-                                                        <Binding Path="$parent[UserControl].((vm:EditorViewModel)DataContext).SelectedEffectCategory"/>
-                                                    </MultiBinding>
-                                                </ToggleButton.IsChecked>
-                                            </ToggleButton>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
+                                <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
+                                    <TextBox Text="{Binding EffectSearchText}" PlaceholderText="Search effects"
+                                             AutomationProperties.Name="Search effects"/>
+                                    <Button Grid.Column="1" Classes="tool-btn" Command="{Binding NewGraphEffectCommand}"
+                                            ToolTip.Tip="Build a new effect from nodes" AutomationProperties.Name="New effect">
+                                        <local:StrokeIcon Icon="plus" Width="16" Height="16" IconBrush="{StaticResource TextSecondary}"/>
+                                    </Button>
+                                    <Button Grid.Column="2" Classes="tool-btn" Click="ImportGraphEffect_Click"
+                                            ToolTip.Tip="Import an effect file" AutomationProperties.Name="Import effect">
+                                        <local:StrokeIcon Icon="folder-open" Width="16" Height="16" IconBrush="{StaticResource TextSecondary}"/>
+                                    </Button>
+                                </Grid>
+                                <ComboBox ItemsSource="{Binding EffectCategories}"
+                                          SelectedItem="{Binding SelectedEffectCategory, Mode=TwoWay}"
+                                          HorizontalAlignment="Stretch" AutomationProperties.Name="Effect category"/>
                             </StackPanel>
                             <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
                                 <StackPanel Spacing="6">
@@ -923,6 +918,16 @@
                                                         <ContextMenu>
                                                             <MenuItem Header="Add to the selected clip"
                                                                       Command="{Binding $parent[UserControl].((vm:EditorViewModel)DataContext).ApplyEffectFromCatalogCommand}"
+                                                                      CommandParameter="{Binding}"/>
+                                                            <MenuItem Header="Edit graph…" IsVisible="{Binding IsCustom}"
+                                                                      Command="{Binding $parent[UserControl].((vm:EditorViewModel)DataContext).EditGraphEffectFromCatalogCommand}"
+                                                                      CommandParameter="{Binding}"/>
+                                                            <MenuItem Header="Duplicate" IsVisible="{Binding IsCustom}"
+                                                                      Command="{Binding $parent[UserControl].((vm:EditorViewModel)DataContext).DuplicateGraphEffectCommand}"
+                                                                      CommandParameter="{Binding}"/>
+                                                            <MenuItem Header="Export…" IsVisible="{Binding IsCustom}" Click="ExportGraphEffect_Click"/>
+                                                            <MenuItem Header="Delete" IsVisible="{Binding IsCustom}"
+                                                                      Command="{Binding $parent[UserControl].((vm:EditorViewModel)DataContext).DeleteGraphEffectCommand}"
                                                                       CommandParameter="{Binding}"/>
                                                         </ContextMenu>
                                                     </Border.ContextMenu>
@@ -1570,6 +1575,10 @@
                                                 <TextBlock Text="{Binding SelectedEffect.DisplayName}"
                                                            Foreground="{StaticResource AccentText}" FontSize="12" FontWeight="SemiBold"/>
                                                 <ItemsControl ItemsSource="{Binding EffectParams}"/>
+                                                <Button Classes="btn-ghost" Content="Edit graph…" HorizontalAlignment="Stretch"
+                                                        IsVisible="{Binding IsSelectedEffectCustom}"
+                                                        Command="{Binding EditSelectedGraphCommand}"
+                                                        ToolTip.Tip="Open this effect in the graph editor"/>
                                             </StackPanel>
                                         </Border>
 
@@ -1958,4 +1967,9 @@
             </Grid>
         </Grid>
     </DockPanel>
+
+    <!-- the effect graph editor takes over the whole editor while it is open -->
+    <local:GraphEditorView x:Name="GraphEditorHost" Classes="no-transport" DataContext="{Binding GraphEditor}"
+                           IsVisible="{Binding $parent[UserControl].((vm:EditorViewModel)DataContext).IsGraphEditorOpen}"/>
+    </Grid>
 </UserControl>

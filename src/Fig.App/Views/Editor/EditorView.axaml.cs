@@ -241,6 +241,58 @@ public partial class EditorView : UserControl
             TimelineRow.ActualHeight / height);
     }
 
+    private static readonly FilePickerFileType GraphFileType = new("Fig effect")
+    {
+        Patterns = new[] { "*.figgraph.json", "*.json" },
+    };
+
+    private async void ImportGraphEffect_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_boundVm is null || TopLevel.GetTopLevel(this) is not { } top)
+            return;
+        var files = await top.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Import effect",
+            AllowMultiple = false,
+            FileTypeFilter = new[] { GraphFileType },
+        });
+        if (files.Count == 0 || files[0].TryGetLocalPath() is not { } path)
+            return;
+        try
+        {
+            var graph = _boundVm.EffectGraphs.Import(path);
+            _boundVm.Notify?.Invoke($"Imported \"{graph.Name}\"");
+        }
+        catch (Exception ex) when (ex is System.IO.IOException or System.Text.Json.JsonException or System.IO.InvalidDataException)
+        {
+            _boundVm.Notify?.Invoke("That file is not a valid effect.");
+        }
+    }
+
+    private async void ExportGraphEffect_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_boundVm is null || (sender as Control)?.DataContext is not EffectCatalogEntry { IsCustom: true } entry
+            || TopLevel.GetTopLevel(this) is not { } top)
+            return;
+        var file = await top.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+        {
+            Title = "Export effect",
+            SuggestedFileName = entry.DisplayName + ".figgraph.json",
+            FileTypeChoices = new[] { GraphFileType },
+        });
+        if (file?.TryGetLocalPath() is not { } path)
+            return;
+        try
+        {
+            _boundVm.EffectGraphs.Export(entry.TypeId[EffectGraph.TypeIdPrefix.Length..], path);
+            _boundVm.Notify?.Invoke($"Exported \"{entry.DisplayName}\"");
+        }
+        catch (System.IO.IOException)
+        {
+            _boundVm.Notify?.Invoke("Could not write that file.");
+        }
+    }
+
     private async void BackToProjects_Click(object? sender, RoutedEventArgs e)
     {
         var window = TopLevel.GetTopLevel(this) as Window;

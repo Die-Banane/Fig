@@ -22,6 +22,9 @@ namespace Fig.Core.Project
         public List<TimelineModel> Timelines { get; set; } = new();
         public ExportSettings Export { get; set; } = new();
 
+        /// <summary>Effects the user built from nodes. Stored with the project so it opens anywhere.</summary>
+        public List<Fig.Core.Timeline.EffectGraph> EffectGraphs { get; set; } = new();
+
         /// <summary>Source-format provenance preserved across imports.</summary>
         public Dictionary<string, JsonElement> Metadata { get; set; } = new();
 

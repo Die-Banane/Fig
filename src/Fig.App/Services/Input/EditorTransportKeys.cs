@@ -53,6 +53,8 @@ internal sealed class EditorTransportKeys : IDisposable
             return;
         // Text entry (including NumericUpDown's TextBox) keeps ordinary spaces.
         if (source.GetSelfAndVisualAncestors().OfType<TextBox>().Any()) return;
+        // Full-screen tools (the effect graph editor) use Space themselves, for panning.
+        if (source.GetSelfAndVisualAncestors().OfType<Control>().Any(c => c.Classes.Contains("no-transport"))) return;
 
         e.Handled = true;
         if (_spaceDown) return; // holding Space must not oscillate play/pause

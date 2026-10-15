@@ -243,6 +243,152 @@ public sealed class UiSmokeTests : IDisposable
     }
 
     [AvaloniaFact]
+    public void GraphEditor_BuildSaveAndUseAnEffect()
+    {
+        var vm = OpenSampleEditor(out var window);
+        try
+        {
+            string? toast = null;
+            vm.Notify = message => toast = message;
+            vm.NewGraphEffectCommand.Execute(null);
+            window.UpdateLayout();
+            Assert.True(vm.IsGraphEditorOpen);
+            var editor = vm.GraphEditor!;
+            Assert.True(editor.IsValid);
+
+            // splice a blur into the starter Input → Output wire and pin its radius
+            var blur = editor.InsertOnEdge(editor.Graph.Edges.Single(), "blur")!;
+            editor.TogglePromote(blur.Id, "radius");
+            editor.Name = "Soft focus";
+            window.UpdateLayout();
+            Assert.True(editor.IsValid);
+            Assert.True(editor.IsDirty);
+            Assert.Single(editor.Exposed);
+            Shot(window, "graph-editor");
+
+            editor.SaveCommand.Execute(null);
+            Assert.False(editor.IsDirty);
+            var entry = Assert.Single(Fig.Core.Media.EffectCatalog.All, e => e.IsCustom);
+            Assert.Equal("Soft focus", entry.DisplayName);
+            Assert.Equal("radius", Assert.Single(entry.ParamSchema).Key);
+
+            // it shows up under My effects, like any other effect
+            vm.SelectedEffectCategory = "My effects";
+            Assert.Contains(vm.FilteredEffects, e => e.TypeId == entry.TypeId);
+            Assert.Equal(1, vm.Project!.EffectGraphs.Count);
+
+            // closing a saved graph does not prompt
+            editor.BackCommand.Execute(null);
+            Assert.False(vm.IsGraphEditorOpen);
+            Assert.Null(toast is null ? null : (string?)null);
+        }
+        finally
+        {
+            vm.EffectGraphs.Detach();
+            window.Close();
+            vm.DisposePlayback();
+        }
+    }
+
+    [AvaloniaFact]
+    public void GraphEditor_WiresAreMadeByDraggingBetweenPorts_AndRefusedWhenTheyCannotConnect()
+    {
+        var vm = OpenSampleEditor(out var window);
+        try
+        {
+            vm.NewGraphEffectCommand.Execute(null);
+            var editor = vm.GraphEditor!;
+            // start from nothing wired: remove the starter wire, add a blur and a noise mask
+            editor.Disconnect(editor.Graph.Edges.Single());
+            var blur = editor.AddNode("blur", 260, 40);
+            var noise = editor.AddNode("noise", 260, 220);
+            window.UpdateLayout();
+            var canvas = window.GetVisualDescendants().OfType<GraphCanvas>().First();
+            Avalonia.Point W(Avalonia.Point p) => canvas.TranslatePoint(p, window)!.Value;
+
+            void Drag(Avalonia.Point from, Avalonia.Point to)
+            {
+                window.MouseDown(from, Avalonia.Input.MouseButton.Left);
+                window.MouseMove(new Avalonia.Point((from.X + to.X) / 2, (from.Y + to.Y) / 2));
+                window.MouseMove(to);
+                window.MouseUp(to, Avalonia.Input.MouseButton.Left);
+            }
+
+            // Input.image → blur.image connects
+            Drag(W(canvas.PortPoint("input", "image", true)!.Value), W(canvas.PortPoint(blur.Id, "image", false)!.Value));
+            Assert.Contains(editor.Graph.Edges, e => e.FromNodeId == "input" && e.ToNodeId == blur.Id);
+
+            // a mask cannot go into an image input: refused, nothing changes
+            var before = editor.Graph.Edges.Count;
+            var refused = false;
+            canvas.Refused += _ => refused = true;
+            Drag(W(canvas.PortPoint(noise.Id, "mask", true)!.Value), W(canvas.PortPoint("output", "image", false)!.Value));
+            Assert.True(refused);
+            Assert.Equal(before, editor.Graph.Edges.Count);
+
+            // blur.image → output.image, then the graph is valid and nodes can be moved by dragging a header
+            Drag(W(canvas.PortPoint(blur.Id, "image", true)!.Value), W(canvas.PortPoint("output", "image", false)!.Value));
+            Assert.True(editor.IsValid);
+            var startX = blur.X;
+            var header = W(canvas.NodeHeaderPoint(blur.Id)!.Value);
+            Drag(header, new Avalonia.Point(header.X + 60, header.Y + 30));
+            Assert.True(blur.X > startX + 20);
+
+            // clicking a pin exposes the value; clicking again hides it
+            var pin = W(canvas.PinPoint(blur.Id, "radius")!.Value);
+            window.MouseDown(pin, Avalonia.Input.MouseButton.Left);
+            window.MouseUp(pin, Avalonia.Input.MouseButton.Left);
+            Assert.True(editor.IsPromoted(blur.Id, "radius"));
+            editor.UndoCommand.Execute(null);
+            Assert.False(editor.IsPromoted(blur.Id, "radius"));
+            Shot(window, "graph-editor-wired");
+        }
+        finally
+        {
+            vm.EffectGraphs.Detach();
+            window.Close();
+            vm.DisposePlayback();
+        }
+    }
+
+    [AvaloniaFact]
+    public void PlainLetterShortcuts_NeverSwallowTypingInATextBox()
+    {
+        var app = new AppViewModel(new ProjectStore(_folder), new GestureRegistry(Path.Combine(_folder, "gestures.json")));
+        var window = new MainWindow { DataContext = app };
+        var box = new TextBox();
+        var other = new Button();
+        var panel = new StackPanel { Children = { box, other } };
+        window.Content = panel;
+        window.Show();
+        try
+        {
+            var handled = new List<bool>();
+            window.AddHandler(InputElement.KeyDownEvent, (_, e) => handled.Add(e.Handled),
+                Avalonia.Interactivity.RoutingStrategies.Bubble, handledEventsToo: true);
+
+            // J, K, L and Shift+S are transport shortcuts, but typing them in a text box must leave them unhandled
+            box.Focus();
+            foreach (var (key, mods) in new[] { (Key.K, RawInputModifiers.None), (Key.L, RawInputModifiers.None),
+                                                 (Key.J, RawInputModifiers.None), (Key.S, RawInputModifiers.Shift) })
+            {
+                window.KeyPress(key, mods, Enum.Parse<PhysicalKey>(key.ToString()), key.ToString().ToLowerInvariant());
+                window.KeyRelease(key, mods, Enum.Parse<PhysicalKey>(key.ToString()), null);
+            }
+            Assert.Equal(4, handled.Count);
+            Assert.All(handled, h => Assert.False(h));
+
+            // elsewhere they still drive the transport
+            handled.Clear();
+            other.Focus();
+            window.KeyPress(Key.K, RawInputModifiers.None, PhysicalKey.K, "k");
+            Assert.Single(handled);
+            Assert.True(handled[0]);
+        }
+        finally { window.Close(); }
+    }
+
+    [AvaloniaFact]
     public void Beats_WithoutAnAudioClipSelected_ExplainsAndLeavesTheTimelineAlone()
     {
         var vm = OpenSampleEditor(out var window);

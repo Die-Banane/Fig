@@ -239,6 +239,7 @@ public partial class PropertiesViewModel : ViewModelBase
     [ObservableProperty] private bool _showEffectsSection;
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowGenericParams))]
+    [NotifyPropertyChangedFor(nameof(IsSelectedEffectCustom))]
     private EffectItemViewModel? _selectedEffect;
     public ObservableCollection<EffectItemViewModel> Effects { get; } = new();
     public ObservableCollection<ParamEditorViewModel> EffectParams { get; } = new();
@@ -248,6 +249,17 @@ public partial class PropertiesViewModel : ViewModelBase
 
     /// <summary>The generic parameter list is hidden for effects that have their own panel.</summary>
     public bool ShowGenericParams => SelectedEffect is not null && !Transform.IsActive;
+
+    /// <summary>True when the selected effect is one the user built (so it can be opened in the graph editor).</summary>
+    public bool IsSelectedEffectCustom
+        => SelectedEffect is { } effect && EffectCatalog.Find(effect.TypeId)?.IsCustom == true;
+
+    [CommunityToolkit.Mvvm.Input.RelayCommand]
+    private void EditSelectedGraph()
+    {
+        if (SelectedEffect is { } effect)
+            _editor.EditGraphEffect(effect.TypeId);
+    }
     public bool NoEffects => Effects.Count == 0;
 
     private string? _lastEffectsClipId;

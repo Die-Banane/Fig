@@ -248,20 +248,20 @@ The primary user is a solo creator (hobbyist to semi-professional) who edits sho
 | FR-154 | A pending preview SHALL be discarded, with an explanation, when the analyzed clip is deleted, retimed, or trimmed, or when the project changes. | P1 | O |
 | FR-155 | Generated markers SHALL be tagged so they can be cleared separately from manual markers. | P1 | X |
 
-### 3.14 Effect graphs (planned)
+### 3.14 Effect graphs
 | ID | Requirement | Priority | Status |
 | --- | --- | --- | --- |
-| FR-160 | A user SHALL be able to build an effect as a directed acyclic graph of primitive nodes with typed image/mask ports and typed node parameters. | P2 | - |
-| FR-161 | Primitives SHALL be self-describing classes discovered like effects, declaring their ports and parameter schemas; existing stock effects SHALL be usable as nodes. | P2 | - |
-| FR-162 | A saved graph SHALL appear in the effect catalog as a first-class effect that stacks, toggles, keyframes, and takes presets exactly like a built-in. | P2 | - |
-| FR-163 | The author SHALL promote chosen node parameters as the effect's controls, with optional range and default overrides. | P2 | - |
-| FR-164 | A graph SHALL be validated on edit and on save (port types, cycles, unconnected inputs); an invalid graph SHALL fail safe (input frame unchanged) and report errors on the offending nodes. | P2 | - |
-| FR-165 | Graph evaluation SHALL be a pure function of the input frame, parameters, and clip time (no feedback in the first version) so preview, scrubbing, and export match. | P2 | - |
+| FR-160 | A user SHALL be able to build an effect as a directed acyclic graph of primitive nodes with typed image/mask ports and typed node parameters. | P2 | X |
+| FR-161 | Primitives SHALL be self-describing classes discovered like effects, declaring their ports and parameter schemas; existing stock effects SHALL be usable as nodes. | P2 | X |
+| FR-162 | A saved graph SHALL appear in the effect catalog as a first-class effect that stacks, toggles, keyframes, and takes presets exactly like a built-in. | P2 | X |
+| FR-163 | The author SHALL promote chosen node parameters as the effect's controls, with optional range and default overrides. | P2 | X |
+| FR-164 | A graph SHALL be validated on edit and on save (port types, cycles, unconnected inputs); an invalid graph SHALL fail safe (input frame unchanged) and report errors on the offending nodes. | P2 | X |
+| FR-165 | Graph evaluation SHALL be a pure function of the input frame, parameters, and clip time (no feedback in the first version) so preview, scrubbing, and export match. | P2 | X |
 | FR-166 | A graph made only of shader-capable primitives SHALL run on the GPU as one fused shader; any other graph SHALL fall back to the CPU path. | P2 | - |
-| FR-167 | Graphs SHALL persist with a schema version and be importable/exportable as portable files. | P2 | - |
-| FR-168 | A node-graph editor SHALL support add, connect, promote, and undo with a live preview. | P2 | - |
+| FR-167 | Graphs SHALL persist with a schema version and be importable/exportable as portable files. | P2 | X |
+| FR-168 | A node-graph editor SHALL support add, connect, promote, and undo with a live preview. | P2 | O |
 
-Design: `uml/media/effects-graph-schema.puml`, `uml/media/effects-graph-pipeline.puml`.
+Design: `uml/media/effects-graph-schema.puml`, `uml/media/effects-graph-pipeline.puml`. FR-168 is partial: wiring, pinning, undo and the live preview are covered by tests; the Add menu, right-click menus and quick search have not been exercised by tests yet.
 
 ---
 
@@ -301,7 +301,7 @@ These requirements are captured for extensibility. Rows marked X have shipped an
 | FR-145 | Template library and niche starter kits ("quick start for creators"). | P2 | - |
 | FR-146 | Smart editing aids: automatic cuts on silent spans. | P2 | - |
 | FR-147 | AI transcription and subtitle generation. | P2 | - |
-| FR-160 to FR-168 | Effect graphs: user-built effects composed from primitive nodes, saved to the catalog (see §3.14). | P2 | - |
+| FR-166 | Effect graphs: fuse shader-capable graphs into one GPU shader (the rest of §3.14 has shipped). | P2 | - |
 
 ---
 

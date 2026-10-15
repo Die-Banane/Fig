@@ -5,65 +5,65 @@ skinparam sequenceMessageAlign left
 participant "EffectPipeline" as P
 participant "EffectCatalog" as C
 participant "GraphEffectProcessor" as G
-participant "GraphCompiler" as K
 participant "GraphPlan" as Plan
-participant "Primitive (CPU)" as Cpu
-participant "GpuEffects (App)" as Gpu
+participant "IGraphPrimitive" as Prim
 participant "FramePool" as Pool
 
-== Render a clip frame ==
-P -> P : ResolveParams(fx, localT)\n(keyframes; promoted params included)
+== Render a clip or track frame ==
+P -> P : ResolveParams(fx, localT)\n(keyframes; promoted controls included)
 P -> C : Resolve("graph:<id>")
 C --> P : GraphEffectProcessor
 P -> G : Apply(frame, params, localT)
 
-G -> G : plan cached for this graph revision?
-alt cache miss
-  G -> K : Compile(EffectGraph)
-  K --> G : CompileResult (plan | errors)
-  note right of K
-    topological order, port-type check,
-    cycle rejection, dangling-input check
-  end note
-end
-
-alt plan invalid
-  G --> P : input frame unchanged\n(effect shown as broken in the stack)
+alt graph did not compile
+  G --> P : input frame unchanged\n(the clip shows its original picture)
 else plan valid
-  G -> G : bind promoted params to node params
-  loop each step in topological order
-    G -> Cpu : Evaluate(inputs, nodeParams, localT)
-    Cpu -> Pool : Rent(output)
-    Cpu --> G : frame
-    G -> Pool : Return(inputs no longer needed)
+  G -> G : overrides = promoted control values\n(scaled per target) by node
+  loop each step in dependency order
+    G -> Prim : Evaluate(PrimitiveContext)\n(inputs, node params + overrides, localT)
+    Prim -> Pool : Rent(output)
+    Prim --> G : output frames by port
+    G -> Pool : Return(inputs with no readers left)
   end
-  G --> P : output frame (pooled, owned by caller)
+  note right of G
+    Reference counts per buffer handle
+    pass-through primitives. The source
+    frame is never returned from here.
+  end note
+  alt a primitive throws
+    G -> Pool : Return(everything rented)
+    G --> P : input frame unchanged
+  else
+    G --> P : output frame (pooled, owned by the caller)
+  end
 end
 
-== Preview on the GPU path ==
-P -> Gpu : SupportsGraph(plan)?
-alt plan.allShaderCapable
-  Gpu -> Gpu : fuse shader fragments into one\nSKRuntimeEffect (cached by plan.Hash)
-  Gpu --> P : drawn without a CPU readback
-else contains CPU primitive
-  Gpu --> P : fall back to CPU path above\n(whole stack, as with other CPU effects)
-end
-
-== Save as effect ==
+== Save in the editor ==
 actor User
 participant "GraphEditorViewModel" as VM
+participant "GraphCompiler" as K
 participant "GraphEffectLibrary" as Lib
 
-User -> VM : Promote params, name it, Save
-VM -> K : Compile(graph)
-K --> VM : CompileResult
+User -> VM : edit nodes, wires, pins
+VM -> K : Compile(working copy)\nafter every edit
+K --> VM : CompileResult\n(errors on nodes, unused nodes)
+VM -> VM : render preview with a\nGraphEffectProcessor
+User -> VM : Save
+VM -> Lib : Save(graph)
+Lib -> K : Compile(graph)
 alt errors
-  VM --> User : show errors on the offending nodes
-else ok
-  VM -> Lib : Save(graph)
-  Lib -> Lib : build ParamDef schema from PromotedParam[]
-  Lib -> C : publish EffectCatalogEntry (category "My effects")
-  C --> User : effect appears in the library,\nusable on clips, keyframable, presettable
+  Lib --> VM : CompileResult (not stored)
+  VM --> User : "Fix the problems before saving"
+else valid
+  Lib -> Lib : store a copy in the project's list
+  Lib -> C : SetUserEffects(owner, entries)\n(promoted controls become the ParamDefs)
+  C --> User : effect appears under "My effects",\nusable on clips, keyframable, presettable
 end
+
+note over Lib, C
+  Planned, not built: fusing graphs made of
+  shader-capable primitives into one GPU shader.
+  Graph effects currently run on the CPU path.
+end note
 
 @enduml

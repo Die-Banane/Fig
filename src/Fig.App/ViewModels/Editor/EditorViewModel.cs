@@ -285,7 +285,7 @@ public partial class EditorViewModel : ViewModelBase
         Notify?.Invoke($"Saved \"{name}\" \u2014 find it under Effects \u2192 {SelectedEffectCategory}");
     }
 
-    public IReadOnlyList<string> EffectCategories { get; } = ["All", "Motion", "Blur", "Light", "Glitch", "Retro", "Distort", "Color", "Stylize"];
+    public IReadOnlyList<string> EffectCategories { get; } = ["All", "Motion", "Blur", "Light", "Glitch", "Retro", "Distort", "Color", "Stylize", GraphEffectLibrary.Category];
     public IReadOnlyList<string> TransitionCategories { get; } = ["All", "Basic", "Camera", "Blur", "Light", "Glitch", "Wipe"];
     [ObservableProperty] private string _selectedTransitionCategory = "All";
     public ObservableCollection<EffectCatalogEntry> FilteredEffects { get; } = new();
@@ -393,6 +393,7 @@ public partial class EditorViewModel : ViewModelBase
         Properties = new PropertiesViewModel(this);
         Markers = new MarkersPanelViewModel(this);
         Beats = new BeatMarkersViewModel(this);
+        EffectGraphs.Changed += OnEffectGraphsChanged;
         Media.CollectionChanged += (_, _) =>
         {
             _mediaById.Clear();
@@ -752,6 +753,105 @@ public partial class EditorViewModel : ViewModelBase
             : $"Added {entry.DisplayName}");
     }
 
+    // ---- effect graphs ---------------------------------------------------------------------
+
+    /// <summary>The effects the user built from nodes in this project.</summary>
+    public GraphEffectLibrary EffectGraphs { get; } = new();
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsGraphEditorOpen))]
+    private GraphEditorViewModel? _graphEditor;
+
+    public bool IsGraphEditorOpen => GraphEditor is not null;
+
+    /// <summary>Starts a new effect: an Input wired straight to an Output, ready to build on.</summary>
+    [RelayCommand]
+    private void NewGraphEffect()
+    {
+        var graph = new EffectGraph { Name = UniqueGraphName("New effect") };
+        var input = new GraphNode { Id = "input", PrimitiveId = PrimitiveCatalog.Input, X = 40, Y = 120 };
+        var output = new GraphNode { Id = "output", PrimitiveId = PrimitiveCatalog.Output, X = 520, Y = 120 };
+        graph.Nodes.Add(input);
+        graph.Nodes.Add(output);
+        graph.Edges.Add(new GraphEdge { FromNodeId = "input", FromPort = "image", ToNodeId = "output", ToPort = "image" });
+        OpenGraphEditor(graph);
+    }
+
+    /// <summary>Opens a saved graph effect (by its catalog type id) in the graph editor.</summary>
+    public void EditGraphEffect(string typeId)
+    {
+        var saved = EffectGraphs.Graphs.FirstOrDefault(g => g.TypeId == typeId);
+        if (saved is null)
+        {
+            Notify?.Invoke("That effect is not part of this project.");
+            return;
+        }
+        OpenGraphEditor(saved.Clone());
+    }
+
+    [RelayCommand]
+    private void EditGraphEffectFromCatalog(EffectCatalogEntry? entry)
+    {
+        if (entry is { IsCustom: true })
+            EditGraphEffect(entry.TypeId);
+    }
+
+    [RelayCommand]
+    private void DuplicateGraphEffect(EffectCatalogEntry? entry)
+    {
+        if (entry is not { IsCustom: true })
+            return;
+        var id = entry.TypeId[EffectGraph.TypeIdPrefix.Length..];
+        if (EffectGraphs.Duplicate(id) is { } copy)
+            Notify?.Invoke($"Created \"{copy.Name}\"");
+    }
+
+    [RelayCommand]
+    private void DeleteGraphEffect(EffectCatalogEntry? entry)
+    {
+        if (entry is not { IsCustom: true })
+            return;
+        var id = entry.TypeId[EffectGraph.TypeIdPrefix.Length..];
+        var uses = Editor.Document.Tracks.Sum(t => t.Effects.Count(e => e.TypeId == entry.TypeId))
+                   + Editor.Document.Tracks.SelectMany(t => t.Clips).Sum(c => c.Effects.Count(e => e.TypeId == entry.TypeId));
+        EffectGraphs.Delete(id);
+        Preview.RefreshFrame();
+        Notify?.Invoke(uses > 0
+            ? $"Deleted \"{entry.DisplayName}\". {uses} use{(uses == 1 ? "" : "s")} on the timeline will show the original picture."
+            : $"Deleted \"{entry.DisplayName}\"");
+    }
+
+    private void OpenGraphEditor(EffectGraph graph)
+    {
+        var editor = new GraphEditorViewModel(EffectGraphs, graph, message => Notify?.Invoke(message));
+        editor.CloseRequested += () =>
+        {
+            GraphEditor = null;
+            Preview.RefreshFrame();
+            Properties.Refresh();
+        };
+        GraphEditor = editor;
+    }
+
+    private string UniqueGraphName(string baseName)
+    {
+        var name = baseName;
+        for (var i = 2; EffectGraphs.Graphs.Any(g => g.Name == name); i++)
+            name = $"{baseName} {i}";
+        return name;
+    }
+
+    /// <summary>Called whenever the library changes: refresh the catalog lists, the preview and the autosave.</summary>
+    private void OnEffectGraphsChanged()
+    {
+        OnPropertyChanged(nameof(EffectCatalogItems));
+        RefreshEffectFilter();
+        Properties?.Refresh();
+        Preview?.RefreshFrame();
+        IsDirty = true;
+        ScheduleAutosave();
+    }
+
     [RelayCommand]
     private void ApplyTransitionFromCatalog(TransitionCatalogEntry? entry)
     {
@@ -827,6 +927,8 @@ public partial class EditorViewModel : ViewModelBase
         EffectMigration.Migrate(project);
         EffectMigration.MoveClipEffectsToTracks(project);
         Project = project;
+        GraphEditor = null;
+        EffectGraphs.Attach(project.EffectGraphs);
         ProjectManager = new ProjectManager(project, new MediaService(), store.CacheDirectory(project.Id));
 
         Media.Clear();
