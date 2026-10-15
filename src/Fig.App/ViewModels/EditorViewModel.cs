@@ -542,7 +542,7 @@ public partial class EditorViewModel : ViewModelBase
         }
         Properties.Refresh();
         UpdateSelectionSummary();
-        Markers.Refresh();
+        Markers.RefreshSelection();
     }
 
     private void UpdateSelectionSummary()
@@ -1322,6 +1322,14 @@ public partial class EditorViewModel : ViewModelBase
     /// <summary>Deletes a marker by id.</summary>
     public void DeleteMarker(string markerId) => Editor.DeleteMarker(markerId);
 
+    public void DeleteMarkerSelectionOrOne(string markerId)
+    {
+        if (Editor.Selection.IsMarkerSelected(markerId))
+            DeleteSelectedMarker();
+        else
+            DeleteMarker(markerId);
+    }
+
     /// <summary>Opens the inspector on the marker so it can be renamed, recolored or retimed.</summary>
     public void EditMarker(string markerId)
     {
@@ -1462,12 +1470,12 @@ public partial class EditorViewModel : ViewModelBase
     [RelayCommand]
     private void DeleteSelectedMarker()
     {
-        if (Editor.Selection.SelectedMarkerId is not { } id)
+        int count = Editor.DeleteMarkers(Editor.Selection.SelectedMarkerIds);
+        if (count == 0)
             return;
-        Editor.DeleteMarker(id);
         Properties.Refresh();
         Preview.RefreshFrame();
-        Notify?.Invoke("Deleted marker");
+        Notify?.Invoke($"Deleted {count} marker{(count == 1 ? "" : "s")}");
     }
 
     [RelayCommand]

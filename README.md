@@ -1,6 +1,6 @@
 # The Fig Project
 
-Fig is an open-source non-linear video editor built with C# and Avalonia. It is designed around a single idea: professional editing should not be locked behind paywalls or painfully slow exports.
+Fig is an open-source non-linear video editor built with C# and Avalonia. It is designed around the single goal of simple basic video editing, much like capcut. Fig isn't trying to be Premiere or Davinci, but rather a simple tool for editing clips, be it long or short, and without hassle.
 
 ![assets/preview.png](assets/preview2.png)
 

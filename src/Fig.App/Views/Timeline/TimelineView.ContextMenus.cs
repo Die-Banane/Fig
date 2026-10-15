@@ -39,7 +39,8 @@ namespace Fig.App.Views
 
             if (HitTestMarker(pos) is { } marker && _editorVm is not null)
             {
-                Editor.Selection.SelectMarker(marker.Marker.Id);
+                if (!Editor.Selection.IsMarkerSelected(marker.Marker.Id))
+                    Editor.Selection.SelectMarker(marker.Marker.Id);
                 BuildMarkerMenu(menu, marker);
             }
             else if (HitTestTransition(pos) is { } transition)
@@ -125,6 +126,14 @@ namespace Fig.App.Views
                 InvalidateVisual();
             }));
             menu.Items.Add(Item("Show properties", () => vm.Layout.RevealRight()));
+            if (clip.Markers.Count > 0)
+            {
+                menu.Items.Add(new Separator());
+                menu.Items.Add(Item("Select all markers on this clip", () => ed.Selection.SelectMarkers(clip.Markers.Select(m => m.Id))));
+                menu.Items.Add(Item("Clear generated beats on this clip", () => ed.ClearClipMarkers(clip, true),
+                    clip.Markers.Any(m => m.Metadata?.ContainsKey("fig.beatAnalysis") == true), danger: true));
+                menu.Items.Add(Item("Clear all markers on this clip", () => ed.ClearClipMarkers(clip), danger: true));
+            }
         }
 
         // ---- tracks ----------------------------------------------------------------------
@@ -244,7 +253,15 @@ namespace Fig.App.Views
                 menu.Items.Add(Item("Use as range end", () => vm.UseMarkerAsRangeEnd(id)));
             }
             menu.Items.Add(new Separator());
-            menu.Items.Add(Item("Delete marker", () => vm.DeleteSelectedMarkerCommand.Execute(null), danger: true));
+            menu.Items.Add(Item($"Delete selected markers ({Editor!.Selection.SelectedMarkerIds.Count})",
+                () => vm.DeleteSelectedMarkerCommand.Execute(null), danger: true));
+            if (marker.Clip is { } clip)
+            {
+                menu.Items.Add(Item("Select all markers on this clip", () => Editor.Selection.SelectMarkers(clip.Markers.Select(m => m.Id))));
+                menu.Items.Add(Item("Clear generated beats on this clip", () => Editor.ClearClipMarkers(clip, true),
+                    clip.Markers.Any(m => m.Metadata?.ContainsKey("fig.beatAnalysis") == true), danger: true));
+                menu.Items.Add(Item("Clear all markers on this clip", () => Editor.ClearClipMarkers(clip), danger: true));
+            }
         }
     }
 }

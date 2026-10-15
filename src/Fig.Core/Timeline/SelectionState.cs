@@ -9,6 +9,10 @@ namespace Fig.Core.Timeline
         private readonly HashSet<string> _ids = new();
         private string? _activeTrackId;
         private string? _markerId;
+        private readonly HashSet<string> _markerIds = new();
+        private string? _markerAnchorId;
+        public IReadOnlyList<string> SelectedMarkerIds => _markerIds.ToList();
+        public bool IsMarkerSelected(string id) => _markerIds.Contains(id);
         private string? _transitionKey;
 
         public IReadOnlyList<string> SelectedClipIds => _ids.ToList();
@@ -22,10 +26,10 @@ namespace Fig.Core.Timeline
             get => _markerId;
             set
             {
-                if (_markerId == value)
-                    return;
-                _markerId = value;
-                Changed?.Invoke();
+                if (value is null)
+                    SelectMarkers(Array.Empty<string>());
+                else
+                    SelectMarker(value);
             }
         }
 
@@ -56,6 +60,8 @@ namespace Fig.Core.Timeline
                 if (value is not null)
                 {
                     _markerId = null;
+            _markerIds.Clear();
+            _markerAnchorId = null;
                     _transitionKey = null;
                 }
                 Changed?.Invoke();
@@ -74,6 +80,8 @@ namespace Fig.Core.Timeline
             if (!_ids.Add(clipId))
                 return;
             _markerId = null;
+            _markerIds.Clear();
+            _markerAnchorId = null;
             _transitionKey = null;
             Changed?.Invoke();
         }
@@ -93,6 +101,8 @@ namespace Fig.Core.Timeline
             _ids.Add(clipId);
             _activeTrackId = null;
             _markerId = null;
+            _markerIds.Clear();
+            _markerAnchorId = null;
             _transitionKey = null;
             Changed?.Invoke();
         }
@@ -112,20 +122,51 @@ namespace Fig.Core.Timeline
                 _ids.Add(id);
             _activeTrackId = null;
             _markerId = null;
+            _markerIds.Clear();
+            _markerAnchorId = null;
             _transitionKey = null;
             Changed?.Invoke();
         }
 
-        /// <summary>Selects a marker, clearing any clip/track/transition selection.</summary>
-        public void SelectMarker(string markerId)
+        /// <summary>Selects one marker, clearing clip/track/transition selection.</summary>
+        public void SelectMarker(string markerId) => SelectMarkers(new[] { markerId }, markerId);
+
+        public void SelectMarkers(IEnumerable<string> markerIds, string? anchorId = null)
         {
-            if (_markerId == markerId && _ids.Count == 0 && _activeTrackId is null && _transitionKey is null)
+            var next = new HashSet<string>(markerIds.Where(id => !string.IsNullOrEmpty(id)));
+            _markerAnchorId = anchorId ?? (next.Contains(_markerAnchorId ?? "") ? _markerAnchorId : next.FirstOrDefault());
+            if (next.SetEquals(_markerIds) && _ids.Count == 0 && _activeTrackId is null && _transitionKey is null)
                 return;
-            _markerId = markerId;
+            _markerIds.Clear();
+            foreach (var id in next)
+                _markerIds.Add(id);
+            _markerId = next.LastOrDefault();
             _ids.Clear();
             _activeTrackId = null;
             _transitionKey = null;
             Changed?.Invoke();
+        }
+
+        public void ToggleMarker(string markerId)
+        {
+            var next = new HashSet<string>(_markerIds);
+            if (!next.Add(markerId))
+                next.Remove(markerId);
+            SelectMarkers(next);
+        }
+
+        public void SelectMarkerRange(string markerId, IReadOnlyList<string> orderedIds, bool additive = false)
+        {
+            var ids = orderedIds.ToList();
+            int end = ids.IndexOf(markerId);
+            int start = ids.IndexOf(_markerAnchorId ?? "");
+            if (start < 0 || end < 0)
+            {
+                SelectMarker(markerId);
+                return;
+            }
+            var range = ids.Skip(Math.Min(start, end)).Take(Math.Abs(end - start) + 1);
+            SelectMarkers(additive ? _markerIds.Concat(range).ToArray() : range, _markerAnchorId);
         }
 
         /// <summary>Selects a cut transition, clearing any clip/track/marker selection.</summary>
@@ -137,6 +178,8 @@ namespace Fig.Core.Timeline
             _ids.Clear();
             _activeTrackId = null;
             _markerId = null;
+            _markerIds.Clear();
+            _markerAnchorId = null;
             Changed?.Invoke();
         }
 
@@ -147,6 +190,8 @@ namespace Fig.Core.Timeline
             _ids.Clear();
             _activeTrackId = null;
             _markerId = null;
+            _markerIds.Clear();
+            _markerAnchorId = null;
             _transitionKey = null;
             Changed?.Invoke();
         }

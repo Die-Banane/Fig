@@ -381,7 +381,7 @@ namespace Fig.App.Views
 
         private static readonly Pen FilmstripSeamPen = new(new SolidColorBrush(Color.FromArgb(70, 0, 0, 0)), 1);
 
-        private bool IsMarkerHot(Marker m) => Editor?.Selection.SelectedMarkerId == m.Id || _hoverMarkerId == m.Id;
+        private bool IsMarkerHot(Marker m) => Editor?.Selection.IsMarkerSelected(m.Id) == true || _hoverMarkerId == m.Id;
 
         /// <summary>Returns the clip keyframe diamond under the pointer, or null.</summary>
         private (Clip Clip, double TimeSec)? HitTestKeyframe(Point pos)
@@ -537,7 +537,15 @@ namespace Fig.App.Views
             {
                 if (e.ClickCount >= 2)
                     SetPlayhead(Editor.SnapTime(Math.Max(0, AbsoluteMarkerTime(markerHit))));
-                Editor.Selection.SelectMarker(markerHit.Marker.Id);
+                bool toggleMarker = e.KeyModifiers.HasFlag(KeyModifiers.Control) || e.KeyModifiers.HasFlag(KeyModifiers.Meta);
+                bool extendMarkers = e.KeyModifiers.HasFlag(KeyModifiers.Shift);
+                Editor.SelectMarker(markerHit.Marker.Id, toggleMarker, extendMarkers);
+                if (toggleMarker || extendMarkers)
+                {
+                    InvalidateVisual();
+                    e.Handled = true;
+                    return;
+                }
                 _dragMarkerId = markerHit.Marker.Id;
                 _dragMarkerStartSec = AbsoluteMarkerTime(markerHit);
                 _dragRangeGrab = HitTestRangeGrab(markerHit.Marker, pos);
@@ -1201,7 +1209,11 @@ namespace Fig.App.Views
 
             if (e.Key == Key.A && e.KeyModifiers == KeyModifiers.Control)
             {
-                SelectAllClips();
+                if (Editor.Selection.SelectedMarkerIds.Count > 0)
+                    Editor.Selection.SelectMarkers(Editor.AllMarkers().Select(marker => marker.Marker.Id));
+                else
+                    SelectAllClips();
+                InvalidateVisual();
                 e.Handled = true;
                 return;
             }

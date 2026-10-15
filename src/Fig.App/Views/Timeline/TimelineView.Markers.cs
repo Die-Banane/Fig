@@ -67,7 +67,7 @@ namespace Fig.App.Views
 
                 var mx = clipX + marker.StartSec * px;
                 var brush = MarkerBrush(marker.Color);
-                var selected = Editor?.Selection.SelectedMarkerId == marker.Id;
+                var selected = Editor?.Selection.IsMarkerSelected(marker.Id) == true;
                 var hot = IsMarkerHot(marker);
 
                 context.DrawLine(new Pen(brush, selected ? 3 : 2), new Point(mx, clipTop + 8), new Point(mx, bodyBottom));
@@ -125,7 +125,7 @@ namespace Fig.App.Views
             using var _ = context.PushClip(new Rect(TrackHeaderWidth, 0, Math.Max(0, Bounds.Width - TrackHeaderWidth), MarkerLaneHeight + 2));
             foreach (var m in Editor.Document.Markers)
             {
-                var selected = Editor.Selection.SelectedMarkerId == m.Id;
+                var selected = Editor.Selection.IsMarkerSelected(m.Id);
                 if (m.IsRange)
                 {
                     var (left, right) = RangeSpan(m);
@@ -186,7 +186,7 @@ namespace Fig.App.Views
                 var mx = TrackHeaderWidth + Viewport.TimeToX(m.StartSec);
                 if (mx < TrackHeaderWidth || mx > Bounds.Width)
                     continue;
-                var selected = Editor.Selection.SelectedMarkerId == m.Id;
+                var selected = Editor.Selection.IsMarkerSelected(m.Id);
                 context.DrawLine(new Pen(MarkerBrush(m.Color), selected ? 2 : 1), new Point(mx, MarkerLaneHeight), new Point(mx, Bounds.Height));
             }
         }
@@ -204,7 +204,7 @@ namespace Fig.App.Views
                     continue;
 
                 var cy = top + height - 8;
-                var selected = Editor?.Selection.SelectedMarkerId == m.Id;
+                var selected = Editor?.Selection.IsMarkerSelected(m.Id) == true;
                 var diamond = new StreamGeometry();
                 using (var gc = diamond.Open())
                 {

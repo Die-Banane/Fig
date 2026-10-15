@@ -50,9 +50,29 @@ public sealed partial class MarkersPanelViewModel : ViewModelBase
     public bool HasAnyMarkers => HasSequenceMarkers || HasClipMarkers;
     public bool NoMarkers => !HasAnyMarkers;
     public bool HasRanges => _host.Editor.Document.Markers.Any(m => m.IsRange);
+    public int SelectedCount => _host.Editor.Selection.SelectedMarkerIds.Count;
+    public string SelectionSummary => $"{SelectedCount} selected";
+    public bool HasSelection => SelectedCount > 0;
     public int RangeCount => _host.Editor.Document.Markers.Count(m => m.IsRange);
 
     public MarkersPanelViewModel(EditorViewModel host) => _host = host;
+
+    public string[] VisibleMarkerIds => SequenceMarkers.Concat(ClipMarkers).Select(row => row.Id).ToArray();
+
+    public void RefreshSelection()
+    {
+        foreach (var row in SequenceMarkers.Concat(ClipMarkers))
+            row.IsSelected = _host.Editor.Selection.IsMarkerSelected(row.Id);
+        OnPropertyChanged(nameof(SelectedCount));
+        OnPropertyChanged(nameof(SelectionSummary));
+        OnPropertyChanged(nameof(HasSelection));
+    }
+
+    [RelayCommand]
+    private void SelectAll() => _host.Editor.Selection.SelectMarkers(VisibleMarkerIds);
+
+    [RelayCommand]
+    private void DeleteSelected() => _host.DeleteSelectedMarkerCommand.Execute(null);
 
     partial void OnSearchTextChanged(string value) => Refresh();
 
@@ -96,10 +116,11 @@ public sealed partial class MarkersPanelViewModel : ViewModelBase
         OnPropertyChanged(nameof(NoMarkers));
         OnPropertyChanged(nameof(HasRanges));
         OnPropertyChanged(nameof(RangeCount));
+        RefreshSelection();
     }
 
     private MarkerRowViewModel Row(Marker m, string subtitle, string? selectedId)
-        => new(m.Id, string.IsNullOrWhiteSpace(m.Name) ? (m.IsRange ? "Range" : "Marker") : m.Name, m.Color, subtitle, _host.SelectMarker, _host.EditMarker, _host.DeleteMarker)
+        => new(m.Id, string.IsNullOrWhiteSpace(m.Name) ? (m.IsRange ? "Range" : "Marker") : m.Name, m.Color, subtitle, _host.SelectMarker, _host.EditMarker, _host.DeleteMarkerSelectionOrOne)
         {
             IsSelected = m.Id == selectedId,
         };

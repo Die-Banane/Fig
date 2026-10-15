@@ -75,6 +75,9 @@ namespace Fig.Core.Timeline
         private readonly string _markerId;
         private MarkerLocation? _location;
         private Marker? _marker;
+        private int _index;
+
+        private List<Marker> Owner => _location!.Clip?.Markers ?? _location.Track?.Markers ?? _location.Timeline.Markers;
 
         public string Description => "Delete marker";
 
@@ -90,13 +93,14 @@ namespace Fig.Core.Timeline
             if (_location is null)
                 return;
             _marker = _location.Marker;
+            _index = Owner.IndexOf(_marker);
             _location.Remove();
         }
 
         public void Undo()
         {
             if (_location is not null && _marker is not null)
-                _location.Add();
+                Owner.Insert(Math.Min(_index, Owner.Count), _marker);
         }
 
         public void Redo()

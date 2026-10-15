@@ -1499,6 +1499,37 @@ namespace Fig.Core.Timeline
 
         // ---- markers ----
 
+        public IEnumerable<MarkerLocation> AllMarkers()
+        {
+            foreach (var marker in Document.Markers)
+                yield return new MarkerLocation(marker, null, null, Document);
+            foreach (var track in Document.Tracks)
+            {
+                foreach (var marker in track.Markers)
+                    yield return new MarkerLocation(marker, null, track, Document);
+                foreach (var clip in track.Clips)
+                    foreach (var marker in clip.Markers)
+                        yield return new MarkerLocation(marker, clip, track, Document);
+            }
+        }
+
+        public void SelectMarker(string id, bool toggle = false, bool extend = false, IReadOnlyCollection<string>? visibleIds = null)
+        {
+            if (FindMarker(id) is null)
+                return;
+            if (extend)
+            {
+                var ordered = AllMarkers().Where(m => visibleIds is null || visibleIds.Contains(m.Marker.Id))
+                    .OrderBy(m => (m.Clip?.StartSec ?? 0) + m.Marker.StartSec)
+                    .ThenBy(m => m.Marker.Id).Select(m => m.Marker.Id).ToArray();
+                Selection.SelectMarkerRange(id, ordered, toggle);
+            }
+            else if (toggle)
+                Selection.ToggleMarker(id);
+            else
+                Selection.SelectMarker(id);
+        }
+
         /// <summary>Resolves where a marker lives. Returns null when it no longer exists.</summary>
         public MarkerLocation? FindMarker(string markerId)
         {
@@ -1560,12 +1591,25 @@ namespace Fig.Core.Timeline
 
         public void DeleteMarker(string markerId)
         {
-            if (FindMarker(markerId) is null)
-                return;
-            History.Execute(new DeleteMarkerCommand(this, markerId));
-            if (Selection.SelectedMarkerId == markerId)
-                Selection.SelectedMarkerId = null;
+            DeleteMarkers(new[] { markerId });
+        }
+
+        public int DeleteMarkers(IEnumerable<string> markerIds)
+        {
+            var ids = markerIds.Distinct().Where(id => FindMarker(id) is not null).ToArray();
+            if (ids.Length == 0)
+                return 0;
+            History.Execute(new CompositeCommand(ids.Select(id => (IEditCommand)new DeleteMarkerCommand(this, id)).ToArray()));
+            if (Selection.SelectedMarkerIds.Any(ids.Contains))
+                Selection.SelectMarkers(Selection.SelectedMarkerIds.Except(ids).ToArray());
             RaiseChanged();
+            return ids.Length;
+        }
+
+        public int ClearClipMarkers(Clip clip, bool generatedOnly = false)
+        {
+            return DeleteMarkers(clip.Markers.Where(marker => !generatedOnly
+                || marker.Metadata?.ContainsKey("fig.beatAnalysis") == true).Select(marker => marker.Id).ToArray());
         }
 
         /// <summary>Adds a range marker to the timeline (one undo step).</summary>
