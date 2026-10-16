@@ -60,6 +60,7 @@ tests/
 - `Fig.Core` has no UI dependency. Everything about how the timeline behaves, how media is decoded, and how audio is mixed lives here and is covered by unit tests.
 - The playback engine treats the audio device as the authoritative clock. The video preview and timeline playhead follow it, which is what keeps audio and picture in sync.
 - Media artifacts (thumbnails, filmstrips, waveforms) are generated once, cached on disk per project, and repaired automatically when a project is opened.
+- UML is enforced so heavily because it's the only way to understand how the codebase works without having to scour through several thousand lines of code.
 
 ## Goals
 
