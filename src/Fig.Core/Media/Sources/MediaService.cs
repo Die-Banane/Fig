@@ -57,6 +57,14 @@ namespace Fig.Core.Media
                         probe.HasAudio = false;
                         return probe;
                     }
+                    if (IsAnimatedImage(inCtx))
+                    {
+                        // a GIF is a picture with transparency that loops, not a video: an image clip that keeps
+                        // playing its frames for as long as it lasts. Its length is one loop.
+                        probe.Kind = MediaKind.Image;
+                        probe.HasAudio = false;
+                        return probe;
+                    }
                     probe.HasAudio = HasAudioStream(inCtx);
                     if (fpsNum > 0 && fpsDen > 0)
                         probe.SourceRate = new Fig.Core.Timeline.FrameRate(fpsNum, fpsDen);
@@ -91,7 +99,8 @@ namespace Fig.Core.Media
 
         /// <summary>
         /// A single picture rather than a video: FFmpeg opens stills with its image demuxers ("image2",
-        /// "png_pipe", ...), which report one frame. Animated formats (GIF) stay video.
+        /// "png_pipe", ...), which report one frame. (An animated WebP opens as a still here too; the layer
+        /// rasterizer still plays its frames.)
         /// </summary>
         private static unsafe bool IsStillImage(string path, AVFormatContext* ctx)
         {
@@ -99,6 +108,11 @@ namespace Fig.Core.Media
             return format == "image2" || format.EndsWith("_pipe", StringComparison.Ordinal)
                    || StillExtensions.Contains(Path.GetExtension(path));
         }
+
+        /// <summary>An animated GIF (FFmpeg's "gif" demuxer): a looping picture with transparency.</summary>
+        private static unsafe bool IsAnimatedImage(AVFormatContext* ctx)
+            => ctx->iformat is not null
+               && System.Runtime.InteropServices.Marshal.PtrToStringAnsi((IntPtr)ctx->iformat->name) == "gif";
 
         private static unsafe bool HasAudioStream(AVFormatContext* ctx)
         {

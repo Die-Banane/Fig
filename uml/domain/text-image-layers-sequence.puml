@@ -34,6 +34,7 @@ Scene -> Scene : for each clip active at t on a video track
 alt ILayerClip (text, image)
   Scene -> ILayerRasterizer : Rasterize(clip, w, h, t)
   ILayerRasterizer --> Scene : premultiplied BGRA frame (cached)
+  note right: an animated image picks its frame\nfor t, looping (LayerImage.FrameAt)
 else VideoClip
   Scene -> Scene : decode the frame
 end

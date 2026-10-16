@@ -9,7 +9,7 @@ using SkiaSharp;
 namespace Fig.App.Rendering;
 
 /// <summary>
-/// Draws text and still-image clips with Skia into transparent, frame-sized, premultiplied BGRA pictures.
+/// Draws text and image clips (stills, and animated GIFs and WebPs, which loop) with Skia into transparent, frame-sized, premultiplied BGRA pictures.
 /// Pictures are cached by what they show (text and style, or file, plus layout and size), so a layer that
 /// isn't changing is drawn once, not every frame. Safe to call from the preview and export threads at once.
 /// </summary>
@@ -22,7 +22,7 @@ public sealed class SkiaLayerRasterizer : ILayerRasterizer
     private readonly object _gate = new();
     private readonly Dictionary<object, DecodedFrame> _pictures = new();
     private readonly LinkedList<object> _pictureOrder = new();
-    private readonly Dictionary<string, SKImage?> _images = new();
+    private readonly Dictionary<string, LayerImage?> _images = new();
     private readonly LinkedList<string> _imageOrder = new();
     private readonly Dictionary<object, LayerSize?> _sizes = new();
 
@@ -36,7 +36,9 @@ public sealed class SkiaLayerRasterizer : ILayerRasterizer
         object? key = clip switch
         {
             TextClip text => (text.Text, text.Style, text.Layout, width, height),
-            ImageClip image when _findMedia(image.SourceId) is { Url: { Length: > 0 } url } => (url, image.Layout, width, height),
+            // an animation's picture changes with time: which frame is part of what is shown
+            ImageClip image when _findMedia(image.SourceId) is { Url: { Length: > 0 } url } && LoadImage(url) is { } source
+                => (url, image.Layout, width, height, source.FrameAt(localT)),
             _ => null,
         };
         if (key is null)
@@ -52,7 +54,7 @@ public sealed class SkiaLayerRasterizer : ILayerRasterizer
         {
             TextClip text => Draw(width, height, canvas => DrawText(canvas, text, width, height)),
             ImageClip image => LoadImage(_findMedia(image.SourceId)!.Url) is { } source
-                ? Draw(width, height, canvas => DrawImage(canvas, source, image.Layout, width, height))
+                ? Draw(width, height, canvas => DrawImage(canvas, source[source.FrameAt(localT)], image.Layout, width, height))
                 : null,
             _ => null,
         };
@@ -94,8 +96,8 @@ public sealed class SkiaLayerRasterizer : ILayerRasterizer
 
         var (w, h) = clip switch
         {
-            TextClip text => string.IsNullOrEmpty(text.Text) ? (0f, 0f) : TextBlock.Of(text.Style, text.Text, height).Bounds,
-            ImageClip image => LoadImage(_findMedia(image.SourceId)!.Url) is { } source ? Fit(source, width, height) : (0f, 0f),
+            TextClip text => string.IsNullOrEmpty(text.Text) ? (0f, 0f) : MeasureText(text, height),
+            ImageClip image => LoadImage(_findMedia(image.SourceId)!.Url) is { } source ? Fit(source[0], width, height) : (0f, 0f),
             _ => (0f, 0f),
         };
         LayerSize? size = w > 0 && h > 0 ? new LayerSize(w / (double)height, h / (double)height) : null;
@@ -108,54 +110,10 @@ public sealed class SkiaLayerRasterizer : ILayerRasterizer
         return size;
     }
 
-    /// <summary>A title laid out: its font, lines and block size (the box drawn behind it included).</summary>
-    private sealed class TextBlock : IDisposable
+    private static (float Width, float Height) MeasureText(TextClip text, int height)
     {
-        public required SKTypeface Typeface { get; init; }
-        public required SKFont Font { get; init; }
-        public required SKFontMetrics Metrics { get; init; }
-        public required string[] Lines { get; init; }
-        public required float[] Widths { get; init; }
-        public required float Size { get; init; }
-        public float LineHeight => Metrics.Descent - Metrics.Ascent + Metrics.Leading;
-        public float BlockWidth => Widths.Length == 0 ? 0 : Widths.Max();
-        public float BlockHeight => LineHeight * Lines.Length;
-        public float Pad => Size * 0.3f;
-        public bool Background { get; init; }
-
-        /// <summary>What the gizmo's box goes round: the text, or the box behind it when there is one.</summary>
-        public (float Width, float Height) Bounds => Background
-            ? (BlockWidth + Pad * 2, BlockHeight + Pad * 1.2f)
-            : (BlockWidth, BlockHeight);
-
-        public static TextBlock Of(TextStyle style, string text, int height)
-        {
-            var typeface = SKTypeface.FromFamilyName(style.FontFamily,
-                               style.Bold ? SKFontStyleWeight.Bold : SKFontStyleWeight.Normal,
-                               SKFontStyleWidth.Normal,
-                               style.Italic ? SKFontStyleSlant.Italic : SKFontStyleSlant.Upright)
-                           ?? SKTypeface.Default;
-            var size = (float)Math.Max(1, style.SizePercent / 100 * height);
-            var font = new SKFont(typeface, size);
-            font.GetFontMetrics(out var metrics);
-            var lines = text.Replace("\r\n", "\n").Split('\n');
-            return new TextBlock
-            {
-                Typeface = typeface,
-                Font = font,
-                Metrics = metrics,
-                Lines = lines,
-                Widths = Array.ConvertAll(lines, line => font.MeasureText(line)),
-                Size = size,
-                Background = style.Background,
-            };
-        }
-
-        public void Dispose()
-        {
-            Font.Dispose();
-            Typeface.Dispose();
-        }
+        using var layout = TextLayout.Of(text.Style, text.Text, height);
+        return layout.Bounds;
     }
 
     /// <summary>A picture's size fitted inside the frame (letterboxed).</summary>
@@ -191,7 +149,7 @@ public sealed class SkiaLayerRasterizer : ILayerRasterizer
         if (string.IsNullOrEmpty(clip.Text))
             return;
         var style = clip.Style;
-        using var block = TextBlock.Of(style, clip.Text, height);
+        using var block = TextLayout.Of(style, clip.Text, height);
         var (blockWidth, blockHeight, size) = (block.BlockWidth, block.BlockHeight, block.Size);
 
         canvas.Save();
@@ -209,16 +167,17 @@ public sealed class SkiaLayerRasterizer : ILayerRasterizer
         if (style.Shadow)
             paint.ImageFilter = SKImageFilter.CreateDropShadow(0, size * 0.04f, size * 0.06f, size * 0.06f, new SKColor(0, 0, 0, 170));
 
-        for (var i = 0; i < block.Lines.Length; i++)
+        for (var i = 0; i < block.Lines.Count; i++)
         {
+            var line = block.Lines[i];
             var x = style.Align switch
             {
                 TextAlign.Left => -blockWidth / 2,
-                TextAlign.Right => blockWidth / 2 - block.Widths[i],
-                _ => -block.Widths[i] / 2,
+                TextAlign.Right => blockWidth / 2 - line.Width,
+                _ => -line.Width / 2,
             };
             var y = -blockHeight / 2 + i * block.LineHeight - block.Metrics.Ascent;
-            canvas.DrawText(block.Lines[i], x, y, SKTextAlign.Left, block.Font, paint);
+            TextLayout.Draw(canvas, line, x, y, paint);
         }
         canvas.Restore();
     }
@@ -234,26 +193,14 @@ public sealed class SkiaLayerRasterizer : ILayerRasterizer
         canvas.Restore();
     }
 
-    private SKImage? LoadImage(string path)
+    private LayerImage? LoadImage(string path)
     {
         lock (_gate)
         {
             if (_images.TryGetValue(path, out var cached))
                 return cached;
         }
-        SKImage? image = null;
-        try
-        {
-            if (File.Exists(path))
-            {
-                using var data = SKData.Create(path);
-                image = data is null ? null : SKImage.FromEncodedData(data)?.ToRasterImage();
-            }
-        }
-        catch (Exception)
-        {
-            image = null;   // an unreadable file just draws nothing
-        }
+        var image = LayerImage.Load(path);
         lock (_gate)
         {
             if (_images.TryAdd(path, image))

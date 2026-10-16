@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Windows.Input;
@@ -71,8 +72,57 @@ public partial class MainWindow : Window
             if (ShortcutCatalog.IsTypable(gesture))
                 _typable[gesture] = command;
             else
-                KeyBindings.Add(new KeyBinding { Gesture = gesture, Command = command });
+                KeyBindings.Add(new KeyBinding { Gesture = gesture, Command = new TextAwareCommand(command, () => TextBoxWants(gesture)) });
         }
+    }
+
+    /// <summary>
+    /// True when a text box has focus and <paramref name="gesture"/> is one it uses itself (paste, undo, moving
+    /// the caret…). Avalonia tries the window's key bindings before the focused control sees the key, so without
+    /// this Ctrl+V in a text box pasted clips on the timeline instead of the text, and Left stepped a frame.
+    /// </summary>
+    private bool TextBoxWants(KeyGesture gesture)
+        => FocusManager?.GetFocusedElement() is Visual focused
+           && focused.GetSelfAndVisualAncestors().OfType<TextBox>().Any()
+           && TextEditing().Contains(gesture);
+
+    private HashSet<KeyGesture>? _textEditing;
+
+    /// <summary>The keys a text box handles: the platform's editing hotkeys, plus moving and deleting by character and by word.</summary>
+    private HashSet<KeyGesture> TextEditing()
+    {
+        if (_textEditing is not null)
+            return _textEditing;
+        var gestures = new HashSet<KeyGesture>();
+        if (Application.Current?.PlatformSettings?.HotkeyConfiguration is { } hotkeys)
+            foreach (var list in new[]
+                     {
+                         hotkeys.Copy, hotkeys.Cut, hotkeys.Paste, hotkeys.Undo, hotkeys.Redo, hotkeys.SelectAll,
+                         hotkeys.MoveCursorToTheStartOfLine, hotkeys.MoveCursorToTheEndOfLine,
+                         hotkeys.MoveCursorToTheStartOfDocument, hotkeys.MoveCursorToTheEndOfDocument,
+                         hotkeys.MoveCursorToTheStartOfLineWithSelection, hotkeys.MoveCursorToTheEndOfLineWithSelection,
+                         hotkeys.MoveCursorToTheStartOfDocumentWithSelection, hotkeys.MoveCursorToTheEndOfDocumentWithSelection,
+                     })
+                gestures.UnionWith(list);
+        var word = Application.Current?.PlatformSettings?.HotkeyConfiguration.WholeWordTextActionModifiers ?? KeyModifiers.Control;
+        foreach (var key in new[] { Key.Left, Key.Right, Key.Up, Key.Down, Key.Home, Key.End, Key.Back, Key.Delete })
+            foreach (var modifiers in new[] { KeyModifiers.None, KeyModifiers.Shift, word, word | KeyModifiers.Shift })
+                gestures.Add(new KeyGesture(key, modifiers));
+        return _textEditing = gestures;
+    }
+
+    /// <summary>A window shortcut that steps aside (cannot run) while a text box wants its keys.</summary>
+    private sealed class TextAwareCommand(ICommand inner, Func<bool> textBoxWants) : ICommand
+    {
+        public event EventHandler? CanExecuteChanged
+        {
+            add => inner.CanExecuteChanged += value;
+            remove => inner.CanExecuteChanged -= value;
+        }
+
+        public bool CanExecute(object? parameter) => !textBoxWants() && inner.CanExecute(parameter);
+
+        public void Execute(object? parameter) => inner.Execute(parameter);
     }
 
     private void OnTypableShortcut(object? sender, KeyEventArgs e)

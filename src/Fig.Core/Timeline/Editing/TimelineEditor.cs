@@ -280,7 +280,8 @@ namespace Fig.Core.Timeline
             return asset.Kind switch
             {
                 MediaKind.Audio => new AudioClip { SourceId = asset.Id, DurSec = asset.DurationSec, SourceRate = asset.SourceRate },
-                MediaKind.Image => new ImageClip { SourceId = asset.Id, DurSec = ImageClip.DefaultDurationSec },
+                // a still lasts the default length; an animated one (a GIF) at least one whole loop
+                MediaKind.Image => new ImageClip { SourceId = asset.Id, DurSec = Math.Max(ImageClip.DefaultDurationSec, asset.DurationSec) },
                 _ => new VideoClip { SourceId = asset.Id, DurSec = asset.DurationSec, SourceRate = asset.SourceRate },
             };
         }
