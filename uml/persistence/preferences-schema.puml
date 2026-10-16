@@ -1,0 +1,60 @@
+@startuml
+title Preferences
+skinparam classAttributeIconSize 0
+hide empty members
+
+enum PreferenceScope {
+  User
+  Project
+}
+
+enum PreferenceApply {
+  Live
+  NextProject
+  Restart
+}
+
+class PreferenceDef <<record>> {
+  + Key : string
+  + Default : object
+  + Min : double?
+  + Max : double?
+  + Choices : string[]?
+  + Scope : PreferenceScope
+  + Apply : PreferenceApply
+}
+
+class PreferenceCatalog <<static>> {
+  + All : IReadOnlyList<PreferenceDef>
+  + Find(key : string) : PreferenceDef?
+}
+
+interface IPreferences {
+  + Get<T>(def : PreferenceDef) : T
+  + Set<T>(def : PreferenceDef, value : T) : void
+  + Reset(def : PreferenceDef) : void
+  + IsModified(def : PreferenceDef) : bool
+  + Changed : event Action<PreferenceDef>
+}
+
+class PreferenceService {
+  - _loader : PreferenceLoader
+  - _values : Dictionary<string, JsonElement>
+  + PreferenceService(loader : PreferenceLoader)
+  - Validate<T>(def : PreferenceDef, value : T) : T
+}
+
+class PreferenceLoader {
+  - _path : string
+  + PreferenceLoader(path : string)
+  + Load() : Dictionary<string, JsonElement>
+  + Save(values : IReadOnlyDictionary<string, JsonElement>) : void
+}
+
+PreferenceDef --> PreferenceScope
+PreferenceDef --> PreferenceApply
+PreferenceCatalog o-- "*" PreferenceDef
+IPreferences <|.. PreferenceService
+PreferenceService --> PreferenceLoader
+PreferenceService ..> PreferenceDef : uses
+@enduml

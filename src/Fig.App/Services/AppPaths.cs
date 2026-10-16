@@ -4,7 +4,7 @@ public static class AppPaths
 {
     public static string DataDir { get; } = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".fig");
-
+    public static string PreferencesPath { get; } = Path.Combine(DataDir, "preferences.json");
     public static string ConfigDir { get; } = Path.Combine(DataDir, "config");
 
     public static string ProjectsDir { get; } = Path.Combine(DataDir, "projects");

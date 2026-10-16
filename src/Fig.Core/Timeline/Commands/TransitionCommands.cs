@@ -15,9 +15,14 @@ namespace Fig.Core.Timeline
         Clip Right,
         string TypeId,
         double DurationSec,
-        double CutSec)
+        double CutSec) : ISelectable
     {
+        /// <summary>The identity used to select and look this transition up: its two clips.</summary>
         public string Key => $"{LeftClipId}|{RightClipId}";
+
+        SelectionKey ISelectable.Key => new(SelectionGroup.Transition, Key);
+        public string DisplayName => "Transition";
+        public Facet Facets => Facet.Transition;
     }
 
     /// <summary>Removes the transition across an abutting cut (clears both clip edges).</summary>

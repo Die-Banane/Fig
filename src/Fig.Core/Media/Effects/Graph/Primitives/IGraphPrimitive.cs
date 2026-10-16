@@ -38,22 +38,31 @@ namespace Fig.Core.Media
         private readonly IReadOnlyDictionary<string, DecodedFrame> _inputs;
         private readonly IReadOnlyDictionary<string, ParamValue> _params;
         private readonly PrimitiveDescriptor _descriptor;
+        private readonly DecodedFrame? _source;
 
         public PrimitiveContext(PrimitiveDescriptor descriptor, GraphNode node, DecodedFrame source,
             IReadOnlyDictionary<string, DecodedFrame> inputs, IReadOnlyDictionary<string, ParamValue> parameters, double localT)
         {
             _descriptor = descriptor;
             Node = node;
-            Source = source;
+            _source = source;
             _inputs = inputs;
             _params = parameters;
             LocalT = localT;
         }
 
+        /// <summary>
+        /// A context that only reads parameters (no pictures). The GPU renderer uses it so a node's values
+        /// are clamped and defaulted exactly as the CPU primitive sees them.
+        /// </summary>
+        public static PrimitiveContext ForParameters(PrimitiveDescriptor descriptor, GraphNode node,
+            IReadOnlyDictionary<string, ParamValue> parameters, double localT)
+            => new(descriptor, node, null!, new Dictionary<string, DecodedFrame>(), parameters, localT);
+
         public GraphNode Node { get; }
 
         /// <summary>The frame the effect was applied to (what an Input node emits).</summary>
-        public DecodedFrame Source { get; }
+        public DecodedFrame Source => _source ?? throw new InvalidOperationException("This context carries parameters only.");
 
         /// <summary>Seconds from the clip start (or the track timeline for track effects).</summary>
         public double LocalT { get; }

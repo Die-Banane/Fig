@@ -21,8 +21,17 @@ namespace Fig.Core.Media
         Image
     }
 
-    public class MediaAsset : INotifyPropertyChanged
+    public class MediaAsset : INotifyPropertyChanged, Fig.Core.Timeline.ISelectable
     {
+        [System.Text.Json.Serialization.JsonIgnore]
+        public Fig.Core.Timeline.SelectionKey Key => new(Fig.Core.Timeline.SelectionGroup.Media, Id);
+
+        [System.Text.Json.Serialization.JsonIgnore]
+        public string DisplayName => "Media";
+
+        [System.Text.Json.Serialization.JsonIgnore]
+        public Fig.Core.Timeline.Facet Facets => Fig.Core.Timeline.Facet.Source;
+
         public event PropertyChangedEventHandler? PropertyChanged;
 
         private void Notify([CallerMemberName] string? name = null)

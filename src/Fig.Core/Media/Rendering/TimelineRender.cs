@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 using FFmpeg.AutoGen;
 using Fig.Core.Audio;
 using Fig.Core.Timeline;
@@ -16,10 +17,12 @@ namespace Fig.Core.Media
         /// audio) to an MP4 (H.264 + AAC). Frame composition reuses the same pipeline as the
         /// preview (persistent sequential decoders, effect stack, transition blender, and
         /// painters-algorithm compositor), so the export matches what the preview shows.
+        /// Each frame is described as a <see cref="RenderScene"/> and drawn by <paramref name="renderer"/>
+        /// (the CPU kernels when none is given; the app passes the GPU renderer).
         /// </summary>
         public unsafe void RenderTimeline(ProjectModel project, TimelineModel timeline,
             string outputPath, int width, int height, int crf = 23, Action<double>? progress = null,
-            double? rangeStartSec = null, double? rangeEndSec = null)
+            double? rangeStartSec = null, double? rangeEndSec = null, ISceneRenderer? renderer = null)
         {
             if (timeline.Tracks.Count == 0)
                 throw new InvalidOperationException("Timeline has no tracks");
@@ -115,29 +118,32 @@ namespace Fig.Core.Media
                     if (sws == null)
                         throw new InvalidOperationException("sws_getContext failed");
 
-                    // ---- video frames ----
-                    var canvas = new byte[width * height * 4];
-                    var srcStride = width * 4;
+                    // ---- video frames: describe each as a scene, let the renderer draw it, encode in order ----
+                    renderer ??= new CpuSceneRenderer();
+                    var depth = Math.Max(1, renderer.MaxInFlight);
                     var totalFrames = Math.Max(1, (long)Math.Round(length * fps));
+                    var inFlight = new Queue<(long Frame, double Time, byte[] Canvas, Task Done)>();
+                    var spare = new Stack<byte[]>();
                     for (var f = 0L; f < totalFrames; f++)
                     {
                         var t = start + f / (double)fps;
-                        ComposeCanvas(project, timeline, sources, t, width, height, canvas);
-
-                        fixed (byte* pCanvas = canvas)
+                        var scene = BuildScene(project, timeline, sources, t, width, height);
+                        var canvas = spare.Count > 0 ? spare.Pop() : new byte[width * height * 4];
+                        inFlight.Enqueue((f, t, canvas, renderer.RenderAsync(scene, canvas)));
+                        while (inFlight.Count >= depth)
                         {
-                            var dstStride = bgra->linesize[0];
-                            for (var y = 0; y < height; y++)
-                                Buffer.MemoryCopy(
-                                    pCanvas + y * srcStride,
-                                    (byte*)bgra->data[0] + y * dstStride,
-                                    srcStride, srcStride);
+                            var item = inFlight.Dequeue();
+                            FinishFrame(item.Done, item.Canvas, item.Frame, bgra, yuv, sws, vEnc, outCtx, vStream, width, height);
+                            spare.Push(item.Canvas);
+                            progress?.Invoke(Math.Min(1, (item.Time - start) / length));
                         }
-
-                        ffmpeg.sws_scale(sws, bgra->data, bgra->linesize, 0, height, yuv->data, yuv->linesize);
-                        yuv->pts = f;
-                        EncodeFrame(vEnc, outCtx, vStream, yuv, f);
-                        progress?.Invoke(Math.Min(1, (t - start) / length));
+                    }
+                    while (inFlight.Count > 0)
+                    {
+                        var item = inFlight.Dequeue();
+                        FinishFrame(item.Done, item.Canvas, item.Frame, bgra, yuv, sws, vEnc, outCtx, vStream, width, height);
+                        spare.Push(item.Canvas);
+                        progress?.Invoke(Math.Min(1, (item.Time - start) / length));
                     }
                     EncodeFrame(vEnc, outCtx, vStream, null, totalFrames);
 
@@ -221,87 +227,105 @@ namespace Fig.Core.Media
             }
         }
 
-        /// <summary>Composites the video picture at a timeline time into a full-canvas BGRA buffer.</summary>
-        private void ComposeCanvas(ProjectModel project, TimelineModel timeline,
-            Dictionary<string, IVideoFrameSource> sources, double t, int width, int height, byte[] canvas)
+        /// <summary>Waits for a frame to be drawn, then copies it into the encoder's frame, converts to YUV and encodes it.</summary>
+        private unsafe void FinishFrame(Task drawn, byte[] canvas, long index, AVFrame* bgra, AVFrame* yuv, SwsContext* sws,
+            AVCodecContext* vEnc, AVFormatContext* outCtx, AVStream* vStream, int width, int height)
         {
-            Array.Clear(canvas, 0, canvas.Length);
-            for (var i = 3; i < canvas.Length; i += 4)
-                canvas[i] = 255;
-
-            var rented = new List<byte[]>();
-            var seen = new HashSet<byte[]>();
-            byte[]? cropScratch = null;
-            try
+            drawn.GetAwaiter().GetResult();
+            var srcStride = width * 4;
+            fixed (byte* pCanvas = canvas)
             {
-                // painters algorithm: the last track is the top layer (matches the preview)
-                var composites = new List<CompositeLayer>();
-                for (var i = timeline.Tracks.Count - 1; i >= 0; i--)
+                var dstStride = bgra->linesize[0];
+                for (var y = 0; y < height; y++)
+                    Buffer.MemoryCopy(
+                        pCanvas + y * srcStride,
+                        (byte*)bgra->data[0] + y * dstStride,
+                        srcStride, srcStride);
+            }
+
+            ffmpeg.sws_scale(sws, bgra->data, bgra->linesize, 0, height, yuv->data, yuv->linesize);
+            yuv->pts = index;
+            EncodeFrame(vEnc, outCtx, vStream, yuv, index);
+        }
+
+        /// <summary>
+        /// Decodes what is on screen at a timeline time and describes how to draw it: the layers bottom to
+        /// top, each with its resolved effects, crop, transition and opacity. Nothing is drawn here.
+        /// </summary>
+        private RenderScene BuildScene(ProjectModel project, TimelineModel timeline,
+            Dictionary<string, IVideoFrameSource> sources, double t, int width, int height)
+        {
+            var layers = new List<RenderLayer>();
+            // the first track is the bottom of the stack (matches the preview)
+            for (var i = 0; i < timeline.Tracks.Count; i++)
+            {
+                var track = timeline.Tracks[i];
+                if (track.Kind != TrackKind.Video || !track.Visible)
+                    continue;
+
+                var trackEffects = EffectPipeline.ResolveStack(track.Effects, t);
+                var activeTx = TransitionResolver.FindActive(track, t);
+                if (activeTx is not null
+                    && activeTx.Outgoing is VideoClip outVc
+                    && activeTx.Incoming is VideoClip inVc
+                    && TransitionCatalog.Resolve(activeTx.TypeId) is not null
+                    && TryDecodeClip(project, timeline, sources, outVc, t, width, height, out var outFrame, out var outLocal)
+                    && outFrame is not null
+                    && TryDecodeClip(project, timeline, sources, inVc, t, width, height, out var inFrame, out var inLocal)
+                    && inFrame is not null)
                 {
-                    var track = timeline.Tracks[i];
-                    if (track.Kind != TrackKind.Video || !track.Visible)
-                        continue;
-
-                    var activeTx = TransitionResolver.FindActive(track, t);
-                    if (activeTx is not null
-                        && activeTx.Outgoing is VideoClip outVc
-                        && activeTx.Incoming is VideoClip inVc
-                        && TransitionCatalog.Resolve(activeTx.TypeId) is { } blender
-                        && TryDecodeClip(project, timeline, sources, outVc, t, width, height, out var outFrame, out var outLocal)
-                        && outFrame is not null
-                        && TryDecodeClip(project, timeline, sources, inVc, t, width, height, out var inFrame, out var inLocal)
-                        && inFrame is not null)
+                    var outOpacity = ClipFade.EffectiveOpacity(outVc, Math.Clamp(outLocal, 0, outVc.DurSec));
+                    var inOpacity = ClipFade.EffectiveOpacity(inVc, Math.Clamp(inLocal, 0, inVc.DurSec));
+                    layers.Add(new RenderLayer
                     {
-                        outFrame = FramePool.MakeDistinct(outFrame, seen, rented);
-                        inFrame = FramePool.MakeDistinct(inFrame, seen, rented);
-                        outFrame = EffectPipeline.ApplyStack(outFrame, outVc.Effects, outLocal, rented);
-                        inFrame = EffectPipeline.ApplyStack(inFrame, inVc.Effects, inLocal, rented);
-                        outFrame = ApplyCrop(outFrame, outVc, outLocal, width, height, rented);
-                        inFrame = ApplyCrop(inFrame, inVc, inLocal, width, height, rented);
-                        var blended = blender.Blend(outFrame, inFrame, activeTx.Progress01, activeTx.Params);
-                        rented.Add(blended.Pixels);
-                        blended = EffectPipeline.ApplyStack(blended, track.Effects, t, rented);
-                        var outOpacity = ClipFade.EffectiveOpacity(outVc, Math.Clamp(outLocal, 0, outVc.DurSec));
-                        var inOpacity = ClipFade.EffectiveOpacity(inVc, Math.Clamp(inLocal, 0, inVc.DurSec));
-                        composites.Add(new CompositeLayer
-                        {
-                            Frame = blended,
-                            Opacity = outOpacity + (inOpacity - outOpacity) * activeTx.Progress01,
-                        });
-                        continue;
-                    }
-
-                    foreach (var clip in track.Clips)
-                    {
-                        if (clip is not VideoClip vc || !vc.Enabled)
-                            continue;
-                        if (t < clip.StartSec || t >= clip.StartSec + clip.DurSec)
-                            continue;
-
-                        if (!TryDecodeClip(project, timeline, sources, vc, t, width, height, out var frame, out var localT))
-                            continue;
-                        frame = FramePool.MakeDistinct(frame!, seen, rented);
-                        frame = EffectPipeline.ApplyStack(frame!, vc.Effects, localT, rented);
-                        if (track.Effects.Count > 0)
-                        {
-                            frame = ApplyCrop(frame, vc, localT, width, height, rented);
-                            frame = EffectPipeline.ApplyStack(frame, track.Effects, t, rented);
-                        }
-                        composites.Add(new CompositeLayer
-                        {
-                            Frame = frame,
-                            Opacity = ClipFade.EffectiveOpacity(vc, localT),
-                            Crop = track.Effects.Count > 0 ? null : ToPixelCrop(vc, localT, width, height),
-                        });
-                    }
+                        Source = SourceFor(outVc, outFrame, outLocal),
+                        Incoming = SourceFor(inVc, inFrame, inLocal),
+                        TransitionTypeId = activeTx.TypeId,
+                        Progress = activeTx.Progress01,
+                        TransitionParams = activeTx.Params,
+                        Effects = trackEffects,
+                        Opacity = outOpacity + (inOpacity - outOpacity) * activeTx.Progress01,
+                    });
+                    continue;
                 }
-                FrameCompositor.ComposeInto(composites, width, height, canvas, ref cropScratch);
+
+                var trackLayers = new List<RenderLayer>();
+                foreach (var clip in track.Clips)
+                {
+                    if (clip is not VideoClip vc || !vc.Enabled)
+                        continue;
+                    if (t < clip.StartSec || t >= clip.StartSec + clip.DurSec)
+                        continue;
+                    if (!TryDecodeClip(project, timeline, sources, vc, t, width, height, out var frame, out var localT))
+                        continue;
+                    trackLayers.Add(new RenderLayer
+                    {
+                        Source = SourceFor(vc, frame!, localT),
+                        Effects = trackEffects,
+                        Opacity = ClipFade.EffectiveOpacity(vc, localT),
+                    });
+                }
+                // clips earlier in a track sit above later ones
+                trackLayers.Reverse();
+                layers.AddRange(trackLayers);
             }
-            finally
+            return new RenderScene { Width = width, Height = height, Layers = layers };
+        }
+
+        private static RenderSource SourceFor(VideoClip clip, DecodedFrame frame, double localT)
+            => new()
             {
-                foreach (var buf in rented)
-                    FramePool.Return(buf);
-            }
+                Frame = frame,
+                Effects = EffectPipeline.ResolveStack(clip.Effects, localT),
+                Crop = CropAt(clip, localT),
+            };
+
+        /// <summary>The clip's crop at a clip-relative time (automation sampled).</summary>
+        public static SceneCrop CropAt(VideoClip clip, double localT)
+        {
+            localT = Math.Clamp(localT, 0, Math.Max(0, clip.DurSec - 1e-4));
+            var (l, top, r, bottom) = ClipAutomation.SampleCrop(clip, localT);
+            return new SceneCrop(l, top, r, bottom);
         }
 
         private bool TryDecodeClip(ProjectModel project, TimelineModel timeline,
@@ -333,35 +357,6 @@ namespace Fig.Core.Media
                 source.Seek(srcTime);
             frame = source.DecodeForward(srcTime, PreviewDecodeMode.Playback);
             return frame is not null;
-        }
-
-        private static DecodedFrame ApplyCrop(DecodedFrame frame, VideoClip clip, double localT,
-            int width, int height, List<byte[]> rented)
-        {
-            var crop = ToPixelCrop(clip, localT, width, height);
-            if (crop is null)
-                return frame;
-            var pixels = FramePool.Rent(width * height * 4);
-            byte[]? scratch = pixels;
-            FrameCompositor.ComposeInto(
-                new[] { new CompositeLayer { Frame = frame, Crop = crop, Opacity = 1 } },
-                width, height, pixels, ref scratch);
-            rented.Add(pixels);
-            return new DecodedFrame { Width = width, Height = height, Pixels = pixels };
-        }
-
-        private static RectI? ToPixelCrop(VideoClip clip, double localT, int width, int height)
-        {
-            localT = Math.Clamp(localT, 0, Math.Max(0, clip.DurSec - 1e-4));
-            var (l, top, r, bottom) = ClipAutomation.SampleCrop(clip, localT);
-            if ((l <= 1e-6 && top <= 1e-6 && r <= 1e-6 && bottom <= 1e-6)
-                || width <= 0 || height <= 0)
-                return null;
-            var x = (int)Math.Round(l * width);
-            var y = (int)Math.Round(top * height);
-            var w = (int)Math.Round((1 - l - r) * width);
-            var h = (int)Math.Round((1 - top - bottom) * height);
-            return w < 1 || h < 1 ? null : new RectI(x, y, w, h);
         }
 
         private static double TimelineEndSec(TimelineModel timeline)

@@ -34,6 +34,8 @@ obtain a frame using `FramePool.Rent(w*h*4)`
 
 Then apply whatever pixelOps you want.
 
+Then port it to a shader (see [GPU rendering](#gpu-rendering)): the CPU processor is the reference, the preview and export draw the shader. A test fails until the effect has one.
+
 
 ## Transitions
 
@@ -45,7 +47,7 @@ Here, you have the incoming decoded frame, and a param t01
 
 The effect of the transition is applied depending on the value of t01. t01 changes depending on the progress/length of the transition from 0.0 to 1.0
 
-This can be used for cool effects between frames.
+This can be used for cool effects between frames. A transition needs its shader too (see [GPU rendering](#gpu-rendering)).
 
 
 ## Effects, keyframes and easing
@@ -60,29 +62,73 @@ Animating is an explicit switch (the stopwatch): `TimelineEditor.SetEffectAnimat
 
 Zoom, pan and rotate are one primitive, the **Transform** effect (`centerX`, `centerY`, `zoom`, `rotation`). Named behaviours ("Zoom in", "Pan", …) are **presets**: plain data (`EffectPreset`) that `EffectPresetInstantiator.Create` turns into a Transform with keyframes. Built-ins live in `BuiltInEffectPresets`; users save their own from a bar's right-click menu (JSON in `~/.fig/presets`, see `EffectPresetStore`). To add a built-in behaviour, add an entry to `BuiltInEffectPresets` — no new effect code is needed.
 
-## The GPU preview canvas
+## Selection and the inspector
 
-The preview is drawn by the GPU. The decode worker no longer composites a picture: it decodes each layer's
-frame (still on the CPU, at the preview resolution) and describes how to draw them as a `GpuScene`
-(`src/Fig.App/Rendering`): the frames, each clip's resolved effect stack and crop, the active transition
-and its progress, and layer opacity. `PreviewSurface` hands the scene to Skia's GPU canvas through a custom
-draw operation, and every effect, crop, transition and layer blend runs in a fragment shader (SkSL).
-Nothing is composited or copied on the CPU, so a transition no longer competes with the decoders for cores.
+Everything on the timeline that can be picked (a clip of any kind, a track, a marker, a transition, an effect bar, a
+library file) is an `ISelectable` (`Fig.Core/Timeline/Editing/Selectable.cs`): a `Key`, a `DisplayName` and the
+`Facet`s it can be edited as (picture, sound, fades, speed, effects, file, text, track, marker, transition).
+`SelectionState` is one ordered list of keys of one group; `TimelineEditor.Resolve` turns a key back into the object.
 
-* **Shaders live in `GpuEffects.cs`** and are one-to-one ports of the CPU processors and blenders in
-  `Fig.Core`, which export still uses. Preview and export must agree, so `GpuRenderingTests` renders every
-  effect and transition both ways and fails when they drift. Match the CPU maths, including its rounding
-  and integer pixel mapping, rather than "improving" one side.
-* **Adding an effect needs no GPU work to be correct.** An effect without a shader is not skipped: the
-  scene builder runs that clip's whole stack on the CPU before upload (`GpuEffects.Supports`). Add an SkSL
-  port and list its id in `GpuEffectIds` to move it onto the GPU; the catalog-wide test checks either way.
+* **The inspector never asks what kind of thing is selected.** `PropertiesViewModel` ANDs the facets of the selected
+  items and `InspectorSections.For` returns one `InspectorSection` per shared facet, in tab order. The section's
+  controls are the data template for its type in `EditorView.axaml`, bound to `Host` (the `PropertiesViewModel`).
+* **Per-group behaviour is one table**, `SelectionGroups`: how a key finds its object, the status-bar text, and what
+  Delete does. `TimelineEditor.DeleteSelection()` and `DescribeSelection()` read it. Do not add `if (selected is X)`
+  branches in views; add a row, or a facet.
+* **To add a kind of thing** (an image layer, a text layer): implement `ISelectable` (usually by deriving from `Clip`
+  and overriding `Facets`), and add an `InspectorSection` for any new facet in `InspectorSections.cs`. Facets with no
+  section yet are simply not shown.
+* **Keyframes**: the stopwatch records (`TimelineEditor.RecordEffectKeyframe`) and never removes anything. Clearing
+  is `SetEffectAnimated(..., false, ...)`, reached from an explicit "Clear" button or menu item.
+
+## The window
+
+`MainWindow` has no system decorations. `TitleBar` draws the brand, the menus (`MenuFlyout`s themed in
+`Styles/FigTheme.axaml`), the project name, the project actions and the window buttons; `WindowDecorationProperties`
+roles make it draggable and give the edges resize grips. Colours and radii are tokens in `FigTheme.axaml`; use the
+token, not a hex value. Menu actions are commands (View menu zoom is `EditorViewModel.TimelineZoomRequested`), so the
+bar does not depend on the editor view.
+
+## GPU rendering
+
+Everything between decode and display runs on the GPU by default: effects, transitions, crops, fades and the
+layer compositor are fragment shaders (SkSL, through Skia). Export uses the same shaders. Design:
+`uml/playback/gpu-render-schema.puml` and `uml/playback/gpu-render-sequence.puml`.
+
+* **A frame is described, then drawn.** Decoding stays on the CPU. What is on screen at a time is described as
+  data: a `RenderScene` (`Fig.Core/Media/Rendering`) of layers, each with decoded pictures, their *resolved*
+  effects (`EffectCall`: type, parameters with keyframes already sampled, and the time the effect sees), crop,
+  transition, track effects and opacity. A renderer then draws it. `CpuSceneRenderer` (Core) uses the effect
+  processors, blenders and SIMD compositor and is the reference; `SkiaSceneRenderer` and the preview
+  (`GpuScene`, `GpuSceneRenderer`, `GpuEffects` in `Fig.App/Rendering`) use shaders.
+* **Shaders are one-to-one ports of the CPU kernels.** `GpuEffects.cs` (colour effects, transform, crop,
+  stock transitions), `GpuEffects.Creative.cs` (the creative library and chromatic aberration) and
+  `GpuEffects.Graph.cs` (graphs). Match the CPU maths, including its clamping, rounding and integer pixel
+  mapping, rather than "improving" one side. `GpuRenderingTests` and `SceneRendererTests` render everything both
+  ways and fail when the two drift.
+* **Adding an effect or transition means adding its shader.** `Every_builtin_effect_and_transition_runs_on_the_gpu`
+  fails until you do: list the id in `CreativeEffectIds` (or the stock sets), add the case in `ApplyCreative`
+  and the SkSL in `CreativeSources`. Something without a shader is still drawn (its layer runs on the CPU) but
+  that pulls the whole layer off the GPU, which is what the test is there to prevent.
+* **Noise has one formula.** SkSL has no integer bit operations, so `CreativeFrameOps.Noise` is a float hash
+  (`hash3` in the shaders is the same function). Change both together.
+* **Multi-pass effects** (blur, glow, the blur dissolve) use `ShaderScope.Materialize`, which renders a shader
+  into an offscreen picture (on the GPU when the canvas is) so a later step can sample it many times. A blur
+  loop needs a constant bound, so there is one program per size class (`BlurBounds`).
+* **Graphs** run by walking the compiled `GraphPlan` and giving each node a shader instead of a picture
+  (`GpuEffects.Graph.cs`). A node output read by more than one node is materialized once. A graph with a
+  node that has no shader (`GraphPrimitiveIds`) is drawn on the CPU.
 * **Frames are top-down BGRA, canvas-sized, with alpha 0 in letterbox bars.** The CPU compositor ignores
-  per-pixel alpha, so the shaders force sources opaque. Crop insets are top-down too (a top inset removes
-  the top of the picture).
-* **CPU fallback.** The surface reports whether Skia is really GPU-backed after the first frame. On a
-  software canvas (and in headless tests) the view model switches to the SIMD CPU compositor, which is
-  faster there. `PreviewViewModel.SetGpuCanvas` flips the mode; the status bar shows `GPU` in scene mode.
-* Export is unchanged and still composites on the CPU (`TimelineRender`).
+  per-pixel alpha, so the shaders force sources opaque. Crop insets are top-down too.
+* **Export on the GPU.** Avalonia only hands out its GPU context on the render thread, so `GpuJobHost` (a one
+  pixel control in the main window) runs queued jobs during its draw. `SkiaSceneRenderer` submits up to four
+  frames at once so the GPU works while the next one decodes. If the window stops drawing (minimized) or the
+  context is lost, that frame is finished in software and the rest of the export uses the CPU renderer.
+  `SkiaSceneRenderer.CreateAsync` picks the GPU only when the canvas is really GPU-backed.
+* **No GPU.** When the canvas turns out to be software, the preview switches to the SIMD CPU compositor
+  (`PreviewViewModel.SetGpuCanvas`), which is faster there; export does the same.
+* **Testing on a real GPU.** The automated tests can only use Skia's software backend, which accepts shaders a
+  driver may reject. After changing a shader, run the app on a machine with a GPU and check the preview and an export.
 
 ## Playback, scrubbing and proxies
 
@@ -96,7 +142,7 @@ Nothing is composited or copied on the CPU, so a transition no longer competes w
 
 **Ruler and grid**: `RulerCalculator.PickScale` chooses the labelled ticks and the small ticks between them. The small ticks are the snap grid, so what you read is what snaps. The grid only shows through the lanes while dragging.
 
-**Transitions** (`Media/Transitions/Blenders`) are CPU pixel kernels, not GPU. Everything between decode and display (effects, transitions, compositing) runs in managed code with AVX2 where it pays; Avalonia/Skia only draws the finished bitmap. To keep a transition cheap: use `PixelOps.LerpBytes` (SIMD blend of a byte range), `PixelOps.ColumnBlend` (same weights on every row: wipe, curtains), and plain `Buffer.BlockCopy` for the parts of a row that are entirely one picture or the other. Only compute per pixel where the picture really changes (the soft band of a wipe, the inside of a swirl).
+**Transitions** (`Media/Transitions/Blenders`) are CPU pixel kernels, kept as the reference and the no-GPU fallback; the preview and export draw them with the shaders in `GpuEffects`. To keep a CPU transition cheap: use `PixelOps.LerpBytes` (SIMD blend of a byte range), `PixelOps.ColumnBlend` (same weights on every row: wipe, curtains), and plain `Buffer.BlockCopy` for the parts of a row that are entirely one picture or the other. Only compute per pixel where the picture really changes (the soft band of a wipe, the inside of a swirl).
 
 ## UI smoke tests and screenshots
 

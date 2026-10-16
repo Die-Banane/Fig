@@ -11,8 +11,8 @@
             <Setter Property="Height" Value="6"/>
             <Setter Property="MinHeight" Value="6"/>
             <Setter Property="CornerRadius" Value="3"/>
-            <Setter Property="Foreground" Value="#5F9CF8"/>
-            <Setter Property="Background" Value="#101113"/>
+            <Setter Property="Foreground" Value="#6ea5ff"/>
+            <Setter Property="Background" Value="#0e0f11"/>
         </Style>
         <Style Selector="ProgressBar.job.done"><Setter Property="Foreground" Value="#7FC8A0"/></Style>
     </Window.Styles>

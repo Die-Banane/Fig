@@ -1,0 +1,39 @@
+@startuml
+title Preferences: load, read, change
+
+participant App
+participant PreferenceService as Service
+participant PreferenceLoader as Loader
+participant "Timeline / Editor" as Caller
+
+== startup ==
+App -> Loader : new PreferenceLoader(path)
+App -> Service : new PreferenceService(loader)
+Service -> Loader : Load()
+Loader --> Service : values
+
+== read ==
+Caller -> Service : Get<double>(SnapReachPx)
+alt key in values
+  Service --> Caller : Validate(stored value)
+else
+  Service --> Caller : def.Default
+end
+
+== change ==
+Caller -> Service : Set(SnapReachPx, 14)
+Service -> Service : Validate(14)
+alt same as current
+  Service --> Caller : (nothing happens)
+else changed
+  Service -> Service : store value (or remove it if it equals the default)
+  Service -> Caller : Changed(SnapReachPx)
+  Service -> Loader : Save(values)
+end
+
+== reset ==
+Caller -> Service : Reset(SnapReachPx)
+Service -> Service : remove key
+Service -> Caller : Changed(SnapReachPx)
+Service -> Loader : Save(values)
+@enduml

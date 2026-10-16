@@ -10,9 +10,13 @@ namespace Fig.Core.Timeline
     /// marker it is an offset from the clip start; for track and timeline markers it is
     /// an absolute position on the timeline.
     /// </summary>
-    public sealed class Marker
+    public sealed class Marker : ISelectable
     {
         public string Id { get; set; } = Guid.NewGuid().ToString();
+
+        [System.Text.Json.Serialization.JsonIgnore] public SelectionKey Key => new(SelectionGroup.Marker, Id);
+        [System.Text.Json.Serialization.JsonIgnore] public string DisplayName => IsRange ? "Range marker" : "Point marker";
+        [System.Text.Json.Serialization.JsonIgnore] public Facet Facets => Facet.Marker;
         public string Name { get; set; } = "";
         public double StartSec { get; set; }
         public double DurSec { get; set; }

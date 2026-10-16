@@ -543,7 +543,7 @@ public partial class EditorViewModel : ViewModelBase
     {
         if (_syncingSelection)
             return;
-        if (Editor.Selection.Count > 0 || Editor.Selection.ActiveTrackId is not null || Editor.Selection.SelectedEffect is not null)
+        if (!Editor.Selection.IsEmpty)
         {
             _syncingSelection = true;
             SelectedMedia = null;
@@ -555,43 +555,20 @@ public partial class EditorViewModel : ViewModelBase
     }
 
     private void UpdateSelectionSummary()
-    {
-        var selection = Editor.Selection;
-        var clips = Editor.Document.Tracks.SelectMany(t => t.Clips)
-            .Where(c => selection.IsSelected(c.Id)).ToList();
+        => (SelectionSummary, StatusHint) = Editor.DescribeSelection();
 
-        if (clips.Count > 0)
-        {
-            var linked = clips.Count > 1 && clips[0].LinkGroupId is { } g && clips.All(c => c.LinkGroupId == g);
-            SelectionSummary = clips.Count == 1
-                ? "1 clip selected"
-                : linked ? $"{clips.Count} linked clips selected" : $"{clips.Count} clips selected";
-            StatusHint = "Drag an edge to trim · Ctrl-click adds or removes · drag empty space (or Shift-drag anywhere) to select a region";
-        }
-        else if (selection.SelectedEffect is not null)
-        {
-            var count = selection.SelectedEffects.Count;
-            SelectionSummary = count == 1 ? "Effect selected" : $"{count} effects selected";
-            StatusHint = count == 1
-                ? "Shift-click adds more · Ctrl-drag duplicates · Delete removes the effect"
-                : "Drag to move them together · Shift-click adds or removes · Delete removes them";
-        }
-        else if (selection.SelectedMarkerId is not null)
-        {
-            int count = selection.SelectedMarkerIds.Count;
-            SelectionSummary = $"{count} marker{(count == 1 ? "" : "s")} selected";
-            StatusHint = "Ctrl-click toggles markers · Shift-click selects a range · Delete removes selected markers";
-        }
-        else if (selection.SelectedTransitionKey is not null)
-        {
-            SelectionSummary = "Transition selected";
-            StatusHint = "Drag the transition handle to change its length";
-        }
-        else
-        {
-            SelectionSummary = "Nothing selected";
-            StatusHint = "Click a clip to select it · drag empty space to box-select · Space plays · M adds a marker";
-        }
+    /// <summary>
+    /// Deletes whatever is selected (the Delete key). Each kind of thing knows how to be deleted; this only
+    /// reports what happened. Returns false when there was nothing to delete.
+    /// </summary>
+    public bool DeleteSelection()
+    {
+        if (Editor.DeleteSelection() is not { } removed)
+            return false;
+        Properties.Refresh();
+        Preview.RefreshFrame();
+        Notify?.Invoke(removed.Count == 1 ? $"Deleted 1 {removed.Noun}" : $"Deleted {removed.Count} {removed.Noun}s");
+        return true;
     }
 
     private void OnEditorTimelineChanged()

@@ -4,213 +4,195 @@ using System.Linq;
 
 namespace Fig.Core.Timeline
 {
+    /// <summary>
+    /// What is selected, as one ordered list of keys. Clips, tracks, markers, transitions and effect bars
+    /// are all the same kind of entry; the list only ever holds one <see cref="SelectionGroup"/> (picking
+    /// something from another group replaces it). The clip/marker/effect members below are views over that
+    /// list for the callers that only care about one group.
+    /// </summary>
     public class SelectionState
     {
-        private readonly HashSet<string> _ids = new();
-        private readonly List<(string ClipId, string EffectId)> _effects = new();
-
-        /// <summary>The effect bars that are selected (on a track or a clip), in the order they were picked.</summary>
-        public IReadOnlyList<(string ClipId, string EffectId)> SelectedEffects => _effects.ToList();
-
-        /// <summary>The primary effect (the last one picked): what the inspector shows.</summary>
-        public (string ClipId, string EffectId)? SelectedEffect => _effects.Count == 0 ? null : _effects[^1];
-
-        public bool IsEffectSelected(string effectId) => _effects.Any(e => e.EffectId == effectId);
-
-        private void ClearNonEffectSelection()
-        {
-            _ids.Clear();
-            _activeTrackId = null;
-            _markerId = null;
-            _markerIds.Clear();
-            _markerAnchorId = null;
-            _transitionKey = null;
-        }
-
-        /// <summary>Selects exactly one effect bar.</summary>
-        public void SelectEffect(string clipId, string effectId) => SelectEffects(new[] { (clipId, effectId) });
-
-        /// <summary>Selects exactly these effect bars, or adds them to the current effect selection.</summary>
-        public void SelectEffects(IEnumerable<(string ClipId, string EffectId)> effects, bool additive = false)
-        {
-            ClearNonEffectSelection();
-            if (!additive)
-                _effects.Clear();
-            foreach (var effect in effects)
-                if (!_effects.Any(e => e.EffectId == effect.EffectId))
-                    _effects.Add(effect);
-            Changed?.Invoke();
-        }
-
-        /// <summary>Adds the effect to the selection, or takes it out when it is already in.</summary>
-        public void ToggleEffect(string clipId, string effectId)
-        {
-            ClearNonEffectSelection();
-            var index = _effects.FindIndex(e => e.EffectId == effectId);
-            if (index >= 0)
-                _effects.RemoveAt(index);
-            else
-                _effects.Add((clipId, effectId));
-            Changed?.Invoke();
-        }
-
-        private void NotifyChanged()
-        {
-            _effects.Clear();
-            Changed?.Invoke();
-        }
-
-        private string? _activeTrackId;
-        private string? _markerId;
-        private readonly HashSet<string> _markerIds = new();
+        private readonly List<SelectionKey> _items = new();
         private string? _markerAnchorId;
-        public IReadOnlyList<string> SelectedMarkerIds => _markerIds.ToList();
-        public bool IsMarkerSelected(string id) => _markerIds.Contains(id);
-        private string? _transitionKey;
 
-        public IReadOnlyList<string> SelectedClipIds => _ids.ToList();
+        /// <summary>Raised after any selection change.</summary>
+        public event Action? Changed;
 
-        /// <summary>
-        /// Primary marker for the inspector. SelectedMarkerIds contains the full selection.
-        /// </summary>
-        public string? SelectedMarkerId
+        // ---- the uniform API ------------------------------------------------------------------
+
+        /// <summary>Everything selected, in the order it was picked.</summary>
+        public IReadOnlyList<SelectionKey> Items => _items.ToList();
+
+        /// <summary>The last item picked: what a single-item panel shows.</summary>
+        public SelectionKey? Primary => _items.Count == 0 ? null : _items[^1];
+
+        public bool IsEmpty => _items.Count == 0;
+
+        public bool Contains(SelectionKey key) => _items.Contains(key);
+
+        /// <summary>Selects exactly this item.</summary>
+        public void Replace(SelectionKey key) => Replace(new[] { key });
+
+        /// <summary>Selects exactly these items (which must be of one group; the first item's group wins).</summary>
+        public void Replace(IEnumerable<SelectionKey> keys)
         {
-            get => _markerId;
+            var next = Distinct(keys);
+            if (_items.SequenceEqual(next))
+                return;
+            _items.Clear();
+            _items.AddRange(next);
+            Changed?.Invoke();
+        }
+
+        /// <summary>Adds an item to the selection (or replaces the selection when it is of another group).</summary>
+        public void Add(SelectionKey key)
+        {
+            if (_items.Contains(key))
+                return;
+            if (_items.Count > 0 && _items[0].Group != key.Group)
+                _items.Clear();
+            _items.Add(key);
+            Changed?.Invoke();
+        }
+
+        /// <summary>Takes an item out of the selection.</summary>
+        public void Remove(SelectionKey key)
+        {
+            if (_items.Remove(key))
+                Changed?.Invoke();
+        }
+
+        /// <summary>Adds the item, or takes it out when it is already selected.</summary>
+        public void Toggle(SelectionKey key)
+        {
+            if (_items.Contains(key))
+                Remove(key);
+            else
+                Add(key);
+        }
+
+        public void Clear()
+        {
+            if (_items.Count == 0)
+                return;
+            _items.Clear();
+            _markerAnchorId = null;
+            Changed?.Invoke();
+        }
+
+        private static List<SelectionKey> Distinct(IEnumerable<SelectionKey> keys)
+        {
+            var result = new List<SelectionKey>();
+            foreach (var key in keys)
+            {
+                if (result.Count > 0 && result[0].Group != key.Group)
+                    continue;
+                if (!result.Contains(key))
+                    result.Add(key);
+            }
+            return result;
+        }
+
+        private IEnumerable<SelectionKey> Of(SelectionGroup group) => _items.Where(k => k.Group == group);
+
+        // ---- clips ----------------------------------------------------------------------------
+
+        public IReadOnlyList<string> SelectedClipIds => Of(SelectionGroup.Clip).Select(k => k.Id).ToList();
+
+        public bool IsSelected(string clipId) => _items.Contains(new SelectionKey(SelectionGroup.Clip, clipId));
+
+        /// <summary>How many clips are selected.</summary>
+        public int Count => Of(SelectionGroup.Clip).Count();
+
+        public void Select(string clipId) => Add(new SelectionKey(SelectionGroup.Clip, clipId));
+
+        public void Deselect(string clipId) => Remove(new SelectionKey(SelectionGroup.Clip, clipId));
+
+        public void SelectOnly(string clipId) => Replace(new SelectionKey(SelectionGroup.Clip, clipId));
+
+        /// <summary>Replaces the selection with these clips in one notification (used after split so the right halves stay selected).</summary>
+        public void SelectClips(IEnumerable<string> clipIds)
+            => Replace(clipIds.Where(id => !string.IsNullOrEmpty(id)).Select(id => new SelectionKey(SelectionGroup.Clip, id)));
+
+        // ---- tracks ---------------------------------------------------------------------------
+
+        /// <summary>The selected track, if a track (rather than something on it) is what is selected.</summary>
+        public string? ActiveTrackId
+        {
+            get => Of(SelectionGroup.Track).Select(k => k.Id).FirstOrDefault();
             set
             {
                 if (value is null)
                 {
-                    if (_markerIds.Count == 0)
-                        return;
-                    _markerIds.Clear();
-                    _markerId = null;
-                    _markerAnchorId = null;
-                    NotifyChanged();
+                    if (ActiveTrackId is { } current)
+                        Remove(new SelectionKey(SelectionGroup.Track, current));
+                    return;
+                }
+                Replace(new SelectionKey(SelectionGroup.Track, value));
+            }
+        }
+
+        // ---- transitions ----------------------------------------------------------------------
+
+        /// <summary>The selected cut transition ("{leftClipId}|{rightClipId}").</summary>
+        public string? SelectedTransitionKey
+        {
+            get => Of(SelectionGroup.Transition).Select(k => k.Id).FirstOrDefault();
+            set
+            {
+                if (value is null)
+                {
+                    if (SelectedTransitionKey is { } current)
+                        Remove(new SelectionKey(SelectionGroup.Transition, current));
+                    return;
+                }
+                SelectTransition(value);
+            }
+        }
+
+        /// <summary>Selects a cut transition.</summary>
+        public void SelectTransition(string key) => Replace(new SelectionKey(SelectionGroup.Transition, key));
+
+        // ---- markers --------------------------------------------------------------------------
+
+        public IReadOnlyList<string> SelectedMarkerIds => Of(SelectionGroup.Marker).Select(k => k.Id).ToList();
+
+        public bool IsMarkerSelected(string id) => _items.Contains(new SelectionKey(SelectionGroup.Marker, id));
+
+        /// <summary>The primary marker for the inspector; <see cref="SelectedMarkerIds"/> holds the full selection.</summary>
+        public string? SelectedMarkerId
+        {
+            get => Of(SelectionGroup.Marker).Select(k => k.Id).LastOrDefault();
+            set
+            {
+                if (value is null)
+                {
+                    if (_items.Count > 0 && _items[0].Group == SelectionGroup.Marker)
+                    {
+                        _markerAnchorId = null;
+                        Clear();
+                    }
                 }
                 else
                     SelectMarker(value);
             }
         }
 
-        /// <summary>
-        /// Selected cut transition ("{leftClipId}|{rightClipId}"). Mutually exclusive
-        /// with clip/track/marker selection.
-        /// </summary>
-        public string? SelectedTransitionKey
-        {
-            get => _transitionKey;
-            set
-            {
-                if (_transitionKey == value)
-                    return;
-                _transitionKey = value;
-                NotifyChanged();
-            }
-        }
-
-        public string? ActiveTrackId
-        {
-            get => _activeTrackId;
-            set
-            {
-                if (_activeTrackId == value)
-                    return;
-                _activeTrackId = value;
-                if (value is not null)
-                {
-                    _markerId = null;
-                    _markerIds.Clear();
-                    _markerAnchorId = null;
-                    _transitionKey = null;
-                }
-                NotifyChanged();
-            }
-        }
-
-        /// <summary>Raised after any selection mutation (clips, markers, transitions, or active track).</summary>
-        public event Action? Changed;
-
-        public bool IsSelected(string clipId) => _ids.Contains(clipId);
-
-        public int Count => _ids.Count;
-
-        public void Select(string clipId)
-        {
-            if (!_ids.Add(clipId))
-                return;
-            _markerId = null;
-            _markerIds.Clear();
-            _markerAnchorId = null;
-            _transitionKey = null;
-            NotifyChanged();
-        }
-
-        public void Deselect(string clipId)
-        {
-            if (!_ids.Remove(clipId))
-                return;
-            NotifyChanged();
-        }
-
-        public void SelectOnly(string clipId)
-        {
-            if (_ids.Count == 1 && _ids.Contains(clipId) && _activeTrackId is null && _markerId is null && _transitionKey is null && _effects.Count == 0)
-                return;
-            _ids.Clear();
-            _ids.Add(clipId);
-            _activeTrackId = null;
-            _markerId = null;
-            _markerIds.Clear();
-            _markerAnchorId = null;
-            _transitionKey = null;
-            NotifyChanged();
-        }
-
-        /// <summary>
-        /// Replaces the selection with <paramref name="clipIds"/> in one notification
-        /// (clears the active track, marker, and transition). Used after split so the
-        /// right halves stay selected.
-        /// </summary>
-        public void SelectClips(IEnumerable<string> clipIds)
-        {
-            var next = new HashSet<string>(clipIds.Where(id => !string.IsNullOrEmpty(id)));
-            if (next.SetEquals(_ids) && _activeTrackId is null && _markerId is null && _transitionKey is null && _effects.Count == 0)
-                return;
-            _ids.Clear();
-            foreach (var id in next)
-                _ids.Add(id);
-            _activeTrackId = null;
-            _markerId = null;
-            _markerIds.Clear();
-            _markerAnchorId = null;
-            _transitionKey = null;
-            NotifyChanged();
-        }
-
-        /// <summary>Selects one marker, clearing clip/track/transition selection.</summary>
+        /// <summary>Selects one marker.</summary>
         public void SelectMarker(string markerId) => SelectMarkers(new[] { markerId }, markerId);
 
         public void SelectMarkers(IEnumerable<string> markerIds, string? anchorId = null)
         {
-            var next = new HashSet<string>(markerIds.Where(id => !string.IsNullOrEmpty(id)));
-            _markerAnchorId = anchorId ?? (next.Contains(_markerAnchorId ?? "") ? _markerAnchorId : next.FirstOrDefault());
-            if (next.SetEquals(_markerIds) && _ids.Count == 0 && _activeTrackId is null && _transitionKey is null && _effects.Count == 0)
-                return;
-            _markerIds.Clear();
-            foreach (var id in next)
-                _markerIds.Add(id);
-            _markerId = next.LastOrDefault();
-            _ids.Clear();
-            _activeTrackId = null;
-            _transitionKey = null;
-            NotifyChanged();
+            var ids = markerIds.Where(id => !string.IsNullOrEmpty(id)).Distinct().ToList();
+            _markerAnchorId = anchorId ?? (ids.Contains(_markerAnchorId ?? "") ? _markerAnchorId : ids.FirstOrDefault());
+            Replace(ids.Select(id => new SelectionKey(SelectionGroup.Marker, id)));
         }
 
         public void ToggleMarker(string markerId)
         {
-            var next = new HashSet<string>(_markerIds);
-            if (!next.Add(markerId))
-                next.Remove(markerId);
+            var next = SelectedMarkerIds.ToList();
+            if (!next.Remove(markerId))
+                next.Add(markerId);
             SelectMarkers(next);
         }
 
@@ -225,34 +207,36 @@ namespace Fig.Core.Timeline
                 return;
             }
             var range = ids.Skip(Math.Min(start, end)).Take(Math.Abs(end - start) + 1);
-            SelectMarkers(additive ? _markerIds.Concat(range).ToArray() : range, _markerAnchorId);
+            // in timeline order, however the markers were picked
+            var chosen = additive ? SelectedMarkerIds.Concat(range).Distinct().OrderBy(id => ids.IndexOf(id)).ToArray() : range;
+            SelectMarkers(chosen, _markerAnchorId);
         }
 
-        /// <summary>Selects a cut transition, clearing any clip/track/marker selection.</summary>
-        public void SelectTransition(string key)
+        // ---- effect bars ----------------------------------------------------------------------
+
+        /// <summary>The effect bars that are selected (on a track or a clip), in the order they were picked.</summary>
+        public IReadOnlyList<(string ClipId, string EffectId)> SelectedEffects
+            => Of(SelectionGroup.Effect).Select(k => (k.OwnerId ?? "", k.Id)).ToList();
+
+        /// <summary>The primary effect (the last one picked): what the inspector shows.</summary>
+        public (string ClipId, string EffectId)? SelectedEffect
+            => Of(SelectionGroup.Effect).Select(k => ((string ClipId, string EffectId)?)(k.OwnerId ?? "", k.Id)).LastOrDefault();
+
+        public bool IsEffectSelected(string effectId) => Of(SelectionGroup.Effect).Any(k => k.Id == effectId);
+
+        /// <summary>Selects exactly one effect bar.</summary>
+        public void SelectEffect(string clipId, string effectId) => SelectEffects(new[] { (clipId, effectId) });
+
+        /// <summary>Selects exactly these effect bars, or adds them to the current effect selection.</summary>
+        public void SelectEffects(IEnumerable<(string ClipId, string EffectId)> effects, bool additive = false)
         {
-            if (_transitionKey == key && _ids.Count == 0 && _activeTrackId is null && _markerId is null && _effects.Count == 0)
-                return;
-            _transitionKey = key;
-            _ids.Clear();
-            _activeTrackId = null;
-            _markerId = null;
-            _markerIds.Clear();
-            _markerAnchorId = null;
-            NotifyChanged();
+            var keys = effects.Select(e => new SelectionKey(SelectionGroup.Effect, e.EffectId, e.ClipId));
+            if (additive && _items.Count > 0 && _items[0].Group == SelectionGroup.Effect)
+                keys = _items.Concat(keys);
+            Replace(keys);
         }
 
-        public void Clear()
-        {
-            if (_ids.Count == 0 && _activeTrackId is null && _markerId is null && _transitionKey is null && _effects.Count == 0)
-                return;
-            _ids.Clear();
-            _activeTrackId = null;
-            _markerId = null;
-            _markerIds.Clear();
-            _markerAnchorId = null;
-            _transitionKey = null;
-            NotifyChanged();
-        }
+        /// <summary>Adds the effect bar to the selection, or takes it out when it is already in.</summary>
+        public void ToggleEffect(string clipId, string effectId) => Toggle(new SelectionKey(SelectionGroup.Effect, effectId, clipId));
     }
 }

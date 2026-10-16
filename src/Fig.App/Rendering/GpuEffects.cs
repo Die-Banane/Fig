@@ -12,7 +12,7 @@ namespace Fig.App.Rendering;
 /// processors in Fig.Core so the GPU preview matches what export renders. Each effect wraps an input
 /// shader; coordinates are canvas pixels (the renderer scales the canvas to the widget).
 /// </summary>
-internal static class GpuEffects
+internal static partial class GpuEffects
 {
     private static readonly ConcurrentDictionary<string, SKRuntimeEffect> Compiled = new();
 
@@ -27,6 +27,11 @@ internal static class GpuEffects
     {
         foreach (var (key, source) in Sources)
             Get(key, source);
+        foreach (var bound in BlurBounds)
+        {
+            Get($"blurH{bound}", BlurSource('H', bound));
+            Get($"blurV{bound}", BlurSource('V', bound));
+        }
     }
 
     private static readonly HashSet<string> GpuEffectIds =
@@ -41,11 +46,20 @@ internal static class GpuEffects
     /// True when the effect has a shader. Effects without one are not dropped: <see cref="GpuSceneBuilder"/>
     /// runs such a clip's stack on the CPU before upload, so a new effect works in the preview immediately.
     /// </summary>
-    public static bool Supports(string typeId) => GpuEffectIds.Contains(typeId);
+    public static bool Supports(string typeId) => GpuEffectIds.Contains(typeId) || CreativeEffectIds.Contains(typeId) || SupportsGraph(typeId);
 
     public static bool SupportsTransition(string typeId) => typeId is TransitionCatalog.CrossDissolve
         or TransitionCatalog.FadeToBlack or TransitionCatalog.Wipe or TransitionCatalog.Curtain
-        or TransitionCatalog.Iris or TransitionCatalog.Push or TransitionCatalog.Slide or TransitionCatalog.Swirl;
+        or TransitionCatalog.Iris or TransitionCatalog.Push or TransitionCatalog.Slide or TransitionCatalog.Swirl
+        || CreativeTransitionIds.Contains(typeId);
+
+    static GpuEffects()
+    {
+        foreach (var (key, source) in CreativeSources())
+            Sources[key] = source;
+        foreach (var (key, source) in GraphSources())
+            Sources[key] = source;
+    }
 
     // ---- parameter helpers (the CPU processors clamp the same way) ----
 
@@ -80,7 +94,7 @@ internal static class GpuEffects
         => Run(Get("opaque", Sources["opaque"]), scope, _ => { }, ("src", input));
 
     /// <summary>Applies one effect to a shader. Returns the input unchanged when the effect is a no-op.</summary>
-    public static SKShader Apply(SKShader input, GpuEffectCall call, int width, int height, ShaderScope scope)
+    public static SKShader Apply(SKShader input, EffectCall call, int width, int height, ShaderScope scope)
     {
         var p = call.Params;
         var size = new[] { (float)width, (float)height };
@@ -213,7 +227,9 @@ internal static class GpuEffects
             case EffectCatalog.Transform:
                 return Transform(input, p, width, height, scope);
             default:
-                return input;   // unknown effects are skipped, like the CPU pipeline
+                if (SupportsGraph(call.TypeId))
+                    return ApplyGraph(input, call, width, height, scope);
+                return ApplyCreative(input, call, width, height, scope) ?? input;   // unknown effects are skipped, like the CPU pipeline
         }
     }
 
@@ -358,7 +374,7 @@ internal static class GpuEffects
             }
             default:
                 // unknown transition: hard cut at the midpoint, like the CPU path
-                return t01 < 0.5 ? a : b;
+                return CreativeTransition(a, b, typeId, t01, p, width, height, scope) ?? (t01 < 0.5 ? a : b);
         }
     }
 
@@ -487,9 +503,20 @@ internal static class GpuEffects
             """,
         ["crop"] = """
             uniform shader src; uniform float2 size; uniform float2 origin; uniform float2 span;
-            half4 main(float2 p) {
-                float2 q = origin + floor(floor(p) * span / size);
+            // the cropped picture is a grid of whole pixels (nearest-neighbour scaling, like the CPU compositor);
+            // an effect further down that samples between pixel centers gets a bilinear blend of that grid
+            half4 texel(float2 px) {
+                float2 q = origin + floor(clamp(px, float2(0.0), size - 1.0) * span / size);
                 return src.eval(q + 0.5);
+            }
+            half4 main(float2 p) {
+                float2 c = p - 0.5;
+                float2 base = floor(c);
+                float2 f = c - base;
+                if (f.x < 1e-4 && f.y < 1e-4) return texel(base);
+                half4 top = mix(texel(base), texel(base + float2(1.0, 0.0)), half(f.x));
+                half4 bottom = mix(texel(base + float2(0.0, 1.0)), texel(base + float2(1.0, 1.0)), half(f.x));
+                return mix(top, bottom, half(f.y));
             }
             """,
         ["cropPad"] = """
@@ -626,11 +653,30 @@ internal static class GpuEffects
 internal sealed class ShaderScope : IDisposable
 {
     private readonly List<IDisposable> _items = new();
+    private readonly GRRecordingContext? _context;
+
+    /// <param name="context">The canvas' GPU context, or null on a raster canvas (tests, software fallback).</param>
+    public ShaderScope(GRRecordingContext? context = null) => _context = context;
 
     public T Add<T>(T item) where T : IDisposable
     {
         _items.Add(item);
         return item;
+    }
+
+    /// <summary>
+    /// Draws a shader into an offscreen picture and returns that picture as a shader. Used where a later
+    /// step samples the result many times (blur passes), so the work behind it is done once, not per tap.
+    /// The picture lives on the GPU when the canvas does.
+    /// </summary>
+    public SKShader Materialize(SKShader shader, int width, int height)
+    {
+        var info = new SKImageInfo(width, height, SKColorType.Bgra8888, SKAlphaType.Premul);
+        using var surface = (_context is not null ? SKSurface.Create(_context, false, info) : null) ?? SKSurface.Create(info);
+        using (var paint = new SKPaint { Shader = shader })
+            surface.Canvas.DrawRect(0, 0, width, height, paint);
+        var image = Add(surface.Snapshot());
+        return Add(image.ToShader(SKShaderTileMode.Clamp, SKShaderTileMode.Clamp, new SKSamplingOptions(SKFilterMode.Linear)));
     }
 
     public void Dispose()

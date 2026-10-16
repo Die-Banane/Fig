@@ -19,11 +19,13 @@ public sealed class TestApp : Application
     public override void Initialize()
     {
         RequestedThemeVariant = Avalonia.Styling.ThemeVariant.Dark;
+        DataTemplates.Add(new Fig.App.ViewLocator());
         Styles.Add(new Avalonia.Themes.Fluent.FluentTheme());
-        Styles.Add(new Avalonia.Markup.Xaml.Styling.StyleInclude(new Uri("avares://Fig.App/"))
-        {
-            Source = new Uri("avares://Fig.App/Styles/FigControls.axaml"),
-        });
+        foreach (var sheet in new[] { "FigTheme", "FigControls" })
+            Styles.Add(new Avalonia.Markup.Xaml.Styling.StyleInclude(new Uri("avares://Fig.App/"))
+            {
+                Source = new Uri($"avares://Fig.App/Styles/{sheet}.axaml"),
+            });
     }
 }
 
@@ -85,8 +87,9 @@ public sealed class UiSmokeTests : IDisposable
         window.Show();
         Shot(window, "editor");
 
-        vm.Layout.ToggleFocusCommand.Execute(null);
-        Shot(window, "editor-focus");
+        vm.Layout.ToggleLeftCommand.Execute(null);
+        vm.Layout.ToggleRightCommand.Execute(null);
+        Shot(window, "editor-panels-hidden");
         vm.Layout.ResetCommand.Execute(null);
         foreach (var tab in vm.LibraryTabs)
         {
@@ -98,16 +101,30 @@ public sealed class UiSmokeTests : IDisposable
     }
 
     /// <summary>Opens a project holding two linked video+audio clips, a music clip and a few markers.</summary>
-    private EditorViewModel OpenSampleEditor(out Window window)
+    private EditorViewModel OpenSampleEditor(out Window window) => OpenSampleEditor(out window, inShell: false);
+
+    /// <summary>The whole app window (custom title bar and menus) around the same sample project.</summary>
+    private AppViewModel OpenSampleShell(out MainWindow window)
     {
         var store = new ProjectStore(_folder);
+        var app = new AppViewModel(store, new GestureRegistry(Path.Combine(_folder, "gestures.json")));
+        OpenSampleEditor(out _, inShell: true, existing: app.Editor, store: store);
+        app.CurrentView = app.Editor;
+        window = new MainWindow { Width = 1440, Height = 970, DataContext = app };
+        window.Show();
+        return app;
+    }
+
+    private EditorViewModel OpenSampleEditor(out Window window, bool inShell, EditorViewModel? existing = null, ProjectStore? store = null)
+    {
+        store ??= new ProjectStore(_folder);
         var project = store.LoadProject(store.CreateProject("Robot"))!;
         project.Media.Add(new Fig.Core.Media.MediaAsset { Kind = Fig.Core.Media.MediaKind.Video, Url = "/nonexistent/Robot_01.mp4", DurationSec = 12, Width = 1920, Height = 1080, HasAudio = true, Offline = true });
         project.Media.Add(new Fig.Core.Media.MediaAsset { Kind = Fig.Core.Media.MediaKind.Video, Url = "/nonexistent/Robot_02.mp4", DurationSec = 18, Width = 1920, Height = 1080, HasAudio = true, Offline = true });
         project.Media.Add(new Fig.Core.Media.MediaAsset { Kind = Fig.Core.Media.MediaKind.Audio, Url = "/nonexistent/Room.wav", DurationSec = 42, HasAudio = true, Offline = true });
         store.SaveProject(project);
 
-        var vm = new EditorViewModel(new GestureRegistry(Path.Combine(_folder, "gestures.json")));
+        var vm = existing ?? new EditorViewModel(new GestureRegistry(Path.Combine(_folder, "gestures.json")));
         vm.LoadProject(project, store);
         var rng = new Random(7);
         foreach (var asset in vm.Media)
@@ -120,9 +137,110 @@ public sealed class UiSmokeTests : IDisposable
         vm.Editor.Document.Markers.Add(new Fig.Core.Timeline.Marker { Name = "Beat", StartSec = 15, Color = "#EAB308" });
         // no audio device in tests: drop the playback engine so it can't reset the playhead behind our back
         vm.DisposePlayback();
+        if (inShell)
+        {
+            window = null!;
+            return vm;
+        }
         window = new Window { Width = 1440, Height = 970, Content = new EditorView { DataContext = vm } };
         window.Show();
         return vm;
+    }
+
+    [AvaloniaFact]
+    public void Inspector_ShowsOneTabPerFacetTheSelectionShares()
+    {
+        var app = OpenSampleShell(out var window);
+        var vm = app.Editor;
+        try
+        {
+            var clips = vm.Editor.Document.Tracks.SelectMany(t => t.Clips).ToList();
+            var video = clips.OfType<Fig.Core.Timeline.VideoClip>().First();
+            var audio = clips.OfType<Fig.Core.Timeline.AudioClip>().First();
+            string[] Tabs() => vm.Properties.Sections.Select(s => s.Title).ToArray();
+
+            Assert.Empty(vm.Properties.Sections);
+
+            vm.Editor.Selection.SelectOnly(video.Id);
+            window.UpdateLayout();
+            Assert.Equal(["Picture", "Audio", "Speed", "Fades", "Effects", "File"], Tabs());
+            Assert.Equal("Video clip", vm.Properties.Title);
+            Shot(window, "inspector-video");
+
+            vm.Editor.Selection.SelectOnly(audio.Id);
+            Assert.Equal(["Audio", "Speed", "Fades", "Effects", "File"], Tabs());
+            Assert.Equal("Audio clip", vm.Properties.Title);
+
+            // a video and an audio clip together: only what both have
+            vm.Editor.Selection.SelectClips([video.Id, audio.Id]);
+            Assert.Equal(["Audio", "Speed", "Fades", "Effects", "File"], Tabs());
+            Assert.Equal("2 selected", vm.Properties.Title);
+
+            var marker = vm.Editor.Document.Markers.First();
+            vm.Editor.Selection.SelectMarker(marker.Id);
+            Assert.Equal(["Marker"], Tabs());
+            Assert.False(vm.Properties.ShowTabStrip);
+
+            var fx = Fig.Core.Media.EffectCatalog.Find(Fig.Core.Media.EffectCatalog.Sepia)!.CreateInstance();
+            vm.Editor.AddEffect(video.Id, fx);
+            vm.Properties.SelectEffect(video.Id, fx.Id);
+            Assert.Equal(["Effects"], Tabs());
+            Assert.Equal("Sepia", vm.Properties.Title);
+            Shot(window, "inspector-effect");
+
+            var track = vm.Editor.Document.Tracks[0];
+            vm.Editor.Selection.ActiveTrackId = track.Id;
+            Assert.Equal(["Effects", "Track"], Tabs());
+
+            // library media is inspected the same way
+            vm.Editor.Selection.Clear();
+            vm.SelectedMedia = vm.Media[0];
+            Assert.Equal(["File"], Tabs());
+            Assert.Equal("Media", vm.Properties.Title);
+
+            // a rack row can open its own tab
+            vm.SelectedMedia = null;
+            vm.Editor.Selection.SelectOnly(audio.Id);
+            vm.Properties.OpenSection(Fig.Core.Timeline.Facet.Fades);
+            Assert.Equal("Fades", vm.Properties.SelectedSection?.Title);
+        }
+        finally
+        {
+            window.Close();
+            vm.DisposePlayback();
+        }
+    }
+
+    [AvaloniaFact]
+    public void MainWindow_DrawsItsOwnTitleBarWithTheMenusInsideIt()
+    {
+        var app = OpenSampleShell(out var window);
+        try
+        {
+            window.UpdateLayout();
+            Shot(window, "shell-editor");
+            var bar = window.GetVisualDescendants().OfType<TitleBar>().Single();
+            var labels = bar.GetVisualDescendants().OfType<Button>().Where(b => b.Classes.Contains("menu-btn")).Select(b => b.Content).ToList();
+            Assert.Equal(new object[] { "File", "Edit", "View", "Help" }, labels);
+            // the menus live in the title bar row, not in a bar of their own beneath it
+            Assert.True(bar.Bounds.Height < 60);
+            Assert.True(app.IsEditing);
+            Assert.Empty(window.GetVisualDescendants().OfType<Menu>());
+            Assert.Equal(WindowDecorations.None, window.WindowDecorations);
+
+            // an open menu is drawn by us too: rounded, padded items with their shortcuts
+            var edit = bar.GetVisualDescendants().OfType<Button>().First(b => Equals(b.Content, "Edit"));
+            edit.Flyout!.ShowAt(edit);
+            window.UpdateLayout();
+            Shot(window, "shell-menu-edit");
+            Assert.True(edit.Flyout.IsOpen);
+            edit.Flyout.Hide();
+        }
+        finally
+        {
+            window.Close();
+            app.Editor.DisposePlayback();
+        }
     }
 
     [AvaloniaFact]
@@ -656,7 +774,14 @@ public sealed class UiSmokeTests : IDisposable
         var vm = OpenSampleEditor(out var window);
         try
         {
+            // the sample project has a clip marker at 3 s too; with it left in, which marker a click at 3 s hits is up to its id
             vm.Editor.Document.Markers.Clear();
+            foreach (var track in vm.Editor.Document.Tracks)
+            {
+                track.Markers.Clear();
+                foreach (var clip in track.Clips)
+                    clip.Markers.Clear();
+            }
             var a = vm.Editor.AddMarker(vm.Editor.Document, 1);
             var b = vm.Editor.AddMarker(vm.Editor.Document, 2);
             var c = vm.Editor.AddMarker(vm.Editor.Document, 3);
@@ -717,7 +842,7 @@ public sealed class UiSmokeTests : IDisposable
     }
 
     [AvaloniaFact]
-    public void EditorView_Transform_StopwatchTurnsAnimationOnAndOff()
+    public void EditorView_Transform_StopwatchRecordsKeyframesAndNeverDeletesThem()
     {
         var vm = OpenSampleEditor(out var window);
         var video = vm.Editor.Document.Tracks.SelectMany(t => t.Clips).First(c => c is Fig.Core.Timeline.VideoClip);
@@ -740,10 +865,17 @@ public sealed class UiSmokeTests : IDisposable
         t.SetCamera(0.4, 0.4, 3);                                   // animated: this becomes a second keyframe
         Assert.Equal(2, fx.Keyframes["zoom"].Count);
 
-        t.ToggleAnimateCommand.Execute(null);                        // stopwatch off: back to one look, as it is here
+        vm.SeekFromUser(video.StartSec + 6);
+        t.ToggleAnimateCommand.Execute(null);                        // stopwatch again: records here, the others stay
+        Assert.True(t.IsAnimated);
+        Assert.Equal(new[] { 4.0, 6.0, 8.0 }, fx.Keyframes["zoom"].Select(k => k.TimeSec).ToArray());
+
+        t.ToggleAnimateCommand.Execute(null);                        // pressing where one already is changes nothing
+        Assert.Equal(3, fx.Keyframes["zoom"].Count);
+
+        t.ClearKeyframesCommand.Execute(null);                       // clearing is its own, explicit action
         Assert.False(t.IsAnimated);
         Assert.Empty(fx.Keyframes);
-        Assert.Equal(3, fx.Params["zoom"].AsDouble, 3);
 
         window.Close();
         vm.DisposePlayback();

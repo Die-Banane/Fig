@@ -9,8 +9,7 @@ namespace Fig.App.ViewModels;
 
 /// <summary>
 /// The editor's panel arrangement: how wide the side panels are (as fractions of the
-/// window, so the layout scales with it), which are collapsed, and whether the preview
-/// is focused. Remembered between sessions.
+/// window, so the layout scales with it), and which are collapsed. Remembered between sessions.
 /// </summary>
 public sealed partial class WorkspaceLayout : ObservableObject
 {
@@ -42,18 +41,9 @@ public sealed partial class WorkspaceLayout : ObservableObject
     [NotifyPropertyChangedFor(nameof(IsDefault))]
     private bool _isRightCollapsed;
 
-    /// <summary>Preview takes the stage: both side panels tuck away until restored.</summary>
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsLeftVisible))]
-    [NotifyPropertyChangedFor(nameof(IsRightVisible))]
-    [NotifyPropertyChangedFor(nameof(IsDefault))]
-    [NotifyPropertyChangedFor(nameof(FocusMenuText))]
-    private bool _isFocusPreview;
-
-    public bool IsLeftVisible => !IsLeftCollapsed && !IsFocusPreview;
-    public bool IsRightVisible => !IsRightCollapsed && !IsFocusPreview;
-    public bool IsDefault => !IsLeftCollapsed && !IsRightCollapsed && !IsFocusPreview;
-    public string FocusMenuText => IsFocusPreview ? "Restore layout" : "Focus preview";
+    public bool IsLeftVisible => !IsLeftCollapsed;
+    public bool IsRightVisible => !IsRightCollapsed;
+    public bool IsDefault => !IsLeftCollapsed && !IsRightCollapsed;
 
     /// <summary>Raised whenever the arrangement changes so the view can re-apply it.</summary>
     public event Action? Changed;
@@ -68,7 +58,6 @@ public sealed partial class WorkspaceLayout : ObservableObject
 
     partial void OnIsLeftCollapsedChanged(bool value) => Commit();
     partial void OnIsRightCollapsedChanged(bool value) => Commit();
-    partial void OnIsFocusPreviewChanged(bool value) => Commit();
 
     /// <summary>Stores new sizes after a splitter drag (clamped to sensible ranges).</summary>
     public void SetFractions(double? left, double? right, double? timeline)
@@ -80,46 +69,15 @@ public sealed partial class WorkspaceLayout : ObservableObject
     }
 
     [RelayCommand]
-    private void ToggleLeft()
-    {
-        if (IsFocusPreview)
-        {
-            IsFocusPreview = false;
-            IsRightCollapsed = true;
-            return;
-        }
-        IsLeftCollapsed = !IsLeftCollapsed;
-    }
+    private void ToggleLeft() => IsLeftCollapsed = !IsLeftCollapsed;
 
     [RelayCommand]
-    private void ToggleRight()
-    {
-        if (IsFocusPreview)
-        {
-            IsFocusPreview = false;
-            IsLeftCollapsed = true;
-            return;
-        }
-        IsRightCollapsed = !IsRightCollapsed;
-    }
+    private void ToggleRight() => IsRightCollapsed = !IsRightCollapsed;
 
     /// <summary>Opens the library panel if it is tucked away (used when the user picks a rail tab).</summary>
-    public void RevealLeft()
-    {
-        if (IsFocusPreview)
-            IsFocusPreview = false;
-        IsLeftCollapsed = false;
-    }
+    public void RevealLeft() => IsLeftCollapsed = false;
 
-    public void RevealRight()
-    {
-        if (IsFocusPreview)
-            IsFocusPreview = false;
-        IsRightCollapsed = false;
-    }
-
-    [RelayCommand]
-    private void ToggleFocus() => IsFocusPreview = !IsFocusPreview;
+    public void RevealRight() => IsRightCollapsed = false;
 
     /// <summary>Brings back every panel at its default size.</summary>
     [RelayCommand]
@@ -131,7 +89,6 @@ public sealed partial class WorkspaceLayout : ObservableObject
         TimelineFraction = DefaultTimelineFraction;
         IsLeftCollapsed = false;
         IsRightCollapsed = false;
-        IsFocusPreview = false;
         _quiet = false;
         Commit();
     }

@@ -107,12 +107,20 @@ internal static class CreativeFrameOps
         return output;
     }
 
+    /// <summary>
+    /// Repeatable noise in 0..1 for an integer cell and seed. Built from float multiply/add/fract only
+    /// (no integer bit tricks) so the GPU shaders in Fig.App evaluate the identical formula:
+    /// keep <c>hash3</c> in GpuEffects.Creative.cs in step with this.
+    /// </summary>
     internal static double Noise(int x, int y, int seed)
     {
-        uint hash = unchecked((uint)x * 374761393u + (uint)y * 668265263u + (uint)seed * 2246822519u);
-        hash = (hash ^ (hash >> 13)) * 1274126177u;
-        return (hash ^ (hash >> 16)) / (double)uint.MaxValue;
+        float px = Frac(x * 0.1031f), py = Frac(y * 0.1031f), pz = Frac(seed * 0.1031f);
+        float d = px * (pz + 31.32f) + py * (py + 31.32f) + pz * (px + 31.32f);
+        px += d; py += d; pz += d;
+        return Frac((px + py) * pz);
     }
+
+    private static float Frac(float v) => v - MathF.Floor(v);
 
     // Sliding-window separable box blur: work per pixel is independent of radius.
     internal static DecodedFrame Blur(DecodedFrame source, int radius)

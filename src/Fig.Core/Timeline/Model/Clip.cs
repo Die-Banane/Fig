@@ -9,10 +9,25 @@ namespace Fig.Core.Timeline
     [JsonDerivedType(typeof(VideoClip), "video")]
     [JsonDerivedType(typeof(AudioClip), "audio")]
     [JsonDerivedType(typeof(TextClip), "text")]
-    public abstract class Clip : IEffectOwner
+    public abstract class Clip : IEffectOwner, ISelectable
     {
         public abstract ClipKind Kind { get; }
         public string Id { get; set; } = Guid.NewGuid().ToString();
+
+        [JsonIgnore]
+        public SelectionKey Key => new(SelectionGroup.Clip, Id);
+
+        /// <summary>What the inspector calls this clip ("Video clip").</summary>
+        [JsonIgnore]
+        public abstract string DisplayName { get; }
+
+        /// <summary>The library media behind this clip, or null for clips that are not made from a file (text).</summary>
+        [JsonIgnore]
+        public virtual string? MediaId => null;
+
+        /// <summary>What can be edited about this clip; each kind of clip declares its own.</summary>
+        [JsonIgnore]
+        public abstract Facet Facets { get; }
 
         /// <summary>
         /// Clips sharing the same non-null group id are linked and move/resize/cut/
@@ -86,6 +101,12 @@ namespace Fig.Core.Timeline
     public sealed class VideoClip : Clip
     {
         public override ClipKind Kind => ClipKind.Video;
+        [JsonIgnore]
+        public override string DisplayName => "Video clip";
+        [JsonIgnore]
+        public override string? MediaId => SourceId;
+        [JsonIgnore]
+        public override Facet Facets => Facet.Picture | Facet.Sound | Facet.Fades | Facet.Retime | Facet.Effects | Facet.Source;
         public string SourceId { get; set; } = "";
         public double SrcInSec { get; set; }
         public double SrcOutSec { get; set; }
@@ -111,6 +132,12 @@ namespace Fig.Core.Timeline
     public sealed class AudioClip : Clip
     {
         public override ClipKind Kind => ClipKind.Audio;
+        [JsonIgnore]
+        public override string DisplayName => "Audio clip";
+        [JsonIgnore]
+        public override string? MediaId => SourceId;
+        [JsonIgnore]
+        public override Facet Facets => Facet.Sound | Facet.Fades | Facet.Retime | Facet.Effects | Facet.Source;
         public string SourceId { get; set; } = "";
         public double SrcInSec { get; set; }
         public double SrcOutSec { get; set; }
@@ -124,6 +151,10 @@ namespace Fig.Core.Timeline
     public sealed class TextClip : Clip
     {
         public override ClipKind Kind => ClipKind.Text;
+        [JsonIgnore]
+        public override string DisplayName => "Text clip";
+        [JsonIgnore]
+        public override Facet Facets => Facet.Text | Facet.Picture | Facet.Fades | Facet.Effects;
         public string Text { get; set; } = "";
         public string Font { get; set; } = "";
         public int Size { get; set; } = 48;

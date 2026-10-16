@@ -17,34 +17,33 @@
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="BorderThickness" Value="0"/>
             <Setter Property="CornerRadius" Value="3"/>
-            <Setter Property="Foreground" Value="#c6c9ce"/>
+            <Setter Property="Foreground" Value="#b8bbc4"/>
         </Style>
         <Style Selector="Button.monitor-btn:pointerover /template/ ContentPresenter">
-            <Setter Property="Background" Value="#333336"/>
+            <Setter Property="Background" Value="#30343b"/>
         </Style>
         <Style Selector="Button.monitor-play">
             <Setter Property="Width" Value="30"/>
             <Setter Property="Height" Value="30"/>
             <Setter Property="Padding" Value="7"/>
-            <Setter Property="Background" Value="#35383d"/>
+            <Setter Property="Background" Value="#30343b"/>
             <Setter Property="BorderThickness" Value="0"/>
             <Setter Property="CornerRadius" Value="3"/>
-            <Setter Property="Foreground" Value="#e5e7eb"/>
+            <Setter Property="Foreground" Value="#ececef"/>
         </Style>
         <Style Selector="Button.monitor-play:pointerover /template/ ContentPresenter">
-            <Setter Property="Background" Value="#45494f"/>
+            <Setter Property="Background" Value="#383c44"/>
         </Style>
     </UserControl.Styles>
 
-    <Border Background="#101113" CornerRadius="3">
+    <Border Background="#0e0f11" CornerRadius="12" ClipToBounds="True">
         <DockPanel>
-            <Border DockPanel.Dock="Bottom" Background="#191a1d" Padding="10,4"
-                    BorderBrush="#303238" BorderThickness="0,1,0,0">
+            <Border DockPanel.Dock="Bottom" Background="{StaticResource CardBg}" Padding="12,5">
                 <Grid ColumnDefinitions="*,Auto,*" MinHeight="32">
                     <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6"
                                 VerticalAlignment="Center">
                         <TextBlock Text="{Binding TimeDisplay}"
-                                   Foreground="#c9ccd1" FontSize="11"
+                                   Foreground="#b8bbc4" FontSize="11"
                                    FontFamily="monospace" VerticalAlignment="Center"/>
                         <local:StrokeIcon Icon="loader-circle" Width="13" Height="13"
                                           IsVisible="{Binding IsBuffering}"
@@ -96,8 +95,8 @@
                         <ComboBox ItemsSource="{Binding PreviewScaleOptions}"
                                   SelectedItem="{Binding PreviewScale}"
                                   FontSize="10" Width="84" Height="24"
-                                  Background="#202226" BorderBrush="#3a3d42"
-                                  BorderThickness="1" CornerRadius="3"
+                                  Background="#272a30" BorderBrush="#2d3037"
+                                  BorderThickness="1" CornerRadius="6"
                                   ToolTip.Tip="Preview quality">
                             <ComboBox.ItemTemplate>
                                 <DataTemplate x:DataType="vm:PreviewScaleOption">
@@ -107,13 +106,11 @@
                         </ComboBox>
                         <local:StrokeIcon Icon="gauge" Width="13" Height="13"
                                           ToolTip.Tip="{Binding DecodeStatus}"
-                                          IconBrush="#77777a"/>
+                                          IconBrush="#686c76"/>
                     </StackPanel>
                 </Grid>
             </Border>
-            <Border CornerRadius="3" Background="#090a0b"
-                    BorderBrush="#292b30" BorderThickness="1"
-                    ClipToBounds="True">
+            <Border CornerRadius="0" Background="#0b0c0e" ClipToBounds="True">
                 <Grid>
                     <local:PreviewSurface x:Name="Surface"/>
                     <ctrls:TransformOverlay DataContext="{Binding Transform}" IsVisible="{Binding ShowOverlay, FallbackValue=False}"/>

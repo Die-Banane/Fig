@@ -1,0 +1,205 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:Fig.App.ViewModels"
+             xmlns:local="using:Fig.App.Views"
+             mc:Ignorable="d" d:DesignWidth="1200" d:DesignHeight="46"
+             x:Class="Fig.App.Views.TitleBar"
+             x:Name="TitleRoot"
+             x:DataType="vm:AppViewModel">
+
+    <UserControl.Styles>
+        <!-- Anything clickable inside the title bar must say so: the TitleBar role turns the whole strip into a
+             drag area, and only elements with the User role receive input there
+             (https://docs.avaloniaui.net/api/avalonia/input/windowdecorationselementrole). The caption buttons
+             set their own roles below, which win over this style. -->
+        <Style Selector="Button, ToggleButton">
+            <Setter Property="WindowDecorationProperties.ElementRole" Value="User"/>
+        </Style>
+        <Style Selector="Button.bar-icon">
+            <Setter Property="Width" Value="32"/>
+            <Setter Property="Height" Value="32"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="CornerRadius" Value="8"/>
+            <Setter Property="Foreground" Value="{StaticResource TextSecondary}"/>
+            <Setter Property="HorizontalContentAlignment" Value="Center"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+        </Style>
+        <Style Selector="Button.bar-icon:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="{StaticResource ChipBg}"/>
+        </Style>
+        <Style Selector="ToggleButton.bar-icon:checked /template/ ContentPresenter">
+            <Setter Property="Background" Value="{StaticResource AccentSofter}"/>
+        </Style>
+        <Style Selector="Button.export">
+            <Setter Property="Background" Value="{StaticResource Accent}"/>
+            <Setter Property="Foreground" Value="#0e1626"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="Padding" Value="14,0"/>
+            <Setter Property="Height" Value="32"/>
+            <Setter Property="CornerRadius" Value="9"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+        </Style>
+        <Style Selector="Button.export:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="#8bb8ff"/>
+        </Style>
+        <Style Selector="Button.export:disabled /template/ ContentPresenter">
+            <Setter Property="Opacity" Value="0.45"/>
+        </Style>
+    </UserControl.Styles>
+
+    <Grid ColumnDefinitions="Auto,*,Auto" Height="46" Background="Transparent"
+          WindowDecorationProperties.ElementRole="TitleBar">
+
+        <!-- brand and the menus -->
+        <StackPanel Orientation="Horizontal" Spacing="2" Margin="12,0,0,0" VerticalAlignment="Center">
+            <Border Width="22" Height="22" CornerRadius="7" Background="{StaticResource Accent}" Margin="0,0,10,0"
+                    VerticalAlignment="Center" ToolTip.Tip="fig">
+                <TextBlock Text="f" Foreground="#0e1626" FontWeight="Bold" FontSize="14"
+                           HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,-1,0,0"/>
+            </Border>
+
+            <Button x:Name="FileMenu" Classes="menu-btn" Content="File">
+                <Button.Flyout>
+                    <MenuFlyout Placement="BottomEdgeAlignedLeft">
+                        <MenuItem Header="Import…" Command="{Binding Editor.ImportCommand}" CommandParameter="{Binding #TitleRoot.Owner}"
+                                  IsEnabled="{Binding IsEditing}"/>
+                        <Separator/>
+                        <MenuItem Header="Save" Command="{Binding Editor.SaveCommand}" InputGesture="Ctrl+S" IsEnabled="{Binding IsEditing}"/>
+                        <MenuItem Header="Save as…" Command="{Binding Editor.SaveAsCommand}" CommandParameter="{Binding #TitleRoot.Owner}"
+                                  IsEnabled="{Binding IsEditing}"/>
+                        <MenuItem Header="Export…" Command="{Binding Editor.ExportCommand}" CommandParameter="{Binding #TitleRoot.Owner}"
+                                  IsEnabled="{Binding IsEditing}"/>
+                        <MenuItem Header="Export marked ranges…" Command="{Binding Editor.ExportMarkedRangesCommand}"
+                                  CommandParameter="{Binding #TitleRoot.Owner}" IsEnabled="{Binding IsEditing}"/>
+                        <Separator/>
+                        <MenuItem Header="Close project" Command="{Binding CloseProjectCommand}" CommandParameter="{Binding #TitleRoot.Owner}"
+                                  InputGesture="Ctrl+W" IsEnabled="{Binding IsEditing}"/>
+                        <Separator/>
+                        <MenuItem Header="Exit" Click="Exit_Click"/>
+                    </MenuFlyout>
+                </Button.Flyout>
+            </Button>
+
+            <Button x:Name="EditMenu" Classes="menu-btn" Content="Edit" IsEnabled="{Binding IsEditing}">
+                <Button.Flyout>
+                    <MenuFlyout Placement="BottomEdgeAlignedLeft">
+                        <MenuItem Header="Undo" Command="{Binding Editor.UndoCommand}" InputGesture="Ctrl+Z"/>
+                        <MenuItem Header="Redo" Command="{Binding Editor.RedoCommand}" InputGesture="Ctrl+Y"/>
+                        <Separator/>
+                        <MenuItem Header="Cut" Command="{Binding Editor.CutSelectedCommand}" InputGesture="Ctrl+X"/>
+                        <MenuItem Header="Copy" Command="{Binding Editor.CopySelectedCommand}" InputGesture="Ctrl+C"/>
+                        <MenuItem Header="Paste" Command="{Binding Editor.PasteCommand}" InputGesture="Ctrl+V"/>
+                        <MenuItem Header="Duplicate" Command="{Binding Editor.DuplicateSelectedCommand}" InputGesture="Ctrl+D"/>
+                        <Separator/>
+                        <MenuItem Header="Split at playhead" Command="{Binding Editor.SplitAtPlayheadCommand}" InputGesture="Ctrl+K"/>
+                        <MenuItem Header="Ripple delete" Command="{Binding Editor.RippleDeleteSelectedCommand}"/>
+                        <MenuItem Header="Lift delete" Command="{Binding Editor.LiftSelectedCommand}"/>
+                        <MenuItem Header="Enable / disable" Command="{Binding Editor.ToggleClipEnabledSelectedCommand}" InputGesture="Ctrl+E"/>
+                        <Separator/>
+                        <MenuItem Header="Add marker at playhead" Command="{Binding Editor.AddMarkerAtPlayheadCommand}" InputGesture="M"/>
+                        <MenuItem Header="Create ranges from bookmarks…" Command="{Binding Editor.CreateRangesFromBookmarksCommand}"
+                                  CommandParameter="{Binding #TitleRoot.Owner}"/>
+                        <MenuItem Header="Delete marker" Command="{Binding Editor.DeleteSelectedMarkerCommand}" InputGesture="Shift+Delete"/>
+                    </MenuFlyout>
+                </Button.Flyout>
+            </Button>
+
+            <Button x:Name="ViewMenu" Classes="menu-btn" Content="View" IsEnabled="{Binding IsEditing}">
+                <Button.Flyout>
+                    <MenuFlyout Placement="BottomEdgeAlignedLeft">
+                        <MenuItem Header="Media panel" Command="{Binding Editor.Layout.ToggleLeftCommand}" ToggleType="CheckBox"
+                                  IsChecked="{Binding Editor.Layout.IsLeftVisible, Mode=OneWay}" InputGesture="Ctrl+1"/>
+                        <MenuItem Header="Inspector" Command="{Binding Editor.Layout.ToggleRightCommand}" ToggleType="CheckBox"
+                                  IsChecked="{Binding Editor.Layout.IsRightVisible, Mode=OneWay}" InputGesture="Ctrl+2"/>
+                        <MenuItem Header="Reset layout" Command="{Binding Editor.Layout.ResetCommand}"/>
+                        <Separator/>
+                        <MenuItem Header="Audio scrubbing" Command="{Binding Editor.ToggleAudioScrubCommand}" ToggleType="CheckBox"
+                                  IsChecked="{Binding Editor.AudioScrub, Mode=OneWay}" InputGesture="Shift+S"/>
+                        <Separator/>
+                        <MenuItem Header="Zoom to fit sequence" Command="{Binding Editor.ZoomTimelineToFitCommand}"/>
+                        <MenuItem Header="Zoom in" Command="{Binding Editor.ZoomTimelineInCommand}"/>
+                        <MenuItem Header="Zoom out" Command="{Binding Editor.ZoomTimelineOutCommand}"/>
+                    </MenuFlyout>
+                </Button.Flyout>
+            </Button>
+
+            <Button x:Name="HelpMenu" Classes="menu-btn" Content="Help">
+                <Button.Flyout>
+                    <MenuFlyout Placement="BottomEdgeAlignedLeft">
+                        <MenuItem Header="Keyboard shortcuts" Click="Shortcuts_Click"/>
+                    </MenuFlyout>
+                </Button.Flyout>
+            </Button>
+        </StackPanel>
+
+        <!-- what is open -->
+        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" HorizontalAlignment="Center" VerticalAlignment="Center"
+                    IsHitTestVisible="False">
+            <TextBlock Text="{Binding Editor.Project.Name}" IsVisible="{Binding IsEditing}"
+                       Foreground="{StaticResource TextPrimary}" FontWeight="SemiBold" FontSize="13"
+                       TextTrimming="CharacterEllipsis" MaxWidth="360" VerticalAlignment="Center"/>
+            <TextBlock Text="{Binding Editor.SaveStatusText}" IsVisible="{Binding IsEditing}"
+                       Foreground="{StaticResource TextMuted}" FontSize="12" VerticalAlignment="Center"/>
+            <TextBlock Text="fig" IsVisible="{Binding !IsEditing}" Foreground="{StaticResource TextMuted}" FontSize="13"
+                       VerticalAlignment="Center"/>
+        </StackPanel>
+
+        <!-- project actions, then the window buttons -->
+        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4" Margin="0,0,6,0" VerticalAlignment="Center">
+            <StackPanel Orientation="Horizontal" Spacing="4" IsVisible="{Binding IsEditing}" Margin="0,0,6,0" VerticalAlignment="Center">
+                <Button Classes="bar-icon" Command="{Binding CloseProjectCommand}" CommandParameter="{Binding #TitleRoot.Owner}"
+                        ToolTip.Tip="All projects (Ctrl+W)" AutomationProperties.Name="All projects">
+                    <local:StrokeIcon Icon="layout-grid" Width="16" Height="16" IconBrush="{StaticResource TextSecondary}"/>
+                </Button>
+                <Button Classes="bar-icon" Command="{Binding Editor.ToggleJobsCommand}" ToolTip.Tip="Export jobs"
+                        AutomationProperties.Name="Export jobs">
+                    <Grid>
+                        <local:StrokeIcon Icon="list-checks" Width="16" Height="16" IconBrush="{StaticResource TextSecondary}"/>
+                        <Border Background="{StaticResource Accent}" CornerRadius="7" MinWidth="14" Height="14" Padding="3,0"
+                                HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,-6,-8,0"
+                                IsVisible="{Binding Editor.ActiveExportCount}">
+                            <TextBlock Text="{Binding Editor.ActiveExportCount}" FontSize="9" FontWeight="Bold" Foreground="#0e1626"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                    </Grid>
+                </Button>
+                <ToggleButton Classes="bar-icon" IsChecked="{Binding Editor.Layout.IsLeftVisible, Mode=OneWay}"
+                              Command="{Binding Editor.Layout.ToggleLeftCommand}" ToolTip.Tip="Media panel (Ctrl+1)"
+                              AutomationProperties.Name="Media panel">
+                    <local:StrokeIcon Icon="panel-left" Width="16" Height="16" IconBrush="{StaticResource TextSecondary}"/>
+                </ToggleButton>
+                <ToggleButton Classes="bar-icon" IsChecked="{Binding Editor.Layout.IsRightVisible, Mode=OneWay}"
+                              Command="{Binding Editor.Layout.ToggleRightCommand}" ToolTip.Tip="Inspector (Ctrl+2)"
+                              AutomationProperties.Name="Inspector">
+                    <local:StrokeIcon Icon="panel-right" Width="16" Height="16" IconBrush="{StaticResource TextSecondary}"/>
+                </ToggleButton>
+                <Button Classes="export" Command="{Binding Editor.ExportCommand}" CommandParameter="{Binding #TitleRoot.Owner}"
+                        Margin="6,0,0,0" ToolTip.Tip="Render the timeline to a video file" AutomationProperties.Name="Export">
+                    <StackPanel Orientation="Horizontal" Spacing="7">
+                        <local:StrokeIcon Icon="upload" Width="14" Height="14" IconBrush="#0e1626"/>
+                        <TextBlock Text="Export" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Button>
+            </StackPanel>
+
+            <Button Classes="caption" x:Name="MinimizeButton" Click="Minimize_Click" AutomationProperties.Name="Minimize"
+                    WindowDecorationProperties.ElementRole="MinimizeButton">
+                <local:StrokeIcon Icon="minus" Width="14" Height="14" IconBrush="{Binding $parent[Button].Foreground}"/>
+            </Button>
+            <Button Classes="caption" x:Name="MaximizeButton" Click="Maximize_Click" AutomationProperties.Name="Maximize"
+                    WindowDecorationProperties.ElementRole="MaximizeButton">
+                <local:StrokeIcon x:Name="MaximizeIcon" Icon="square" Width="13" Height="13" IconBrush="{Binding $parent[Button].Foreground}"/>
+            </Button>
+            <Button Classes="caption close" x:Name="CloseButton" Click="Close_Click" AutomationProperties.Name="Close"
+                    WindowDecorationProperties.ElementRole="CloseButton">
+                <local:StrokeIcon Icon="x" Width="14" Height="14" IconBrush="{Binding $parent[Button].Foreground}"/>
+            </Button>
+        </StackPanel>
+    </Grid>
+</UserControl>

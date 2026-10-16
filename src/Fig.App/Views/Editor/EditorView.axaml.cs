@@ -127,7 +127,6 @@ public partial class EditorView : UserControl
             menu.Items.Add(Make("Go to start", () => vm.JumpToStartCommand.Execute(null)));
             menu.Items.Add(Make("Go to end", () => vm.JumpToEndCommand.Execute(null)));
             menu.Items.Add(new Separator());
-            menu.Items.Add(Make(vm.Layout.IsFocusPreview ? "Restore layout" : "Focus preview", () => vm.Layout.ToggleFocusCommand.Execute(null)));
             if (vm.Properties.HasPreviewControls)
                 menu.Items.Add(Make(vm.Properties.ShowPreviewControls ? "Hide controls on the preview" : "Show controls on the preview",
                     () => vm.Properties.ShowPreviewControls = !vm.Properties.ShowPreviewControls));
@@ -309,12 +308,6 @@ public partial class EditorView : UserControl
         e.Handled = true;
     }
 
-    private void ShortcutsMenu_Click(object? sender, RoutedEventArgs e)
-    {
-        if (TopLevel.GetTopLevel(this) is Window owner)
-            ShortcutsDialog.Show(owner);
-    }
-
     private void OnDataContextChanged(object? sender, EventArgs e)
     {
         if (_boundVm is not null)
@@ -322,6 +315,7 @@ public partial class EditorView : UserControl
             _boundVm.PropertyChanged -= OnEditorPropertyChanged;
             _boundVm.Layout.Changed -= ApplyLayout;
             _boundVm.PlaybackAssigned -= OnPlaybackAssigned;
+            _boundVm.TimelineZoomRequested -= OnTimelineZoomRequested;
             _boundVm = null;
             OnPlaybackAssigned(null);
         }
@@ -334,6 +328,7 @@ public partial class EditorView : UserControl
         vm.Layout.Changed += ApplyLayout;
         ApplyLayout();
         vm.PlaybackAssigned += OnPlaybackAssigned;
+        vm.TimelineZoomRequested += OnTimelineZoomRequested;
         if (vm.Playback is not null)
             WirePlayback(vm.Playback);
     }
@@ -444,19 +439,6 @@ public partial class EditorView : UserControl
         _dragArmed = false;
     }
 
-    private void ExitMenu_Click(object? sender, RoutedEventArgs e)
-    {
-        if (TopLevel.GetTopLevel(this) is Window window)
-            window.Close();
-    }
-
-    private async void CloseProjectMenu_Click(object? sender, RoutedEventArgs e)
-    {
-        var window = TopLevel.GetTopLevel(this) as Window;
-        if (window?.DataContext is ViewModels.AppViewModel app)
-            await app.CloseProjectAsync(window);
-    }
-
     private void OnFileDragOver(object? sender, DragEventArgs e)
     {
         if (e.DataTransfer.Formats.Contains(DataFormat.File))
@@ -482,13 +464,19 @@ public partial class EditorView : UserControl
         }
     }
 
-    private void TimelineZoomIn_Click(object? sender, RoutedEventArgs e) => Timeline.ZoomInAtPlayhead();
-
-    private void TimelineZoomOut_Click(object? sender, RoutedEventArgs e) => Timeline.ZoomOutAtPlayhead();
-
-    private void TimelineZoomFit_Click(object? sender, RoutedEventArgs e)
+    private void OnTimelineZoomRequested(TimelineZoom zoom)
     {
-        var end = _boundVm?.SequenceEndSec ?? 60;
-        Timeline.ZoomToFitSequence(end);
+        switch (zoom)
+        {
+            case TimelineZoom.In: Timeline.ZoomInAtPlayhead(); break;
+            case TimelineZoom.Out: Timeline.ZoomOutAtPlayhead(); break;
+            default: Timeline.ZoomToFitSequence(_boundVm?.SequenceEndSec ?? 60); break;
+        }
     }
+
+    private void TimelineZoomIn_Click(object? sender, RoutedEventArgs e) => OnTimelineZoomRequested(TimelineZoom.In);
+
+    private void TimelineZoomOut_Click(object? sender, RoutedEventArgs e) => OnTimelineZoomRequested(TimelineZoom.Out);
+
+    private void TimelineZoomFit_Click(object? sender, RoutedEventArgs e) => OnTimelineZoomRequested(TimelineZoom.FitSequence);
 }

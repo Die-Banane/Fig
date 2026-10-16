@@ -889,8 +889,9 @@ namespace Fig.Core.Timeline
         }
 
         /// <summary>
-        /// Turns animation on or off for an effect (the stopwatch). On: a keyframe at the given time holds
-        /// the current look. Off: every keyframe is removed and the look at that time becomes the constant value.
+        /// Turns animation on or off for an effect. On: a keyframe at the given time holds the current look.
+        /// Off: every keyframe is removed and the look at that time becomes the constant value. This is the
+        /// explicit "clear animation" edit; the stopwatch records with <see cref="RecordEffectKeyframe"/> instead.
         /// </summary>
         public void SetEffectAnimated(string clipId, string effectId, bool animated, double localSec)
         {
@@ -915,6 +916,28 @@ namespace Fig.Core.Timeline
                     fx.Params[key] = kind == ParamKind.Int ? ParamValue.OfInt((int)Math.Round(number)) : ParamValue.OfDouble(number);
                 }
             });
+        }
+
+        /// <summary>
+        /// Records a keyframe at a clip-relative time holding the effect's current look there (the stopwatch).
+        /// Recording only ever adds: an effect that is not animated yet starts with this keyframe, one that is
+        /// keeps every keyframe it has, and a time that already has a keyframe is left as it is. Returns the
+        /// time keyed, or null when the effect does not exist. Removing keyframes is a separate, explicit edit
+        /// (<see cref="RemoveEffectKeyframe"/>, <see cref="SetEffectAnimated"/>).
+        /// </summary>
+        public double? RecordEffectKeyframe(string clipId, string effectId, double localSec)
+        {
+            var clip = FindEffectOwner(clipId);
+            var effect = clip?.Effects.FirstOrDefault(e => e.Id == effectId);
+            if (clip is null || effect is null)
+                return null;
+
+            var time = Math.Clamp(localSec, 0, EffectTimeLimit(clip));
+            var alreadyKeyed = effect.Keyframes.Values.Any(track => track.Any(p => Math.Abs(p.TimeSec - time) < 1e-6));
+            if (!alreadyKeyed)
+                ExecuteEffectEdit(clipId, effectId, effect.Keyframes.Count == 0 ? "Animate effect" : "Record keyframe", null,
+                    fx => UpsertKeyframes(fx, time, CurrentNumericValues(fx, time), null));
+            return time;
         }
 
         /// <summary>Copies the keyframe at one time to another time (same values and easing).</summary>

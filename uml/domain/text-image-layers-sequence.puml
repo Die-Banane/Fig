@@ -1,0 +1,30 @@
+@startuml
+title Text and image layers (draft): add a title, see it, export it
+
+actor User
+participant "Library (Text tab)" as Library
+participant TimelineEditor
+participant TimelineView
+participant "BuildScene" as Scene
+participant ILayerRasterizer
+participant ISceneRenderer
+
+User -> Library : drag "Title" onto a video track (or click Add text)
+Library -> TimelineEditor : AddText(track, start, style)
+TimelineEditor -> TimelineEditor : one undoable command, clip selected
+TimelineEditor --> TimelineView : TimelineChanged
+TimelineView --> User : a text bar on the track (T icon, its own colour)
+User -> TimelineView : select the bar
+note right: same path as any selection:\nfacets Text | Picture | Fades | Effects\nopen the Text, Picture, Fades, Effects tabs
+
+== every frame (preview and export) ==
+Scene -> Scene : for each clip active at t on a video track
+alt VideoClip
+  Scene -> Scene : decode the frame
+else TextClip or ImageClip
+  Scene -> ILayerRasterizer : Rasterize(clip, w, h, t)
+  ILayerRasterizer --> Scene : premultiplied BGRA frame (cached)
+end
+Scene --> ISceneRenderer : RenderSource(Frame, HasAlpha, effects, crop)
+ISceneRenderer --> User : layer drawn "over" what is below it
+@enduml

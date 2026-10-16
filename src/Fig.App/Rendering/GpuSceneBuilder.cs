@@ -20,17 +20,8 @@ public static class GpuSceneBuilder
     /// The clip's enabled effects in stack order that are in force at <paramref name="localT"/>, with keyframes
     /// sampled. Mirrors <see cref="EffectPipeline.ApplyStack(DecodedFrame, IReadOnlyList{EffectInstance}, double, List{byte[]}?)"/>.
     /// </summary>
-    public static IReadOnlyList<GpuEffectCall> EffectsAt(IReadOnlyList<EffectInstance> effects, double localT)
-    {
-        if (effects.Count == 0)
-            return Array.Empty<GpuEffectCall>();
-        return effects
-            .Where(fx => fx.Enabled && !string.IsNullOrEmpty(fx.TypeId) && fx.IsActiveAt(localT)
-                         && EffectCatalog.Resolve(fx.TypeId) is not null)
-            .OrderBy(fx => fx.Order)
-            .Select(fx => new GpuEffectCall(fx.TypeId, EffectPipeline.ResolveParams(fx, localT)))
-            .ToList();
-    }
+    public static IReadOnlyList<EffectCall> EffectsAt(IReadOnlyList<EffectInstance> effects, double localT)
+        => EffectPipeline.ResolveStack(effects, localT);
 
     /// <summary>Applies a track stack to its finished layer, including both sides of a transition.</summary>
     public static GpuLayer WithTrackEffects(GpuLayer layer, Track track, double timelineSec, int width, int height)
@@ -92,5 +83,75 @@ public static class GpuSceneBuilder
         }
 
         return new GpuSource { Image = ToImage(frame), Effects = calls, Crop = crop };
+    }
+
+    /// <summary>
+    /// Turns an export frame into a GPU scene: each decoded picture is copied into an image (so the decoders
+    /// may move on) and the resolved effects stay as shader calls. A layer that holds anything without a
+    /// shader (a future effect or transition) is drawn on the CPU first, so it is never dropped.
+    /// </summary>
+    public static GpuScene FromScene(RenderScene scene)
+    {
+        var layers = new List<GpuLayer>(scene.Layers.Count);
+        try
+        {
+            foreach (var layer in scene.Layers)
+                layers.Add(CanRunOnGpu(layer) ? ToGpuLayer(layer) : BakeOnCpu(layer, scene.Width, scene.Height));
+        }
+        catch
+        {
+            foreach (var built in layers)
+            {
+                built.Source.Image.Dispose();
+                built.Incoming?.Image.Dispose();
+            }
+            throw;
+        }
+        return new GpuScene { Width = scene.Width, Height = scene.Height, Layers = layers };
+    }
+
+    private static bool CanRunOnGpu(RenderLayer layer)
+        => layer.Source.Effects.All(c => GpuEffects.Supports(c.TypeId))
+           && (layer.Incoming?.Effects.All(c => GpuEffects.Supports(c.TypeId)) ?? true)
+           && layer.Effects.All(c => GpuEffects.Supports(c.TypeId))
+           && (layer.TransitionTypeId is null || GpuEffects.SupportsTransition(layer.TransitionTypeId));
+
+    private static GpuLayer ToGpuLayer(RenderLayer layer) => new()
+    {
+        Source = ToGpuSource(layer.Source),
+        Incoming = layer.Incoming is null ? null : ToGpuSource(layer.Incoming),
+        TransitionTypeId = layer.Incoming is null ? null : layer.TransitionTypeId,
+        Progress = layer.Progress,
+        TransitionParams = layer.TransitionParams,
+        Effects = layer.Effects,
+        Opacity = layer.Opacity,
+    };
+
+    private static GpuSource ToGpuSource(RenderSource source) => new()
+    {
+        Image = ToImage(source.Frame),
+        Effects = source.Effects,
+        Crop = new CropInsets(source.Crop.Left, source.Crop.Top, source.Crop.Right, source.Crop.Bottom),
+    };
+
+    /// <summary>Draws one layer with the CPU kernels and uploads the finished picture.</summary>
+    private static GpuLayer BakeOnCpu(RenderLayer layer, int width, int height)
+    {
+        var single = new RenderScene
+        {
+            Width = width, Height = height,
+            Layers = [new RenderLayer
+            {
+                Source = layer.Source, Incoming = layer.Incoming, TransitionTypeId = layer.TransitionTypeId,
+                Progress = layer.Progress, TransitionParams = layer.TransitionParams, Effects = layer.Effects, Opacity = 1,
+            }],
+        };
+        var pixels = new byte[width * height * 4];
+        new CpuSceneRenderer().Render(single, pixels);
+        return new GpuLayer
+        {
+            Source = new GpuSource { Image = ToImage(new DecodedFrame { Width = width, Height = height, Pixels = pixels }) },
+            Opacity = layer.Opacity,
+        };
     }
 }

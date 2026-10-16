@@ -1,0 +1,28 @@
+@startuml
+title Selection: click a thing, the inspector follows
+
+actor User
+participant TimelineView
+participant SelectionState
+participant TimelineEditor
+participant EditorViewModel
+participant PropertiesViewModel
+participant SectionRegistry
+
+User -> TimelineView : click (clip, effect bar, marker, transition, track)
+TimelineView -> SelectionState : Replace(key)  (Shift/Ctrl: Toggle/Add)
+note right: an item of another group replaces the\nselection, so the list is always one group
+SelectionState --> EditorViewModel : Changed
+EditorViewModel -> TimelineEditor : Selected
+TimelineEditor -> TimelineEditor : Resolve(each key) -> ISelectable
+EditorViewModel -> PropertiesViewModel : Refresh(selected)
+PropertiesViewModel -> PropertiesViewModel : shared = AND of every item's Facets
+loop each facet in shared
+  PropertiesViewModel -> SectionRegistry : Create(facet)
+  SectionRegistry --> PropertiesViewModel : InspectorSection
+end
+PropertiesViewModel --> User : tabs for the shared facets, the first one open
+
+... later: effect bar "level" or "fades" clicked ...
+TimelineView -> PropertiesViewModel : OpenSection(Facet.Sound)
+@enduml

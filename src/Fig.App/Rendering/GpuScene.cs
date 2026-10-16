@@ -1,13 +1,11 @@
 using System;
 using System.Collections.Generic;
 using System.Threading;
+using Fig.Core.Media;
 using Fig.Core.Timeline;
 using SkiaSharp;
 
 namespace Fig.App.Rendering;
-
-/// <summary>One effect of a clip's stack, with its parameters already resolved at the frame's time (keyframes sampled).</summary>
-public sealed record GpuEffectCall(string TypeId, IReadOnlyDictionary<string, ParamValue> Params);
 
 /// <summary>Normalized crop insets from each edge (0..1).</summary>
 public readonly record struct CropInsets(double Left, double Top, double Right, double Bottom)
@@ -21,7 +19,7 @@ public readonly record struct CropInsets(double Left, double Top, double Right, 
 public sealed class GpuSource
 {
     public required SKImage Image { get; init; }
-    public IReadOnlyList<GpuEffectCall> Effects { get; init; } = Array.Empty<GpuEffectCall>();
+    public IReadOnlyList<EffectCall> Effects { get; init; } = Array.Empty<EffectCall>();
     public CropInsets Crop { get; init; } = CropInsets.None;
 }
 
@@ -34,7 +32,7 @@ public sealed class GpuLayer
     public required GpuSource Source { get; init; }
     public GpuSource? Incoming { get; init; }
     /// <summary>Track effects applied after crop and any transition.</summary>
-    public IReadOnlyList<GpuEffectCall> Effects { get; init; } = Array.Empty<GpuEffectCall>();
+    public IReadOnlyList<EffectCall> Effects { get; init; } = Array.Empty<EffectCall>();
     public string? TransitionTypeId { get; init; }
     public double Progress { get; init; }
     public IReadOnlyDictionary<string, ParamValue>? TransitionParams { get; init; }

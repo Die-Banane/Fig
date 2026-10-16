@@ -42,23 +42,43 @@ namespace Fig.Core.Media
             double localT,
             List<byte[]>? rentedOut)
         {
+            return ApplyCalls(frame, ResolveStack(effects, localT), rentedOut);
+        }
+
+        /// <summary>
+        /// The effects of a stack that are in force at <paramref name="localT"/>, in stack order, with their
+        /// parameters sampled at that time. Disabled effects, effects outside their zone and unknown types drop out.
+        /// </summary>
+        public static IReadOnlyList<EffectCall> ResolveStack(IReadOnlyList<EffectInstance> effects, double localT)
+        {
             if (effects.Count == 0)
-                return frame;
+                return Array.Empty<EffectCall>();
 
             var ordered = new List<EffectInstance>(effects);
             ordered.Sort((a, b) => a.Order.CompareTo(b.Order));
 
-            var current = frame;
+            var calls = new List<EffectCall>(ordered.Count);
             foreach (var fx in ordered)
             {
                 if (!fx.Enabled || string.IsNullOrEmpty(fx.TypeId) || !fx.IsActiveAt(localT))
                     continue;
-                var processor = EffectCatalog.Resolve(fx.TypeId);
+                if (EffectCatalog.Resolve(fx.TypeId) is null)
+                    continue;
+                calls.Add(new EffectCall(fx.TypeId, ResolveParams(fx, localT), localT));
+            }
+            return calls;
+        }
+
+        /// <summary>Runs resolved effects in order on the CPU. New buffers are appended to <paramref name="rentedOut"/>.</summary>
+        public static DecodedFrame ApplyCalls(DecodedFrame frame, IReadOnlyList<EffectCall> calls, List<byte[]>? rentedOut)
+        {
+            var current = frame;
+            foreach (var call in calls)
+            {
+                var processor = EffectCatalog.Resolve(call.TypeId);
                 if (processor is null)
                     continue;
-                var resolved = ResolveParams(fx, localT);
-
-                var next = processor.Apply(current, resolved, localT);
+                var next = processor.Apply(current, call.Params, call.LocalT);
                 if (!ReferenceEquals(current, next))
                     rentedOut?.Add(next.Pixels);
                 current = next;

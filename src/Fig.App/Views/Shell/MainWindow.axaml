@@ -2,6 +2,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:Fig.App.ViewModels"
         xmlns:views="using:Fig.App.Views"
+        xmlns:render="using:Fig.App.Rendering"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         mc:Ignorable="d" d:DesignWidth="1200" d:DesignHeight="700"
@@ -9,6 +10,9 @@
         x:DataType="vm:AppViewModel"
         Icon="/Assets/avalonia-logo.ico"
         MinWidth="1100" MinHeight="700"
+        WindowDecorations="None"
+        ExtendClientAreaToDecorationsHint="True"
+        Background="{StaticResource SurfaceBg}"
         Title="fig">
 
     <Window.KeyBindings>
@@ -28,12 +32,26 @@
         <KeyBinding Gesture="Shift+Right" Command="{Binding Editor.StepForwardSecondCommand}"/>
         <KeyBinding Gesture="Ctrl+1" Command="{Binding Editor.Layout.ToggleLeftCommand}"/>
         <KeyBinding Gesture="Ctrl+2" Command="{Binding Editor.Layout.ToggleRightCommand}"/>
-        <KeyBinding Gesture="Ctrl+Shift+F" Command="{Binding Editor.Layout.ToggleFocusCommand}"/>
     </Window.KeyBindings>
 
     <Grid>
-        <ContentControl Content="{Binding CurrentView}"/>
+        <Grid RowDefinitions="Auto,*">
+            <views:TitleBar Grid.Row="0"/>
+            <ContentControl Grid.Row="1" Content="{Binding CurrentView}"/>
+        </Grid>
         <views:ToastHost DataContext="{Binding Toasts}"/>
+        <!-- gives export access to the GPU (the render thread owns the context); one pixel, draws nothing -->
+        <render:GpuJobHost HorizontalAlignment="Left" VerticalAlignment="Bottom"/>
+
+        <!-- the window has no frame of its own, so its edges are grips -->
+        <Border Height="5" VerticalAlignment="Top" Margin="10,0" Background="Transparent" WindowDecorationProperties.ElementRole="ResizeN"/>
+        <Border Height="5" VerticalAlignment="Bottom" Margin="10,0" Background="Transparent" WindowDecorationProperties.ElementRole="ResizeS"/>
+        <Border Width="5" HorizontalAlignment="Left" Margin="0,10" Background="Transparent" WindowDecorationProperties.ElementRole="ResizeW"/>
+        <Border Width="5" HorizontalAlignment="Right" Margin="0,10" Background="Transparent" WindowDecorationProperties.ElementRole="ResizeE"/>
+        <Border Width="10" Height="10" HorizontalAlignment="Left" VerticalAlignment="Top" Background="Transparent" WindowDecorationProperties.ElementRole="ResizeNW"/>
+        <Border Width="10" Height="10" HorizontalAlignment="Right" VerticalAlignment="Top" Background="Transparent" WindowDecorationProperties.ElementRole="ResizeNE"/>
+        <Border Width="10" Height="10" HorizontalAlignment="Left" VerticalAlignment="Bottom" Background="Transparent" WindowDecorationProperties.ElementRole="ResizeSW"/>
+        <Border Width="10" Height="10" HorizontalAlignment="Right" VerticalAlignment="Bottom" Background="Transparent" WindowDecorationProperties.ElementRole="ResizeSE"/>
     </Grid>
 
 </Window>

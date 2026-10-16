@@ -8,30 +8,20 @@ using Fig.Core.Timeline;
 
 namespace Fig.App.ViewModels;
 
-public enum PropertiesContextKind
-{
-    Empty,
-    Media,
-    Clip,
-    Track,
-    Marker,
-    Transition,
-}
-
 /// <summary>
-/// Contextual inspector for the timeline-row properties panel.
-/// Priority: selected clip(s) → selected track → library media → empty.
-/// Clip opacity / volume / crop are live controls that write through TimelineEditor.
+/// The inspector. Whatever is selected (clips, effect bars, markers, transitions, tracks, library media)
+/// is an <see cref="ISelectable"/> that says which facets it has; the sections shown are the facets every
+/// selected item shares, and each section's controls write through TimelineEditor.
 /// </summary>
 public partial class PropertiesViewModel : ViewModelBase
 {
     private readonly EditorViewModel _editor;
     private bool _suppressApply;
     private string? _clipId;
-    // Context key (kind + object id) currently displayed. Keeps the inspector tab stable
-    // across the Refresh() re-runs that slider drags trigger (each write raises
-    // TimelineChanged), so editing an effect/opacity doesn't yank back to the Video tab.
-    private (PropertiesContextKind Kind, string? Key) _shown;
+    // The items currently shown, as one string. While it is unchanged a Refresh() only re-reads values:
+    // slider drags raise TimelineChanged on every tick, and tearing the panel down would drop the open tab.
+    private string? _contextKey;
+    private Facet _facets;
 
     public PropertiesViewModel(EditorViewModel editor)
     {
@@ -66,9 +56,9 @@ public partial class PropertiesViewModel : ViewModelBase
         // keyframed param values and automation diamonds follow the playhead
         if (e.PropertyName == nameof(EditorViewModel.PlayheadTimeSec))
         {
-            if (ShowEffectsSection)
+            if (Has(Facet.Effects))
                 RefreshParams();
-            if (Kind == PropertiesContextKind.Clip)
+            if (Has(Facet.Picture | Facet.Sound))
                 RefreshAutomation();
             Transform.Refresh();
         }
@@ -128,17 +118,32 @@ public partial class PropertiesViewModel : ViewModelBase
         CropRightAutomation.Refresh();
     }
 
+    /// <summary>The tabs for what is selected, in order. Empty when nothing can be inspected.</summary>
+    public ObservableCollection<InspectorSection> Sections { get; } = new();
+
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(HasContext))]
-    [NotifyPropertyChangedFor(nameof(ShowTabStrip))]
-    private PropertiesContextKind _kind = PropertiesContextKind.Empty;
+    private InspectorSection? _selectedSection;
+
     [ObservableProperty] private string _title = "Properties";
     [ObservableProperty] private string _subtitle = "Select a clip, track, or media item.";
 
-    public bool HasContext => Kind != PropertiesContextKind.Empty;
+    public bool HasContext => Sections.Count > 0;
 
-    /// <summary>Only a clip has several tabs; markers, tracks and transitions are a single page.</summary>
-    public bool ShowTabStrip => Kind is PropertiesContextKind.Clip or PropertiesContextKind.Media;
+    /// <summary>A single section needs no tab strip.</summary>
+    public bool ShowTabStrip => Sections.Count > 1;
+
+    /// <summary>True when what is shown has this facet (any of the flags given).</summary>
+    public bool Has(Facet facet) => (_facets & facet) != 0;
+
+    /// <summary>Opens a section by its facet, if the current selection has one (a rack row jumping to "Audio").</summary>
+    public void OpenSection(Facet facet)
+    {
+        if (Sections.FirstOrDefault(s => s.Facet == facet) is { } section)
+            SelectedSection = section;
+    }
+
+    /// <summary>Whether the section for this facet is the one open.</summary>
+    public bool IsOpen(Facet facet) => SelectedSection?.Facet == facet;
 
     // shared / media
     [ObservableProperty] private string? _fileName;
@@ -153,14 +158,8 @@ public partial class PropertiesViewModel : ViewModelBase
     [ObservableProperty] private string _proxyActionLabel = "Generate Proxy";
 
     // clip controls
-    [ObservableProperty] private bool _showClipSection;
-    [ObservableProperty] private bool _showVideoControls;
-    [ObservableProperty] private bool _showAudioControls;
-    [ObservableProperty] private bool _showFadeControls;
-    [ObservableProperty] private bool _showSpeedControls;
     [ObservableProperty] private string? _clipTimingLabel;
     [ObservableProperty] private string? _sourceRangeLabel;
-    [ObservableProperty] private int _selectedTabIndex;
 
     /// <summary>The "Show controls" switch for handles drawn on the preview (zoom frame, swirl center…).</summary>
     [ObservableProperty]
@@ -201,10 +200,8 @@ public partial class PropertiesViewModel : ViewModelBase
     // track
     [ObservableProperty] private string? _trackNameLabel;
     [ObservableProperty] private string? _trackFlagsLabel;
-    [ObservableProperty] private bool _showTrackSection;
 
     // marker
-    [ObservableProperty] private bool _showMarkerSection;
     [ObservableProperty] private string _markerName = "";
     [ObservableProperty] private string? _markerTimeLabel;
     [ObservableProperty] private string? _markerDurationLabel;
@@ -224,7 +221,6 @@ public partial class PropertiesViewModel : ViewModelBase
     private FrameRate _markerRate;
 
     // transition
-    [ObservableProperty] private bool _showTransitionSection;
     [ObservableProperty] private string? _transitionTypeLabel;
     [ObservableProperty] private string? _transitionDescription;
     [ObservableProperty] private string? _transitionEditPoint;
@@ -236,7 +232,6 @@ public partial class PropertiesViewModel : ViewModelBase
     [ObservableProperty] private double _transitionMaxDuration = 1;
 
     // effect stack (clip context)
-    [ObservableProperty] private bool _showEffectsSection;
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowGenericParams))]
     [NotifyPropertyChangedFor(nameof(IsSelectedEffectCustom))]
@@ -287,180 +282,145 @@ public partial class PropertiesViewModel : ViewModelBase
     private void RefreshCore()
     {
         var ed = _editor.Editor;
+        IReadOnlyList<ISelectable> items = ed.Selected;
+        if (items.Count == 0 && _editor.SelectedMedia is { } media)
+            items = new ISelectable[] { media };   // nothing on the timeline: the library's pick is what is inspected
 
-        if (ed.Selection.SelectedEffect is { } picked && ed.FindEffectOwner(picked.ClipId) is Track effectTrack)
+        var shared = items.Count == 0
+            ? Facet.None
+            : items.Select(item => item.Facets).Aggregate((a, b) => a & b) & InspectorSections.Supported;
+        if (shared == Facet.None)
         {
-            ShowTrackEffects(effectTrack);
-            SelectedEffect = Effects.FirstOrDefault(item => item.EffectId == picked.EffectId);
+            ShowEmpty();
             return;
         }
 
-        if (ed.Selection.SelectedMarkerId is { } markerId
-            && ed.FindMarker(markerId) is { } location)
+        _suppressApply = true;
+        try
         {
-            ShowMarker(location);
-            return;
-        }
-
-        if (ed.Selection.SelectedTransitionKey is { } transitionKey
-            && ed.GetTransition(transitionKey) is { } transition)
-        {
-            ShowTransition(transition);
-            return;
-        }
-
-        var clipId = ed.Selection.SelectedEffect?.ClipId ?? ed.Selection.SelectedClipIds.FirstOrDefault();
-        if (clipId is not null)
-        {
-            var clip = FindClip(clipId);
-            if (clip is not null)
+            var identity = string.Join("|", items.Select(item => $"{item.Key.Group}:{item.Key.Id}"));
+            var sameContext = identity == _contextKey;
+            if (!sameContext)
             {
-                ShowClip(clip);
-                if (ed.Selection.SelectedEffect is { } selected)
-                    SelectedEffect = Effects.FirstOrDefault(item => item.EffectId == selected.EffectId);
-                return;
+                ResetState();
+                _contextKey = identity;
             }
-        }
+            _facets = shared;
+            SyncSections(shared, resetTab: !sameContext);
 
-        var trackId = ed.Selection.ActiveTrackId;
-        if (trackId is not null)
+            var primary = items[^1];
+            var owner = primary.EffectOwner();
+            _clipId = owner?.Id;
+            Title = items.Count == 1 ? primary.DisplayName : $"{items.Count} selected";
+            Subtitle = items.Count == 1 ? "" : string.Join(", ", items.Select(item => item.DisplayName).Distinct());
+
+            // each facet loads its own values; none of them asks what kind of thing the item is
+            var clip = items.OfType<Clip>().LastOrDefault();
+            LoadClip(clip, primary, items.Count == 1);
+            if (Has(Facet.Track))
+                LoadTrack(primary.Key.Id, items.Count == 1);
+            if (Has(Facet.Marker))
+                LoadMarker(primary.Key.Id, sameContext);
+            if (Has(Facet.Transition))
+                LoadTransition(primary.Key.Id);
+            if (Has(Facet.Effects) && owner is not null)
+                LoadEffects(owner, items.Count == 1 && primary is EffectTarget);
+            if (primary is EffectTarget target && items.Count == 1)
+                Subtitle = OwnerLabel(target.Owner);
+        }
+        finally
         {
-            var track = ed.Document.Tracks.FirstOrDefault(t => t.Id == trackId);
-            if (track is not null)
-            {
-                ShowTrack(track);
-                return;
-            }
+            _suppressApply = false;
         }
-
-        if (_editor.SelectedMedia is not null)
-        {
-            ShowMedia(_editor.SelectedMedia);
-            return;
-        }
-
-        ShowEmpty();
     }
 
-    private void ShowTrackEffects(Track track)
+    /// <summary>Tabs follow the shared facets. The same facets keep their sections (and the open tab); new ones open on the first.</summary>
+    private void SyncSections(Facet shared, bool resetTab)
     {
-        if (_clipId != track.Id) ClearSections();
-        _clipId = track.Id;
-        Kind = PropertiesContextKind.Track;
-        Title = $"{track.Name ?? "Track"} effects";
-        Subtitle = "Timeline effect regions";
-        ShowClipSection = false;
-        ShowTrackSection = false;
-        ShowEffectsSection = true;
-        BuildEffectStack(track);
+        var wanted = InspectorSections.For(shared, this).ToList();
+        if (Sections.Select(s => s.Facet).SequenceEqual(wanted.Select(s => s.Facet)))
+        {
+            if (resetTab)
+                SelectedSection = Sections.FirstOrDefault();
+            return;
+        }
+
+        var previous = SelectedSection?.Facet;
+        Sections.Clear();
+        foreach (var section in wanted)
+            Sections.Add(section);
+        SelectedSection = (!resetTab ? Sections.FirstOrDefault(s => s.Facet == previous) : null) ?? Sections.FirstOrDefault();
+        OnPropertyChanged(nameof(HasContext));
+        OnPropertyChanged(nameof(ShowTabStrip));
     }
 
     private void ShowEmpty()
     {
         _suppressApply = true;
-        Kind = PropertiesContextKind.Empty;
+        ResetState();
+        _contextKey = null;
+        _facets = Facet.None;
+        Sections.Clear();
+        SelectedSection = null;
+        OnPropertyChanged(nameof(HasContext));
+        OnPropertyChanged(nameof(ShowTabStrip));
         Title = "Inspector";
         Subtitle = "No selection";
-        ClearSections();
         _clipId = null;
         _proxyTarget = null;
         ShowProxySection = false;
         CanGenerateProxy = false;
         IsProxyBusy = false;
-        _shown = (PropertiesContextKind.Empty, null);
         _suppressApply = false;
     }
 
-    /// <summary>
-    /// Resets the inspector tab to the first visible one when the shown object changes, but
-    /// preserves the user's tab while dragging sliders — every slider tick raises
-    /// TimelineChanged and re-runs Show*, which would otherwise jump back to the Video tab.
-    /// </summary>
-    private void ResetTabFor(PropertiesContextKind kind, string? key)
+    /// <summary>The label a track or clip goes by ("V1", a file name).</summary>
+    private string OwnerLabel(IEffectOwner owner)
+        => owner is Track track ? TrackLabel(track) : ClipFileName((Clip)owner);
+
+    private static string TrackLabel(Track track)
+        => string.IsNullOrWhiteSpace(track.Name)
+            ? (track.Kind == TrackKind.Video ? $"V{track.Index + 1}" : $"A{track.Index + 1}")
+            : track.Name!;
+
+    /// <summary>Loads the values of the clip tabs (picture, sound, fades, speed) and the file behind the clip or library item.</summary>
+    private void LoadClip(Clip? clip, ISelectable primary, bool single)
     {
-        var next = (kind, key);
-        if (_shown == next)
-            return;
-        _shown = next;
-        SelectedTabIndex = FirstVisibleTab();
-    }
-
-    private void ShowMedia(MediaAsset asset)
-    {
-        _suppressApply = true;
-        Kind = PropertiesContextKind.Media;
-        Title = "Media";
-        Subtitle = asset.FileName;
-        ClearSections();
-        _clipId = null;
-        ApplyMediaFields(asset);
-        ShowProxySection = asset.Kind == MediaKind.Video;
-        _proxyTarget = asset.Kind == MediaKind.Video ? asset : null;
-        UpdateProxyAction(asset);
-        ResetTabFor(PropertiesContextKind.Media, asset.Id);
-        _suppressApply = false;
-    }
-
-    private void ShowClip(Clip clip)
-    {
-        // Slider/field edits raise TimelineChanged, which re-runs Show* on every tick. When the
-        // same clip is already displayed, skip ClearSections: unconditionally flipping the
-        // section visibility flags (and clearing the effect/param collections) tears down and
-        // recreates the tab's ScrollViewer, snapping the properties panel back to the top
-        // mid-drag. Same-value assignments below raise no change events, so the panel just
-        // updates labels/values in place.
-        var sameClip = Kind == PropertiesContextKind.Clip && _clipId == clip.Id;
-        _suppressApply = true;
-        Kind = PropertiesContextKind.Clip;
-        Title = clip.Kind switch
-        {
-            ClipKind.Video => "Video Clip",
-            ClipKind.Audio => "Audio Clip",
-            ClipKind.Text => "Text Clip",
-            _ => "Clip",
-        };
-        if (!sameClip)
-            ClearSections();
-        _clipId = clip.Id;
-        ShowClipSection = true;
-        ShowVideoControls = clip is VideoClip;
-        ShowAudioControls = clip is AudioClip || clip is VideoClip; // video often has linked volume
-        ShowFadeControls = clip is VideoClip || clip is AudioClip;
-        ClipTimingLabel = $"{FormatTime(clip.StartSec)} → {FormatTime(clip.StartSec + clip.DurSec)}  ({FormatTime(clip.DurSec)})";
-        Subtitle = ClipTimingLabel;
-        BuildEffectStack(clip);
-        ShowEffectsSection = true;
-
-        OpacityValue = clip.Opacity;
-        FadeInValue = clip.FadeInSec;
-        FadeOutValue = clip.FadeOutSec;
-        VolumeValue = clip.Volume;
-        SpeedValue = clip.Speed;
-        ShowSpeedControls = clip is VideoClip || clip is AudioClip;
-
         MediaAsset? asset = null;
-        if (clip is VideoClip vc)
+        if (clip is not null)
         {
-            SourceRangeLabel = $"{FormatTime(vc.SrcInSec)} → {FormatTime(vc.SrcOutSec > 0 ? vc.SrcOutSec : vc.SrcInSec + vc.DurSec * vc.Speed)}";
-            CropLeft = vc.CropL;
-            CropTop = vc.CropT;
-            CropRight = vc.CropR;
-            CropBottom = vc.CropB;
-            _editor.MediaById.TryGetValue(vc.SourceId, out asset);
+            ClipTimingLabel = $"{FormatTime(clip.StartSec)} → {FormatTime(clip.StartSec + clip.DurSec)}  ({FormatTime(clip.DurSec)})";
+            OpacityValue = clip.Opacity;
+            FadeInValue = clip.FadeInSec;
+            FadeOutValue = clip.FadeOutSec;
+            VolumeValue = clip.Volume;
+            SpeedValue = clip.Speed;
+            (CropLeft, CropTop, CropRight, CropBottom) = clip is VideoClip video
+                ? (video.CropL, video.CropT, video.CropR, video.CropB)
+                : (0, 0, 0, 0);
+            ClipDurationSec = Math.Max(0.01, clip.DurSec);
+            RetimedDurationLabel = FormatTime(clip.DurSec);
+            OriginalDurationLabel = FormatTime(clip.DurSec * clip.Speed);
+            if (clip.MediaId is { } mediaId)
+                _editor.MediaById.TryGetValue(mediaId, out asset);
+            if (Has(Facet.Source) && clip.MediaId is not null)
+                SourceRangeLabel = $"{FormatTime(clip.SourceIn)} → {FormatTime(clip.SourceOut > 0 ? clip.SourceOut : clip.SourceIn + clip.DurSec * clip.Speed)}";
+            else
+                SourceRangeLabel = null;
+            LinkedToLabel = clip.LinkGroupId is not null && asset is not null ? $"Linked to {asset.FileName}" : null;
+            OnPropertyChanged(nameof(IsLinked));
+            RefreshAutomation();
+            if (single)
+                Subtitle = asset?.FileName ?? ClipTimingLabel;
         }
-        else if (clip is AudioClip ac)
+        else if (primary is MediaAsset library)
         {
-            SourceRangeLabel = $"{FormatTime(ac.SrcInSec)} → {FormatTime(ac.SrcOutSec > 0 ? ac.SrcOutSec : ac.SrcInSec + ac.DurSec * ac.Speed)}";
-            CropLeft = CropTop = CropRight = CropBottom = 0;
-            _editor.MediaById.TryGetValue(ac.SourceId, out asset);
-        }
-        else
-        {
-            SourceRangeLabel = null;
-            CropLeft = CropTop = CropRight = CropBottom = 0;
+            asset = library;
+            if (single)
+                Subtitle = library.FileName;
         }
 
-        if (asset is not null)
+        if (asset is not null && Has(Facet.Source))
         {
             ApplyMediaFields(asset);
             ShowProxySection = asset.Kind == MediaKind.Video;
@@ -473,16 +433,24 @@ public partial class PropertiesViewModel : ViewModelBase
             ShowProxySection = false;
             CanGenerateProxy = false;
         }
-        ClipDurationSec = Math.Max(0.01, clip.DurSec);
-        RetimedDurationLabel = FormatTime(clip.DurSec);
-        OriginalDurationLabel = FormatTime(clip.DurSec * clip.Speed);
-        LinkedToLabel = clip.LinkGroupId is not null && asset is not null ? $"Linked to {asset.FileName}" : null;
-        OnPropertyChanged(nameof(IsLinked));
-        // the inspector names the file, the timing lives in the Speed tab
-        Subtitle = asset?.FileName ?? ClipTimingLabel;
-        ResetTabFor(PropertiesContextKind.Clip, clip.Id);
-        RefreshAutomation();
-        _suppressApply = false;
+    }
+
+    private void LoadTrack(string trackId, bool single)
+    {
+        var track = _editor.Editor.Document.Tracks.FirstOrDefault(t => t.Id == trackId);
+        if (track is null)
+            return;
+        var label = TrackLabel(track);
+        if (single)
+            Subtitle = label;
+        TrackNameLabel = label;
+        KindLabel = track.Kind == TrackKind.Video ? "Video" : "Audio";
+        var flags = new List<string>();
+        if (track.Kind == TrackKind.Video)
+            flags.Add(track.Visible ? "Visible" : "Hidden");
+        if (track.Kind == TrackKind.Audio)
+            flags.Add(track.Muted ? "Muted" : "Audible");
+        TrackFlagsLabel = string.Join(" · ", flags);
     }
 
     /// <summary>Turns every effect on the clip off, or back on when they are all already off.</summary>
@@ -515,53 +483,17 @@ public partial class PropertiesViewModel : ViewModelBase
         FadeOutValue = 0;
     }
 
-    private void ShowTrack(Track track)
+    private void LoadMarker(string markerId, bool sameContext)
     {
-        _suppressApply = true;
-        Kind = PropertiesContextKind.Track;
-        Title = "Track";
-        var label = string.IsNullOrWhiteSpace(track.Name)
-            ? (track.Kind == TrackKind.Video ? $"V{track.Index + 1}" : $"A{track.Index + 1}")
-            : track.Name!;
-        Subtitle = label;
-        ClearSections();
-        _clipId = track.Id;
-        BuildEffectStack(track);
-        ShowEffectsSection = true;
-        ShowTrackSection = true;
-        TrackNameLabel = label;
-        KindLabel = track.Kind == TrackKind.Video ? "Video" : "Audio";
-        var flags = new List<string>();
-        if (track.Kind == TrackKind.Video)
-            flags.Add(track.Visible ? "Visible" : "Hidden");
-        if (track.Kind == TrackKind.Audio)
-            flags.Add(track.Muted ? "Muted" : "Audible");
-        TrackFlagsLabel = string.Join(" · ", flags);
-        _proxyTarget = null;
-        ShowProxySection = false;
-        CanGenerateProxy = false;
-        _suppressApply = false;
-    }
-
-    private void ShowMarker(MarkerLocation location)
-    {
+        if (_editor.Editor.FindMarker(markerId) is not { } location)
+            return;
         var marker = location.Marker;
         var absolute = location.Clip is not null ? location.Clip.StartSec + marker.StartSec : marker.StartSec;
         var rate = _editor.Editor.Document.Rate;
 
-        // Same marker already shown: skip the destructive clear so typing a marker name
-        // (which raises TimelineChanged on every keystroke) doesn't reset the panel.
-        var sameMarker = Kind == PropertiesContextKind.Marker && _markerId == marker.Id;
-        _suppressApply = true;
-        Kind = PropertiesContextKind.Marker;
-        Title = marker.IsRange ? "Range marker" : "Point marker";
-        Subtitle = "";
-        if (!sameMarker)
-            ClearSections();
         _clipId = null;
         _markerId = marker.Id;
         _markerRate = rate;
-        ShowMarkerSection = true;
         MarkerIsRange = marker.IsRange;
         OnPropertyChanged(nameof(MarkerTitle));
         MarkerName = marker.Name;
@@ -592,11 +524,6 @@ public partial class PropertiesViewModel : ViewModelBase
         }
         MarkerEffectLabel = SelectedEffect is { } effect ? $"Selected effect: {effect.DisplayName}" : null;
         OnPropertyChanged(nameof(MarkerHasEffect));
-        _proxyTarget = null;
-        ShowProxySection = false;
-        CanGenerateProxy = false;
-        ResetTabFor(PropertiesContextKind.Marker, marker.Id);
-        _suppressApply = false;
     }
 
     private void RefreshSwatches(string selected)
@@ -616,7 +543,7 @@ public partial class PropertiesViewModel : ViewModelBase
 
     private void EditMarker(MarkerEdit edit)
     {
-        if (_markerId is null || Kind != PropertiesContextKind.Marker)
+        if (_markerId is null || !Has(Facet.Marker))
             return;
         _editor.Editor.EditMarker(_markerId, edit);
         Refresh();
@@ -627,7 +554,7 @@ public partial class PropertiesViewModel : ViewModelBase
 
     partial void OnMarkerPositionTextChanged(string value)
     {
-        if (_suppressApply || Kind != PropertiesContextKind.Marker)
+        if (_suppressApply || !Has(Facet.Marker))
             return;
         if (!Timecode.TryParse(value, _markerRate, out var sec)) { RevertMarkerText(); return; }
         EditMarker(new MarkerEdit(StartSec: sec - MarkerBaseSec()));
@@ -635,7 +562,7 @@ public partial class PropertiesViewModel : ViewModelBase
 
     partial void OnMarkerStartTextChanged(string value)
     {
-        if (_suppressApply || Kind != PropertiesContextKind.Marker)
+        if (_suppressApply || !Has(Facet.Marker))
             return;
         if (!Timecode.TryParse(value, _markerRate, out var start)
             || _markerId is null || _editor.Editor.FindMarker(_markerId) is not { } loc) { RevertMarkerText(); return; }
@@ -647,7 +574,7 @@ public partial class PropertiesViewModel : ViewModelBase
 
     partial void OnMarkerEndTextChanged(string value)
     {
-        if (_suppressApply || Kind != PropertiesContextKind.Marker)
+        if (_suppressApply || !Has(Facet.Marker))
             return;
         if (!Timecode.TryParse(value, _markerRate, out var end)
             || _markerId is null || _editor.Editor.FindMarker(_markerId) is not { } loc) { RevertMarkerText(); return; }
@@ -657,14 +584,14 @@ public partial class PropertiesViewModel : ViewModelBase
 
     partial void OnMarkerIncludeInExportChanged(bool value)
     {
-        if (_suppressApply || Kind != PropertiesContextKind.Marker)
+        if (_suppressApply || !Has(Facet.Marker))
             return;
         EditMarker(new MarkerEdit(IncludeInExport: value));
     }
 
     partial void OnMarkerOutputNameChanged(string value)
     {
-        if (_suppressApply || Kind != PropertiesContextKind.Marker)
+        if (_suppressApply || !Has(Facet.Marker))
             return;
         EditMarker(new MarkerEdit(OutputName: value.Trim()));
     }
@@ -707,7 +634,7 @@ public partial class PropertiesViewModel : ViewModelBase
 
     partial void OnMarkerNameChanged(string value)
     {
-        if (_suppressApply || _markerId is null || Kind != PropertiesContextKind.Marker)
+        if (_suppressApply || _markerId is null || !Has(Facet.Marker))
             return;
         _editor.Editor.UpdateMarker(_markerId, name: value);
         }
@@ -715,7 +642,7 @@ public partial class PropertiesViewModel : ViewModelBase
     [RelayCommand]
     private void SetMarkerColor(string? hex)
     {
-        if (_markerId is null || Kind != PropertiesContextKind.Marker || string.IsNullOrEmpty(hex))
+        if (_markerId is null || !Has(Facet.Marker) || string.IsNullOrEmpty(hex))
             return;
         _editor.Editor.UpdateMarker(_markerId, color: hex);
         _suppressApply = true;
@@ -723,22 +650,14 @@ public partial class PropertiesViewModel : ViewModelBase
         _suppressApply = false;
     }
 
-    private void ShowTransition(CutTransition transition)
+    private void LoadTransition(string key)
     {
+        if (_editor.Editor.GetTransition(key) is not { } transition)
+            return;
         var displayName = TransitionCatalog.Find(transition.TypeId)?.DisplayName ?? transition.TypeId;
 
-        // Same transition already shown: skip the destructive clear so dragging the duration
-        // or a param slider (both raise TimelineChanged per tick) doesn't reset the panel.
-        var sameTransition = Kind == PropertiesContextKind.Transition && _transitionKey == transition.Key;
-        _suppressApply = true;
-        Kind = PropertiesContextKind.Transition;
-        Title = "Transition";
-        Subtitle = displayName;
-        if (!sameTransition)
-            ClearSections();
         _clipId = null;
         _transitionKey = transition.Key;
-        ShowTransitionSection = true;
         TransitionTypeLabel = displayName;
         TransitionDescription = TransitionCatalog.Find(transition.TypeId)?.Description;
         TransitionEditPoint = Timecode.Format(transition.CutSec, _editor.Editor.Document.Rate);
@@ -751,16 +670,11 @@ public partial class PropertiesViewModel : ViewModelBase
             _editor.Editor.GetMaxTransitionDuration(transition.LeftClipId, transition.RightClipId)));
         TransitionSpanLabel = $"{FormatTime(transition.DurationSec)} across the cut";
         BuildTransitionParams(transition);
-        _proxyTarget = null;
-        ShowProxySection = false;
-        CanGenerateProxy = false;
-        ResetTabFor(PropertiesContextKind.Transition, transition.Key);
-        _suppressApply = false;
     }
 
     partial void OnTransitionDurationValueChanged(double value)
     {
-        if (_suppressApply || _transitionKey is null || Kind != PropertiesContextKind.Transition)
+        if (_suppressApply || _transitionKey is null || !Has(Facet.Transition))
             return;
         var transition = _editor.Editor.GetTransition(_transitionKey);
         if (transition is null)
@@ -781,7 +695,7 @@ public partial class PropertiesViewModel : ViewModelBase
     /// <summary>Applies a typed duration such as "1.4" or "1.40 s".</summary>
     partial void OnTransitionDurationTextChanged(string value)
     {
-        if (_suppressApply || Kind != PropertiesContextKind.Transition)
+        if (_suppressApply || !Has(Facet.Transition))
             return;
         var text = value.Replace("s", "", StringComparison.OrdinalIgnoreCase).Trim();
         if (double.TryParse(text, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var seconds)
@@ -800,7 +714,7 @@ public partial class PropertiesViewModel : ViewModelBase
         };
 
     internal CutTransition? CurrentTransition()
-        => Kind == PropertiesContextKind.Transition && _transitionKey is not null
+        => Has(Facet.Transition) && _transitionKey is not null
             ? _editor.Editor.GetTransition(_transitionKey)
             : null;
 
@@ -842,7 +756,7 @@ public partial class PropertiesViewModel : ViewModelBase
     [RelayCommand]
     private void RemoveTransition()
     {
-        if (_transitionKey is null || Kind != PropertiesContextKind.Transition)
+        if (_transitionKey is null || !Has(Facet.Transition))
             return;
         var transition = _editor.Editor.GetTransition(_transitionKey);
         if (transition is null)
@@ -853,6 +767,14 @@ public partial class PropertiesViewModel : ViewModelBase
     }
 
     // ---- effect stack + schema-driven param editors ----
+
+    /// <summary>Shows the owner's effect stack, with the picked effect (when an effect bar was picked) open.</summary>
+    private void LoadEffects(IEffectOwner owner, bool focusPicked)
+    {
+        BuildEffectStack(owner);
+        if (focusPicked && _editor.Editor.Selection.SelectedEffect is { } picked)
+            SelectedEffect = Effects.FirstOrDefault(item => item.EffectId == picked.EffectId);
+    }
 
     private void BuildEffectStack(IEffectOwner clip)
     {
@@ -898,7 +820,7 @@ public partial class PropertiesViewModel : ViewModelBase
         return sb.ToString();
     }
 
-    partial void OnSelectedTabIndexChanged(int value) => Transform?.Refresh();
+    partial void OnSelectedSectionChanged(InspectorSection? value) => Transform?.Refresh();
 
     partial void OnSelectedEffectChanged(EffectItemViewModel? value)
     {
@@ -1209,7 +1131,7 @@ public partial class PropertiesViewModel : ViewModelBase
         return null;
     }
 
-    /// <summary>Focuses an effect without selecting its owning clip.</summary>
+    /// <summary>Picks an effect bar (a bar of a clip or a track) and opens the Effects tab on it.</summary>
     public void SelectEffect(string clipId, string effectId)
     {
         var editor = _editor.Editor;
@@ -1221,7 +1143,7 @@ public partial class PropertiesViewModel : ViewModelBase
                 SelectedEffect = item;
                 break;
             }
-        SelectedTabIndex = 4;   // Adjust tab (effects)
+        OpenSection(Facet.Effects);
     }
 
     private void ApplyMediaFields(MediaAsset asset)
@@ -1276,17 +1198,9 @@ public partial class PropertiesViewModel : ViewModelBase
         _ => "Not needed",
     };
 
-    private void ClearSections()
+    /// <summary>Forgets everything shown, so a different selection starts from a clean panel.</summary>
+    private void ResetState()
     {
-        ShowClipSection = false;
-        ShowVideoControls = false;
-        ShowAudioControls = false;
-        ShowFadeControls = false;
-        ShowSpeedControls = false;
-        ShowTrackSection = false;
-        ShowMarkerSection = false;
-        ShowTransitionSection = false;
-        ShowEffectsSection = false;
         FileName = null;
         KindLabel = null;
         ResolutionLabel = null;
@@ -1315,21 +1229,9 @@ public partial class PropertiesViewModel : ViewModelBase
         _transitionKey = null;
     }
 
-    /// <summary>First visible tab in the inspector (Video | Audio | Speed | Animate | Adjust | ...).</summary>
-    private int FirstVisibleTab()
-        => ShowVideoControls ? 0
-         : ShowAudioControls ? 1
-         : ShowSpeedControls ? 2
-         : ShowFadeControls ? 3
-         : ShowEffectsSection ? 4
-         : ShowTrackSection ? 5
-         : ShowMarkerSection ? 6
-         : ShowTransitionSection ? 7
-         : 8;
-
     partial void OnOpacityValueChanged(double value)
     {
-        if (_suppressApply || _clipId is null || Kind != PropertiesContextKind.Clip)
+        if (_suppressApply || _clipId is null || !Has(Facet.Picture))
             return;
         _editor.Editor.SetOpacity(_clipId, value);
         _editor.Preview.RefreshFrame();
@@ -1337,7 +1239,7 @@ public partial class PropertiesViewModel : ViewModelBase
 
     partial void OnFadeInValueChanged(double value)
     {
-        if (_suppressApply || _clipId is null || Kind != PropertiesContextKind.Clip)
+        if (_suppressApply || _clipId is null || !Has(Facet.Fades))
             return;
         _editor.Editor.SetFadeIn(_clipId, value);
         // Reflect clamp back into the slider without re-entering Apply
@@ -1353,7 +1255,7 @@ public partial class PropertiesViewModel : ViewModelBase
 
     partial void OnFadeOutValueChanged(double value)
     {
-        if (_suppressApply || _clipId is null || Kind != PropertiesContextKind.Clip)
+        if (_suppressApply || _clipId is null || !Has(Facet.Fades))
             return;
         _editor.Editor.SetFadeOut(_clipId, value);
         var clip = FindClip(_clipId);
@@ -1368,14 +1270,14 @@ public partial class PropertiesViewModel : ViewModelBase
 
     partial void OnVolumeValueChanged(double value)
     {
-        if (_suppressApply || _clipId is null || Kind != PropertiesContextKind.Clip)
+        if (_suppressApply || _clipId is null || !Has(Facet.Sound))
             return;
         _editor.Editor.SetVolume(_clipId, value);
     }
 
     partial void OnSpeedValueChanged(double value)
     {
-        if (_suppressApply || _clipId is null || Kind != PropertiesContextKind.Clip)
+        if (_suppressApply || _clipId is null || !Has(Facet.Retime))
             return;
         _editor.Editor.SetSpeed(_clipId, value);
         _editor.Preview.RefreshFrame();
@@ -1388,7 +1290,7 @@ public partial class PropertiesViewModel : ViewModelBase
 
     private void ApplyCrop()
     {
-        if (_suppressApply || _clipId is null || !ShowVideoControls)
+        if (_suppressApply || _clipId is null || !Has(Facet.Picture))
             return;
         _editor.Editor.SetCrop(_clipId, CropLeft, CropTop, CropRight, CropBottom);
         _editor.Preview.RefreshFrame();
@@ -1397,7 +1299,7 @@ public partial class PropertiesViewModel : ViewModelBase
     [RelayCommand]
     private void ResetCrop()
     {
-        if (_clipId is null || !ShowVideoControls)
+        if (_clipId is null || !Has(Facet.Picture))
             return;
         _suppressApply = true;
         CropLeft = CropTop = CropRight = CropBottom = 0;

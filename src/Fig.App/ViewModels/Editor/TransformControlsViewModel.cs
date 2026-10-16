@@ -104,7 +104,7 @@ public sealed partial class TransformControlsViewModel : ViewModelBase
         try
         {
             IsActive = sel is not null;
-            EffectsTabOpen = _host.SelectedTabIndex == 4;
+            EffectsTabOpen = _host.IsOpen(Fig.Core.Timeline.Facet.Effects);
             _host.NotifyGenericParamsChanged();
             _host.NotifyPreviewControlsChanged();
             if (sel is not { } s)
@@ -290,7 +290,7 @@ public sealed partial class TransformControlsViewModel : ViewModelBase
 
     // ---- animating -------------------------------------------------------------------------
 
-    /// <summary>The stopwatch. On: one keyframe at the playhead holding the current look. Off: keyframes go, the look at the playhead stays.</summary>
+    /// <summary>The stopwatch: records a keyframe at the playhead holding the current look. It never removes keyframes.</summary>
     [RelayCommand]
     private void ToggleAnimate()
     {
@@ -298,8 +298,20 @@ public sealed partial class TransformControlsViewModel : ViewModelBase
             return;
         var (clip, fx) = s;
         var t = Math.Clamp(_editor.PlayheadTimeSec - clip.StartSec, 0, clip.DurSec);
-        _editor.Editor.SetEffectAnimated(clip.Id, fx.Id, fx.Keyframes.Count == 0, t);
-        _host.SelectedKeyframeSec = fx.Keyframes.Count > 0 ? t : null;
+        if (_editor.Editor.RecordEffectKeyframe(clip.Id, fx.Id, t) is { } keyed)
+            _host.SelectedKeyframeSec = keyed;
+    }
+
+    /// <summary>Removes every keyframe; the look at the playhead becomes the one look for the whole effect.</summary>
+    [RelayCommand]
+    private void ClearKeyframes()
+    {
+        if (Selected() is not { } s)
+            return;
+        var (clip, fx) = s;
+        var t = Math.Clamp(_editor.PlayheadTimeSec - clip.StartSec, 0, clip.DurSec);
+        _editor.Editor.SetEffectAnimated(clip.Id, fx.Id, false, t);
+        _host.SelectedKeyframeSec = null;
     }
 
     /// <summary>The ◆ button: add a keyframe at the playhead, or remove the one already there.</summary>

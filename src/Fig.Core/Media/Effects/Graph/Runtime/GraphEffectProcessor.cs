@@ -23,6 +23,25 @@ namespace Fig.Core.Media
 
         public CompileResult Compile { get; }
 
+        /// <summary>The compiled steps, or null when the graph is invalid. Renderers other than the CPU one walk this.</summary>
+        public GraphPlan? Plan => _plan;
+
+        /// <summary>
+        /// Every node's effective parameters for one set of effect controls: node values with the promoted
+        /// controls (and their scale) applied. Keyed by node id.
+        /// </summary>
+        public IReadOnlyDictionary<string, IReadOnlyDictionary<string, ParamValue>> ResolveNodeParams(
+            IReadOnlyDictionary<string, ParamValue> parameters)
+        {
+            var overrides = BuildOverrides(parameters);
+            var result = new Dictionary<string, IReadOnlyDictionary<string, ParamValue>>();
+            if (_plan is null)
+                return result;
+            foreach (var step in _plan.Steps)
+                result[step.Node.Id] = ParamsFor(step.Node, overrides);
+            return result;
+        }
+
         public string TypeId => _graph.TypeId;
 
         public DecodedFrame Apply(DecodedFrame frame, IReadOnlyDictionary<string, ParamValue> parameters, double localT)

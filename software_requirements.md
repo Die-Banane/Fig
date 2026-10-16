@@ -257,7 +257,7 @@ The primary user is a solo creator (hobbyist to semi-professional) who edits sho
 | FR-163 | The author SHALL promote chosen node parameters as the effect's controls, with optional range and default overrides. | P2 | X |
 | FR-164 | A graph SHALL be validated on edit and on save (port types, cycles, unconnected inputs); an invalid graph SHALL fail safe (input frame unchanged) and report errors on the offending nodes. | P2 | X |
 | FR-165 | Graph evaluation SHALL be a pure function of the input frame, parameters, and clip time (no feedback in the first version) so preview, scrubbing, and export match. | P2 | X |
-| FR-166 | A graph made only of shader-capable primitives SHALL run on the GPU as one fused shader; any other graph SHALL fall back to the CPU path. | P2 | - |
+| FR-166 | A graph made only of shader-capable primitives SHALL run on the GPU as shaders (one draw per frame; a result read by several nodes is rendered once and shared); any other graph SHALL fall back to the CPU path. | P2 | X |
 | FR-167 | Graphs SHALL persist with a schema version and be importable/exportable as portable files. | P2 | X |
 | FR-168 | A node-graph editor SHALL support add, connect, promote, and undo with a live preview. | P2 | O |
 
@@ -270,6 +270,63 @@ Design: `uml/media/effects-graph-schema.puml`, `uml/media/effects-graph-pipeline
 | FR-171 | Dragging one bar of a group SHALL move every selected bar by the same amount, keyframes included and spacing preserved, as one undo step. | P0 | X |
 | FR-172 | Delete SHALL remove every selected effect bar as one undo step. | P0 | X |
 
+
+### 3.16 GPU rendering
+| ID | Requirement | Priority | Status |
+| --- | --- | --- | --- |
+| FR-180 | The preview SHALL be composited by the GPU by default: effects, transitions, crops, fades and layer blending run as shaders, and nothing is composited on the CPU when the canvas is GPU-backed. | P0 | X |
+| FR-181 | Every built-in effect and every built-in transition SHALL have a shader. A test fails when one is added without. | P0 | X |
+| FR-182 | Every shader SHALL match the CPU kernel it ports (the reference) to within rounding, checked per effect and transition, including time-varying and noise-based ones. | P0 | X |
+| FR-183 | Export SHALL render its frames on the GPU by default, from the same scene description the CPU renderer draws, with several frames in flight. When there is no GPU, or the GPU stops answering mid-export, the CPU renderer SHALL finish the export. | P0 | X |
+| FR-184 | A layer holding something without a shader SHALL be drawn on the CPU and still appear; it SHALL NOT be dropped. | P0 | X |
+
+Design: `uml/playback/gpu-render-schema.puml`, `uml/playback/gpu-render-sequence.puml`. On a machine without a GPU-backed canvas the CPU compositor is used, because Skia's software shaders are slower than the SIMD kernels. The automated tests run on Skia's software backend only, so a real GPU driver is not exercised by them.
+
+### 3.17 Selection and inspector
+| ID | Requirement | Priority | Status |
+| --- | --- | --- | --- |
+| FR-190 | Clips (video, audio, text), tracks, markers, transitions, effect bars and library media SHALL all be selectable things that declare a name and the facets they can be edited as. Nothing else in the app SHALL need to ask which kind of thing is selected. | P0 | X |
+| FR-191 | The selection SHALL be one ordered list holding one group at a time; picking something from another group SHALL replace it. | P0 | X |
+| FR-192 | The inspector SHALL show one tab per facet that every selected item has, icon-only, and keep the open tab while values are edited. | P0 | X |
+| FR-193 | Delete and the status bar text SHALL come from the selected things, through one table of per-group behaviour. | P0 | X |
+| FR-194 | A rack row (level, fades) SHALL be able to open its tab by facet. | P1 | X |
+
+Design: `uml/domain/selection-schema.puml`, `uml/domain/selection-sequence.puml`.
+
+### 3.18 Window and look
+| ID | Requirement | Priority | Status |
+| --- | --- | --- | --- |
+| FR-195 | Recording a keyframe (the stopwatch) SHALL only add keyframes; clearing every keyframe SHALL be a separate, explicit, undoable action. | P0 | X |
+| FR-196 | The window SHALL draw its own title bar with the menus, the project name and save state, project actions and the window buttons in it, and its own resize edges. | P1 | X |
+| FR-197 | Menus and context menus SHALL be drawn in the app's theme (rounded, padded, no mnemonic underlines), and moving over another menu while one is open SHALL open that one. | P1 | X |
+| FR-198 | The interface SHALL be flat and soft: panels told apart by tone rather than outlines or shadows, generous corner radii, and all colours and radii defined once in the theme. | P1 | X |
+| FR-199 | There SHALL be no separate "focus preview" mode; the panels are shown and hidden individually. | P2 | X |
+
+### 3.19 Text and image layers (drafted)
+| ID | Requirement | Priority | Status |
+| --- | --- | --- | --- |
+| FR-200 | An image from the library SHALL be placeable on a video track as a clip with a default length, and selectable like any clip (picture, fades, effects, file). | P1 | - |
+| FR-201 | A text clip SHALL carry its text and style (font, weight, size as a share of the frame height, colour, opacity, alignment, shadow, background) and be edited in a Text tab. | P1 | - |
+| FR-202 | Text and image clips SHALL be positioned, scaled and rotated with handles on the preview, with keyframes. | P1 | - |
+| FR-203 | Text and image layers SHALL composite with their own transparency, identically in the preview, on the GPU and in export. | P1 | - |
+
+Design (draft): `uml/domain/text-image-layers-schema.puml`, `uml/domain/text-image-layers-sequence.puml`. `TextClip` and `ClipKind.Text` exist in the model; nothing draws or edits them yet.
+
+### 3.20 Preferences (drafted)
+| ID | Requirement | Priority | Status |
+| --- | --- | --- | --- |
+| FR-210 | Each preference SHALL be declared once (key, section, label, description, kind, default, range or choices, scope, when it applies); the screen, the file, validation and reset SHALL all be made from that declaration. | P1 | - |
+| FR-211 | Code SHALL read preferences through an injected interface, not a static. | P1 | - |
+| FR-212 | User preferences SHALL be stored in `~/.fig/config/preferences.json`; a value SHALL resolve as default, then user file, then project override, then environment variable. | P1 | - |
+| FR-213 | The file SHALL be written atomically; a damaged file SHALL be kept as `.bad` and defaults used with a notice; unknown keys SHALL be preserved; the file SHALL carry a schema version. | P1 | - |
+| FR-214 | A preference SHALL say whether it applies live, from the next project, or after a restart, and the screen SHALL show it. | P1 | - |
+| FR-215 | Preferences SHALL open as an in-window page (File, Preferences; Ctrl+Comma) with categories, a search that filters every row, a modified marker and reset per row, category and page. | P1 | - |
+| FR-216 | The export defaults (size, frame rate, codec, quality, folder) SHALL be a user preference that a project can override. | P1 | - |
+| FR-217 | The renderer SHALL be selectable (Automatic, GPU, CPU) for both preview and export, and the page SHALL show whether the canvas is GPU-backed. | P1 | - |
+| FR-218 | Key bindings SHALL be editable on a Keyboard page (record, conflicts, reset) and stay compatible with a hand-edited `gestures.json`. | P2 | - |
+| FR-219 | Remembered state (panel sizes, open tabs, zoom) SHALL stay automatic and SHALL NOT appear as preferences. | P2 | - |
+
+Design (draft): `uml/persistence/preferences-schema.puml`, `uml/persistence/preferences-sequence.puml`; the first set of preferences is in `docs/preferences.md`.
 
 ---
 
@@ -309,7 +366,6 @@ These requirements are captured for extensibility. Rows marked X have shipped an
 | FR-145 | Template library and niche starter kits ("quick start for creators"). | P2 | - |
 | FR-146 | Smart editing aids: automatic cuts on silent spans. | P2 | - |
 | FR-147 | AI transcription and subtitle generation. | P2 | - |
-| FR-166 | Effect graphs: fuse shader-capable graphs into one GPU shader (the rest of §3.14 has shipped). | P2 | - |
 
 ---
 
@@ -318,4 +374,4 @@ These requirements are captured for extensibility. Rows marked X have shipped an
 - **Status updates:** when a requirement changes status, update both this document and the README Goals table.
 - **New requirements:** assign the next free ID in the relevant module range; never reuse a retired ID.
 - **Rationale:** every requirement's "why" should remain traceable to either the README goals, a UML note, or a recorded design decision.
-- **Related artifacts:** see `uml/domain/core-schema.puml` (editing commands), `uml/media/media-pipeline.puml`, `uml/playback/playback-engine.puml`, `uml/persistence/persistence.puml`, `uml/persistence/otio-import.puml`, `uml/export/export-pipeline.puml`, `uml/input/gestures-input.puml`, and (planned effect graphs) `uml/media/effects-graph-schema.puml` and `uml/media/effects-graph-pipeline.puml`.
+- **Related artifacts:** see `uml/domain/core-schema.puml` (editing commands), `uml/media/media-pipeline.puml`, `uml/playback/playback-engine.puml`, `uml/persistence/persistence.puml`, `uml/persistence/otio-import.puml`, `uml/export/export-pipeline.puml`, `uml/input/gestures-input.puml`, `uml/playback/gpu-render-schema.puml`, `uml/playback/gpu-render-sequence.puml`, `uml/domain/selection-schema.puml`, `uml/domain/selection-sequence.puml`, `uml/domain/text-image-layers-schema.puml`, `uml/domain/text-image-layers-sequence.puml`, `uml/persistence/preferences-schema.puml`, `uml/persistence/preferences-sequence.puml`, and (effect graphs) `uml/media/effects-graph-schema.puml` and `uml/media/effects-graph-pipeline.puml`.

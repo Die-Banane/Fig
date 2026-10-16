@@ -1298,39 +1298,10 @@ namespace Fig.App.Views
 
             if (e.Key == Key.Delete || e.Key == Key.Back)
             {
-                if (Editor.Selection.SelectedEffects.Count > 0)
+                // whatever is selected knows how to be deleted
+                if (_editorVm?.DeleteSelection() == true || (_editorVm is null && Editor.DeleteSelection() is not null))
                 {
-                    // every selected bar goes, as one undo step
-                    Editor.RemoveEffects(Editor.Selection.SelectedEffects);
-                    Editor.Selection.Clear();
                     InvalidateMeasure();
-                    InvalidateVisual();
-                    e.Handled = true;
-                }
-                else if (Editor.Selection.SelectedTransitionKey is not null)
-                {
-                    _editorVm?.RemoveSelectedTransitionCommand.Execute(null);
-                    InvalidateVisual();
-                    e.Handled = true;
-                }
-                else if (Editor.Selection.SelectedMarkerId is not null)
-                {
-                    _editorVm?.DeleteSelectedMarkerCommand.Execute(null);
-                    InvalidateVisual();
-                    e.Handled = true;
-                }
-                else if (Editor.Selection.Count > 0)
-                {
-                    // Delete = lift selected (+ linked) clips only. Never ripple or touch
-                    // unselected clips that share the same timeline position.
-                    Editor.LiftSelected();
-                    InvalidateVisual();
-                    e.Handled = true;
-                }
-                else if (_selectedTrackId is not null)
-                {
-                    Editor.RemoveTrack(_selectedTrackId);
-                    _selectedTrackId = null;
                     InvalidateVisual();
                     e.Handled = true;
                 }

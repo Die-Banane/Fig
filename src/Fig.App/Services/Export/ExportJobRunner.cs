@@ -4,6 +4,7 @@ using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Threading;
+using Fig.App.Rendering;
 using Fig.App.ViewModels;
 using Fig.Core.Media;
 using ProjectModel = Fig.Core.Project.Project;
@@ -48,9 +49,11 @@ namespace Fig.App.Services
                 job.Status = ExportJobStatus.Running;
                 try
                 {
+                    // the GPU when the window has one, the CPU kernels otherwise: same scenes, same picture
+                    var renderer = await SkiaSceneRenderer.CreateAsync();
                     await Task.Run(() => _media.RenderTimeline(
                         project, timeline, job.OutputPath, job.Width, job.Height, crf,
-                        p => Dispatcher.UIThread.Post(() => job.Progress = p), startSec, endSec));
+                        p => Dispatcher.UIThread.Post(() => job.Progress = p), startSec, endSec, renderer));
                     job.Status = ExportJobStatus.Done;
                     job.Progress = 1;
                 }

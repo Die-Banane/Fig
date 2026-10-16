@@ -1,0 +1,86 @@
+@startuml
+title Text and image layers (draft)
+
+package "Fig.Core.Timeline" {
+  abstract class Clip
+  class VideoClip
+  class ImageClip <<new>> {
+    +SourceId: string  (a MediaAsset of kind Image)
+    +Facets = Picture | Fades | Effects | Source
+    default length 5 s, no retime
+  }
+  class TextClip <<exists, extended>> {
+    +Text: string  (exists)
+    +Font, Size, Color  (exist: replaced by Style)
+    +Style: TextStyle
+    +Facets = Text | Picture | Fades | Effects
+    default length 3 s
+  }
+  class TextStyle <<record>> {
+    +FontFamily
+    +Weight
+    +SizePercent  (of the frame height)
+    +Italic
+    +Color
+    +Opacity
+    +Align
+    +Shadow
+    +Background
+    +BackgroundColor
+  }
+  class LayerTransform <<record>> {
+    +CenterX / CenterY (0..1)
+    +Scale
+    +Rotation
+    animated by keyframes like any clip property
+  }
+  class Track {
+    Kind = Video holds video, image and text clips
+  }
+}
+
+package "Fig.Core.Media.Rendering" {
+  class RenderSource {
+    +Frame: DecodedFrame
+    +HasAlpha: bool  <<new>>
+  }
+  interface ILayerRasterizer <<new>> {
+    +Rasterize(clip, width, height, t): DecodedFrame (premultiplied BGRA)
+  }
+  class CpuSceneRenderer
+}
+
+package "Fig.App.Rendering" {
+  class SkiaLayerRasterizer <<new>> {
+    text -> Skia typeface/paragraph; image -> decoded still
+    cache by (content, style, size)
+  }
+  class GpuSceneRenderer {
+    draws RenderSource with alpha-over when HasAlpha
+  }
+}
+
+package "Fig.App.Views" {
+  class TextInspector <<new>> {
+    the Text section (typography, colour, shadow, background)
+  }
+  class LayerOverlay <<new>> {
+    drag, scale and rotate handles on the preview
+    (reuses TransformOverlay)
+  }
+}
+
+Clip <|-- VideoClip
+Clip <|-- ImageClip
+Clip <|-- TextClip
+TextClip *-- TextStyle
+TextClip *-- LayerTransform
+ImageClip *-- LayerTransform
+Track o-- Clip
+ILayerRasterizer <|.. SkiaLayerRasterizer
+RenderSource ..> ILayerRasterizer : text and image clips are rasterized
+GpuSceneRenderer ..> RenderSource
+CpuSceneRenderer ..> RenderSource
+TextInspector ..> TextClip
+LayerOverlay ..> LayerTransform
+@enduml

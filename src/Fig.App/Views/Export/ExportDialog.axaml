@@ -14,7 +14,7 @@
     <Window.Styles>
         <Style Selector="TextBlock.label"><Setter Property="Foreground" Value="#8A8A8A"/><Setter Property="FontSize" Value="12"/></Style>
         <Style Selector="TextBlock.section"><Setter Property="FontSize" Value="13"/><Setter Property="FontWeight" Value="SemiBold"/></Style>
-        <Style Selector="Border.rule"><Setter Property="Height" Value="1"/><Setter Property="Background" Value="#2B2D31"/><Setter Property="Margin" Value="0,2"/></Style>
+        <Style Selector="Border.rule"><Setter Property="Height" Value="1"/><Setter Property="Background" Value="#2a2d34"/><Setter Property="Margin" Value="0,2"/></Style>
     </Window.Styles>
 
     <StackPanel Margin="24" Spacing="16">
@@ -35,7 +35,7 @@
 
         <!-- ================= Marked ranges: list ================= -->
         <StackPanel IsVisible="{Binding ChapterMode}" Spacing="12">
-            <Grid ColumnDefinitions="28,*,110,70" Background="#26272B" Margin="0">
+            <Grid ColumnDefinitions="28,*,110,70" Background="#272a30" Margin="0">
                 <TextBlock Grid.Column="1" Classes="label" Margin="0,8" Text="Range / output file"/>
                 <TextBlock Grid.Column="2" Classes="label" Margin="0,8" Text="Start → End"/>
                 <TextBlock Grid.Column="3" Classes="label" Margin="0,8" Text="Duration"/>
@@ -48,7 +48,7 @@
                 <ItemsControl ItemsSource="{Binding Chapters}">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate x:DataType="vm:ExportChapterItem">
-                            <Border Background="#202124" CornerRadius="6" Margin="0,0,0,8" Padding="0,10">
+                            <Border Background="#212328" CornerRadius="6" Margin="0,0,0,8" Padding="0,10">
                                 <Grid ColumnDefinitions="28,6,*,110,70">
                                     <CheckBox Grid.Column="0" IsChecked="{Binding IsIncluded}" Margin="6,0,0,0" MinWidth="0"
                                               VerticalAlignment="Center" AutomationProperties.Name="{Binding Name}"/>

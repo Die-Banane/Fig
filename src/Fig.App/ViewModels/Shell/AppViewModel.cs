@@ -20,7 +20,11 @@ public partial class AppViewModel : ViewModelBase
     public GestureRegistry Gestures { get; }
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsEditing))]
     private object? _currentView;
+
+    /// <summary>A project is open in the editor (as opposed to the project list or the loading screen).</summary>
+    public bool IsEditing => CurrentView is EditorViewModel;
 
     public AppViewModel(ProjectStore store, GestureRegistry gestures)
     {

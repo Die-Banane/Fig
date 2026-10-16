@@ -21,7 +21,7 @@ public static class GpuSceneRenderer
         if (scene.Width <= 0 || scene.Height <= 0 || dest.Width <= 0 || dest.Height <= 0)
             return;
 
-        using var scope = new ShaderScope();
+        using var scope = new ShaderScope(canvas.Context);
         canvas.Save();
         canvas.ClipRect(dest);
         canvas.Translate(dest.Left, dest.Top);
@@ -45,15 +45,25 @@ public static class GpuSceneRenderer
         canvas.Restore();
     }
 
-    /// <summary>Renders the scene into a new raster BGRA picture of the scene's own size (tests, thumbnails).</summary>
-    public static byte[] RenderToBgra(GpuScene scene)
+    /// <summary>
+    /// Renders the scene into a BGRA picture of the scene's own size and reads it back. On a raster surface
+    /// by default (tests, thumbnails); pass a GPU context to render on the GPU, as export does.
+    /// </summary>
+    public static byte[] RenderToBgra(GpuScene scene, GRContext? context = null, byte[]? into = null)
     {
         var info = new SKImageInfo(scene.Width, scene.Height, SKColorType.Bgra8888, SKAlphaType.Opaque);
-        using var surface = SKSurface.Create(info);
+        using var surface = (context is not null ? SKSurface.Create(context, false, info) : null) ?? SKSurface.Create(info);
         Render(surface.Canvas, scene, new SKRect(0, 0, scene.Width, scene.Height));
-        using var pixmap = surface.PeekPixels()
-            ?? throw new InvalidOperationException("could not read the rendered scene back");
-        return pixmap.GetPixelSpan().ToArray();
+        var size = scene.Width * scene.Height * 4;
+        var bytes = into is { } buffer && buffer.Length >= size ? buffer : new byte[size];
+        var pin = System.Runtime.InteropServices.GCHandle.Alloc(bytes, System.Runtime.InteropServices.GCHandleType.Pinned);
+        try
+        {
+            if (!surface.ReadPixels(info, pin.AddrOfPinnedObject(), scene.Width * 4, 0, 0))
+                throw new InvalidOperationException("could not read the rendered scene back");
+        }
+        finally { pin.Free(); }
+        return bytes;
     }
 
     private static SKShader BuildLayer(GpuLayer layer, int width, int height, ShaderScope scope)

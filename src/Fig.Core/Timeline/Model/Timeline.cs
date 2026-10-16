@@ -82,9 +82,13 @@ namespace Fig.Core.Timeline
         public Dictionary<string, JsonElement> Metadata { get; set; } = new();
     }
 
-    public class Track : IEffectOwner
+    public class Track : IEffectOwner, ISelectable
     {
         public string Id { get; set; } = Guid.NewGuid().ToString();
+
+        [JsonIgnore] public SelectionKey Key => new(SelectionGroup.Track, Id);
+        [JsonIgnore] public string DisplayName => "Track";
+        [JsonIgnore] public Facet Facets => Facet.Track | Facet.Effects;
         public TrackKind Kind { get; set; }
         public int Index { get; set; }
         public string? Name { get; set; }

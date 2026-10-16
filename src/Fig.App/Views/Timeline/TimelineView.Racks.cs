@@ -41,7 +41,7 @@ namespace Fig.App.Views
         private static readonly Color LevelEdge = Color.Parse("#589b74");
 
         private sealed record RackItem(string Key, string Label, Color Fill, Color Edge,
-            EffectInstance? Effect, double StartSec, double DurSec, bool Enabled, bool Ranged, int Tab, int Row = 0);
+            EffectInstance? Effect, double StartSec, double DurSec, bool Enabled, bool Ranged, Facet Opens, int Row = 0);
 
         private enum RackPart { None, Body, Left, Right, Power, Remove, Keyframe, Animate }
 
@@ -78,18 +78,18 @@ namespace Fig.App.Views
                 var dur = fx.HasRange ? fx.DurSec!.Value : clip.DurSec;
                 items.Add(new RackItem(fx.Id, entry?.DisplayName ?? fx.TypeId,
                     motion ? ZoomFill : EffectFill, motion ? ZoomEdge : EffectEdge,
-                    fx, start, dur, fx.Enabled, motion, 4));
+                    fx, start, dur, fx.Enabled, motion, Facet.Effects));
             }
 
             if (clip is AudioClip audio)
             {
                 if (Math.Abs(audio.Volume - 1) > 0.01 || audio.Keyframes.ContainsKey(AutomationKeys.Volume))
-                    items.Add(new RackItem("level", "Level", LevelFill, LevelEdge, null, 0, audio.DurSec, true, false, 1));
+                    items.Add(new RackItem("level", "Level", LevelFill, LevelEdge, null, 0, audio.DurSec, true, false, Facet.Sound));
                 if (audio.FadeInSec > 1e-3)
-                    items.Add(new RackItem("fade-in", "Fade in", ZoomFill, ZoomEdge, null, 0, audio.FadeInSec, true, false, 3));
+                    items.Add(new RackItem("fade-in", "Fade in", ZoomFill, ZoomEdge, null, 0, audio.FadeInSec, true, false, Facet.Fades));
                 if (audio.FadeOutSec > 1e-3)
                     items.Add(new RackItem("fade-out", "Fade out", ZoomFill, ZoomEdge, null,
-                        Math.Max(0, audio.DurSec - audio.FadeOutSec), audio.FadeOutSec, true, false, 3));
+                        Math.Max(0, audio.DurSec - audio.FadeOutSec), audio.FadeOutSec, true, false, Facet.Fades));
             }
             return AssignRows(items, pack: clip is Track);
         }
@@ -392,7 +392,7 @@ namespace Fig.App.Views
                 // audio level / fades: select the clip and open the matching inspector tab
                 Editor.Selection.SelectOnly(hit.Clip.Id);
                 if (_editorVm is not null)
-                    _editorVm.Properties.SelectedTabIndex = item.Tab;
+                    _editorVm.Properties.OpenSection(item.Opens);
                 InvalidateVisual();
                 return true;
             }
@@ -400,8 +400,10 @@ namespace Fig.App.Views
             if (hit.Part == RackPart.Animate)
             {
                 var local = Math.Max(0, (_editorVm?.PlayheadTimeSec ?? 0) - hit.Clip.StartSec);
-                Editor.SetEffectAnimated(hit.Clip.Id, item.Effect.Id, item.Effect.Keyframes.Count == 0, local);
+                // the stopwatch records: it adds a keyframe here and never takes any away
+                var keyed = Editor.RecordEffectKeyframe(hit.Clip.Id, item.Effect.Id, local);
                 _editorVm?.Properties.SelectEffect(hit.Clip.Id, item.Effect.Id);
+                if (keyed is { } at) _editorVm?.Properties.SelectKeyframe(at);
                 InvalidateVisual();
                 return true;
             }
@@ -668,13 +670,17 @@ namespace Fig.App.Views
             };
             menu.Items.Add(addKey);
 
-            var animate = new MenuItem { Header = fx.Keyframes.Count > 0 ? "Stop animating (keep the look at the playhead)" : "Animate (start keyframes)" };
-            animate.Click += (_, _) =>
+            if (fx.Keyframes.Count > 0)
             {
-                Editor.SetEffectAnimated(clip.Id, fx.Id, fx.Keyframes.Count == 0, Math.Max(0, (_editorVm?.PlayheadTimeSec ?? 0) - clip.StartSec));
-                InvalidateVisual();
-            };
-            menu.Items.Add(animate);
+                var clear = new MenuItem { Header = "Clear all keyframes (keep the look at the playhead)" };
+                clear.Click += (_, _) =>
+                {
+                    Editor.SetEffectAnimated(clip.Id, fx.Id, false, Math.Max(0, (_editorVm?.PlayheadTimeSec ?? 0) - clip.StartSec));
+                    if (_editorVm is not null) _editorVm.Properties.SelectedKeyframeSec = null;
+                    InvalidateVisual();
+                };
+                menu.Items.Add(clear);
+            }
 
             var savePreset = new MenuItem { Header = "Save as preset..." };
             savePreset.Click += async (_, _) =>
