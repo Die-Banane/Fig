@@ -19,16 +19,18 @@ Status: **drafted, not built.** Design: `uml/persistence/preferences-schema.puml
 
 ## Shape
 
-* A preference is **declared once** (`PreferenceDef`: key, section, label, description, kind, default, range or choices, scope, when it applies). The screen, the file, validation and the reset arrows are all made from the declaration, the same way an effect's controls are made from its `[EffectParam]`s. The existing `ParamDef` and param editors are reused for the rows.
-* Code reads settings through an injected `IPreferences`, never a static, so tests can pass their own. `PreferenceService` implements it; `PreferenceLoader` only reads and writes the file; `PreferenceCatalog` is the list of `PreferenceDef`s. All three live in `Fig.App/Services/Config` and use no Avalonia types, so they can move to `Fig.Core` unchanged.
-* **Two scopes.** *User* preferences live in `~/.fig/config/preferences.json`. A few (export defaults) can be overridden *per project* and are then stored in the project file. Resolution order: default, user file, project, environment variable.
-* **Remembered state is not a preference.** Panel sizes, the open library tab, zoom and similar stay automatic and out of the screen.
-* **The file is safe to lose or break.** Saves are atomic (temp file, then rename). A damaged file is kept as `preferences.json.bad` and defaults are used with a notice. Unknown keys are kept, so an older build does not erase a newer one's settings. The file carries a schema version.
-* **Every preference says when it applies**: `Live`, `NextProject` or `Restart`, and the row says so.
+This follows the approach in Avalonia's [How to: Save and Load Application Settings](https://docs.avaloniaui.net/docs/how-to/data-persistence-how-to): a typed settings class, one JSON file, one shared service.
+
+* **`Preferences`** (`Fig.App/Services/Config/Preferences.cs`) is a plain class, grouped into sections (`General`, `Editing`, `Playback`, `Export`). A property's initial value is its default. Adding a setting is adding a property. `Normalize()` clamps values back into range after loading, so a hand-edited file can't break the app. `[JsonExtensionData] Unknown` keeps keys a newer build wrote, so an older build doesn't erase them.
+* **`PreferenceLoader`** reads and writes `~/.fig/preferences.json` (`AppPaths.PreferencesPath`). A missing file gives defaults; a damaged one is kept as `preferences.json.bad` and defaults are used; a save goes to a temp file and is renamed over the old one, so a crash never leaves half a file.
+* **`PreferenceService`** is created once in `App.axaml.cs` and passed to whatever needs it. Read `service.Current.Editing.SnapReachPx`; change a value, then call `Save()`, which normalizes, writes, and raises `Changed`.
+* **Remembered state is not a preference.** Panel sizes, the open library tab, zoom and similar stay in `workspace.json` and out of the screen.
+* **Keyboard shortcuts** stay in `GestureRegistry` and `gestures.json`; the Keyboard page edits that directly.
+* **Not yet:** per-project overrides, environment-variable overrides, and debouncing saves while a slider is dragged. Add them when something needs them.
 
 ## The screen
 
-An in-window page (the window has its own chrome, so no separate OS window), opened from File, Preferences or Ctrl+Comma. Categories on the left as a soft rail, rows on the right: the label and its one-line description on the left, the control on the right. A search box filters every row across every category. A modified row shows a dot and a reset arrow; each category and the page have "Reset to defaults". Rows that need a restart say so.
+An in-window page (the window has its own chrome, so no separate OS window), opened from File, Preferences or Ctrl+Comma. Categories on the left as a soft rail, one hand-written page per section on the right, bound to that section's properties through a view model; each change updates `Current` and calls `Save()`. Each page has "Reset to defaults" (a new instance of that section).
 
 ## First set of preferences
 

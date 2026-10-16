@@ -28,7 +28,7 @@ public partial class App : Application
         {
             AppPaths.EnsureDirectories();
 
-            IPreferences preferences = new PreferenceService(new PreferenceLoader(AppPaths.PreferencesPath));
+            var preferences = new PreferenceService(new PreferenceLoader(AppPaths.PreferencesPath));
             var store = new ProjectStore(AppPaths.ProjectsDir);
 
             // seed gesture config on first run, then load (bindings are data, editable)

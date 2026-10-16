@@ -312,21 +312,20 @@ Design: `uml/domain/selection-schema.puml`, `uml/domain/selection-sequence.puml`
 
 Design (draft): `uml/domain/text-image-layers-schema.puml`, `uml/domain/text-image-layers-sequence.puml`. `TextClip` and `ClipKind.Text` exist in the model; nothing draws or edits them yet.
 
-### 3.20 Preferences (drafted)
+### 3.20 Preferences
 | ID | Requirement | Priority | Status |
 | --- | --- | --- | --- |
-| FR-210 | Each preference SHALL be declared once (key, section, label, description, kind, default, range or choices, scope, when it applies); the screen, the file, validation and reset SHALL all be made from that declaration. | P1 | - |
-| FR-211 | Code SHALL read preferences through an injected interface, not a static. | P1 | - |
-| FR-212 | User preferences SHALL be stored in `~/.fig/config/preferences.json`; a value SHALL resolve as default, then user file, then project override, then environment variable. | P1 | - |
-| FR-213 | The file SHALL be written atomically; a damaged file SHALL be kept as `.bad` and defaults used with a notice; unknown keys SHALL be preserved; the file SHALL carry a schema version. | P1 | - |
-| FR-214 | A preference SHALL say whether it applies live, from the next project, or after a restart, and the screen SHALL show it. | P1 | - |
-| FR-215 | Preferences SHALL open as an in-window page (File, Preferences; Ctrl+Comma) with categories, a search that filters every row, a modified marker and reset per row, category and page. | P1 | - |
-| FR-216 | The export defaults (size, frame rate, codec, quality, folder) SHALL be a user preference that a project can override. | P1 | - |
-| FR-217 | The renderer SHALL be selectable (Automatic, GPU, CPU) for both preview and export, and the page SHALL show whether the canvas is GPU-backed. | P1 | - |
-| FR-218 | Key bindings SHALL be editable on a Keyboard page (record, conflicts, reset) and stay compatible with a hand-edited `gestures.json`. | P2 | - |
-| FR-219 | Remembered state (panel sizes, open tabs, zoom) SHALL stay automatic and SHALL NOT appear as preferences. | P2 | - |
+| FR-210 | Preferences SHALL be one typed class, grouped into sections, whose property initial values are the defaults. | P1 | O |
+| FR-211 | One shared `PreferenceService`, created at startup, SHALL be passed to everything that reads preferences; nothing SHALL read them from a static. | P1 | O |
+| FR-212 | Preferences SHALL be stored in `~/.fig/preferences.json`. | P1 | X |
+| FR-213 | Saving SHALL be atomic; a damaged file SHALL be kept as `.bad` and defaults used; a failed write SHALL NOT crash the app; keys the build doesn't know SHALL survive a save. | P1 | X |
+| FR-214 | Values SHALL be clamped back into range after loading and before saving. | P1 | X |
+| FR-215 | Preferences SHALL open as an in-window page (File, Preferences; Ctrl+Comma), one page per section, with "Reset to defaults" per page. | P1 | - |
+| FR-216 | Export SHALL default to the user's export preferences. | P1 | - |
+| FR-217 | Key bindings SHALL be editable on a Keyboard page backed by `GestureRegistry`, compatible with a hand-edited `gestures.json`. | P2 | - |
+| FR-218 | Remembered state (panel sizes, open tabs, zoom) SHALL stay automatic and SHALL NOT appear as preferences. | P2 | X |
 
-Design (draft): `uml/persistence/preferences-schema.puml`, `uml/persistence/preferences-sequence.puml`; the first set of preferences is in `docs/preferences.md`.
+Design: `uml/persistence/preferences-schema.puml`, `uml/persistence/preferences-sequence.puml`; the first set of preferences is in `docs/preferences.md`. FR-210 and FR-211 are partial: the model and service exist, but nothing reads them yet.
 
 ---
 

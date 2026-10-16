@@ -3,58 +3,60 @@ title Preferences
 skinparam classAttributeIconSize 0
 hide empty members
 
-enum PreferenceScope {
-  User
-  Project
+class Preferences {
+  + SchemaVersion : int
+  + General : GeneralPreferences
+  + Editing : EditingPreferences
+  + Playback : PlaybackPreferences
+  + Export : ExportPreferences
+  + Unknown : Dictionary<string, JsonElement>?
+  + Normalize() : void
 }
 
-enum PreferenceApply {
-  Live
-  NextProject
-  Restart
+class GeneralPreferences {
+  + AutosaveSeconds : double = 0.8
+  + AskBeforeClosingUnsaved : bool = true
 }
 
-class PreferenceDef <<record>> {
-  + Key : string
-  + Default : object
-  + Min : double?
-  + Max : double?
-  + Choices : string[]?
-  + Scope : PreferenceScope
-  + Apply : PreferenceApply
+class EditingPreferences {
+  + SnapReachPx : double = 9
+  + SnapByDefault : bool = true
+  + LinkByDefault : bool = true
+  + UndoSteps : int = 100
 }
 
-class PreferenceCatalog <<static>> {
-  + All : IReadOnlyList<PreferenceDef>
-  + Find(key : string) : PreferenceDef?
+class PlaybackPreferences {
+  + AudioScrub : bool = true
+  + Loop : bool = false
 }
 
-interface IPreferences {
-  + Get<T>(def : PreferenceDef) : T
-  + Set<T>(def : PreferenceDef, value : T) : void
-  + Reset(def : PreferenceDef) : void
-  + IsModified(def : PreferenceDef) : bool
-  + Changed : event Action<PreferenceDef>
+class ExportPreferences {
+  + Width : int = 1920
+  + Height : int = 1080
+  + Fps : int = 30
+  + Crf : int = 23
+  + Folder : string?
 }
 
 class PreferenceService {
   - _loader : PreferenceLoader
-  - _values : Dictionary<string, JsonElement>
+  + Current : Preferences
+  + Changed : event Action
   + PreferenceService(loader : PreferenceLoader)
-  - Validate<T>(def : PreferenceDef, value : T) : T
+  + Save() : void
 }
 
 class PreferenceLoader {
   - _path : string
   + PreferenceLoader(path : string)
-  + Load() : Dictionary<string, JsonElement>
-  + Save(values : IReadOnlyDictionary<string, JsonElement>) : void
+  + Load() : Preferences
+  + Save(preferences : Preferences) : void
 }
 
-PreferenceDef --> PreferenceScope
-PreferenceDef --> PreferenceApply
-PreferenceCatalog o-- "*" PreferenceDef
-IPreferences <|.. PreferenceService
+Preferences *-- GeneralPreferences
+Preferences *-- EditingPreferences
+Preferences *-- PlaybackPreferences
+Preferences *-- ExportPreferences
+PreferenceService *-- Preferences
 PreferenceService --> PreferenceLoader
-PreferenceService ..> PreferenceDef : uses
 @enduml

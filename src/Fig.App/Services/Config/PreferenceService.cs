@@ -1,31 +1,40 @@
-using System.Text.Json;
-using System.Collections.Generic;
+using System;
+using System.IO;
 
-namespace Fig.App.Services {
-
-    public sealed class PreferenceService : IPreferences{
+namespace Fig.App.Services
+{
+    /// <summary>
+    /// The one shared copy of the user's preferences. Read values from <see cref="Current"/>; after changing
+    /// any, call <see cref="Save"/>, which also tells listeners through <see cref="Changed"/>.
+    /// </summary>
+    public sealed class PreferenceService
+    {
         private readonly PreferenceLoader _loader;
-        private readonly Dictionary<string, JsonElement> _values;
 
         public PreferenceService(PreferenceLoader loader)
         {
             _loader = loader;
-            _values = loader.Load();
+            Current = loader.Load();
+            Current.Normalize();
         }
 
-        private static T Validate<T>(PreferenceDef def, T value) {
-            if (value is double number)
+        public Preferences Current { get; }
+
+        /// <summary>Raised after a save, so anything holding a value can read it again.</summary>
+        public event Action? Changed;
+
+        public void Save()
+        {
+            Current.Normalize();
+            try
             {
-                if (def.Min is { } min && number < min) return (T)(object)min;
-                if (def.Max is { } max && number > max) return (T)(object)max;
-
+                _loader.Save(Current);
             }
-
-            if (value is string text && def.Choices is { } choices && !choices.Contains(text))
-                return (T)def.Default;
-
-            return value;
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // preferences are not worth crashing over; the values still apply for this session
+            }
+            Changed?.Invoke();
         }
-
     }
 }
