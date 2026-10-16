@@ -1,5 +1,6 @@
 using System;
 using System.Threading.Tasks;
+using Fig.App.Services;
 using Fig.Core.Media;
 
 namespace Fig.App.Rendering;
@@ -21,22 +22,24 @@ public sealed class SkiaSceneRenderer : ISceneRenderer
     public int MaxInFlight => _host is null ? 1 : 4;
 
     /// <summary>
-    /// The best renderer available now: the GPU when the window's canvas is GPU-backed, otherwise the CPU kernels
-    /// (faster than Skia's software shaders). Never throws.
+    /// The renderer for an export. Automatic: the GPU when the window's canvas is GPU-backed, otherwise the CPU
+    /// kernels (faster than Skia's software shaders). Gpu and Cpu force one or the other. Never throws.
     /// </summary>
-    public static async Task<ISceneRenderer> CreateAsync()
+    public static async Task<ISceneRenderer> CreateAsync(RendererChoice choice = RendererChoice.Automatic)
     {
+        if (choice == RendererChoice.Cpu)
+            return new CpuSceneRenderer();
         var host = GpuJobHost.Current;
         if (host is null)
-            return new CpuSceneRenderer();
+            return choice == RendererChoice.Gpu ? new SkiaSceneRenderer(null) : new CpuSceneRenderer();
         try
         {
             var backed = await host.Run(context => context is not null, TimeSpan.FromSeconds(2));
-            return backed ? new SkiaSceneRenderer(host) : new CpuSceneRenderer();
+            return backed || choice == RendererChoice.Gpu ? new SkiaSceneRenderer(host) : new CpuSceneRenderer();
         }
         catch
         {
-            return new CpuSceneRenderer();
+            return choice == RendererChoice.Gpu ? new SkiaSceneRenderer(null) : new CpuSceneRenderer();
         }
     }
 

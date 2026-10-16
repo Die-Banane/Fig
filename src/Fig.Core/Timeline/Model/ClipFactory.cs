@@ -5,94 +5,8 @@ namespace Fig.Core.Timeline
 {
     public static class ClipFactory
     {
-        public static Clip Clone(Clip source)
-        {
-            Clip clone = source.Kind switch
-            {
-                ClipKind.Video => new VideoClip
-                {
-                    SourceId = ((VideoClip)source).SourceId,
-                    SrcInSec = ((VideoClip)source).SrcInSec,
-                    SrcOutSec = ((VideoClip)source).SrcOutSec,
-                    CropL = ((VideoClip)source).CropL,
-                    CropT = ((VideoClip)source).CropT,
-                    CropR = ((VideoClip)source).CropR,
-                    CropB = ((VideoClip)source).CropB,
-                    StartSec = source.StartSec,
-                    DurSec = source.DurSec,
-                    Speed = source.Speed,
-                    Volume = source.Volume,
-                    Opacity = source.Opacity,
-                    FadeInSec = source.FadeInSec,
-                    FadeOutSec = source.FadeOutSec,
-                },
-                ClipKind.Audio => new AudioClip
-                {
-                    SourceId = ((AudioClip)source).SourceId,
-                    SrcInSec = ((AudioClip)source).SrcInSec,
-                    SrcOutSec = ((AudioClip)source).SrcOutSec,
-                    StartSec = source.StartSec,
-                    DurSec = source.DurSec,
-                    Speed = source.Speed,
-                    Volume = source.Volume,
-                    Opacity = source.Opacity,
-                    FadeInSec = source.FadeInSec,
-                    FadeOutSec = source.FadeOutSec,
-                },
-                ClipKind.Text => new TextClip
-                {
-                    Text = ((TextClip)source).Text,
-                    Font = ((TextClip)source).Font,
-                    Size = ((TextClip)source).Size,
-                    Color = ((TextClip)source).Color,
-                    StartSec = source.StartSec,
-                    DurSec = source.DurSec,
-                    Speed = source.Speed,
-                    Volume = source.Volume,
-                    Opacity = source.Opacity,
-                    FadeInSec = source.FadeInSec,
-                    FadeOutSec = source.FadeOutSec,
-                },
-                _ => throw new NotSupportedException($"Unsupported clip kind '{source.Kind}'")
-            };
-            clone.LinkGroupId = source.LinkGroupId;
-            clone.Enabled = source.Enabled;
-            clone.SourceRate = source.SourceRate;
-            clone.Effects = CloneEffects(source.Effects);
-            clone.TransitionIn = source.TransitionIn?.Clone();
-            clone.TransitionOut = source.TransitionOut?.Clone();
-            clone.Markers = CloneMarkers(source.Markers);
-            clone.Keyframes = CloneKeyframes(source.Keyframes);
-            clone.Metadata = source.Metadata.Count == 0
-                ? new Dictionary<string, System.Text.Json.JsonElement>()
-                : new Dictionary<string, System.Text.Json.JsonElement>(source.Metadata);
-            return clone;
-        }
-
-        private static List<Marker> CloneMarkers(List<Marker> source)
-        {
-            var list = new List<Marker>(source.Count);
-            foreach (var m in source)
-                list.Add(m.Clone());
-            return list;
-        }
-
-        private static Dictionary<string, List<KeyframePoint>> CloneKeyframes(
-            Dictionary<string, List<KeyframePoint>> source)
-        {
-            var map = new Dictionary<string, List<KeyframePoint>>(source.Count);
-            foreach (var (key, track) in source)
-                map[key] = new List<KeyframePoint>(track);
-            return map;
-        }
-
-        private static List<EffectInstance> CloneEffects(List<EffectInstance> source)
-        {
-            var list = new List<EffectInstance>(source.Count);
-            foreach (var e in source)
-                list.Add(e.Clone());
-            return list;
-        }
+        /// <summary>A copy of the clip with a new id (see <see cref="Clip.Clone"/>).</summary>
+        public static Clip Clone(Clip source) => source.Clone();
 
         public static Clip CloneWithRange(Clip source, double startSec, double durSec, double srcInSec, double srcOutSec)
         {
@@ -103,19 +17,6 @@ namespace Fig.Core.Timeline
             return clone;
         }
 
-        public static void SetSourceRange(Clip clip, double srcInSec, double srcOutSec)
-        {
-            switch (clip)
-            {
-                case VideoClip v:
-                    v.SrcInSec = srcInSec;
-                    v.SrcOutSec = srcOutSec;
-                    break;
-                case AudioClip a:
-                    a.SrcInSec = srcInSec;
-                    a.SrcOutSec = srcOutSec;
-                    break;
-            }
-        }
+        public static void SetSourceRange(Clip clip, double srcInSec, double srcOutSec) => clip.SetSourceRange(srcInSec, srcOutSec);
     }
 }

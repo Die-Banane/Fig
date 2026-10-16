@@ -22,4 +22,7 @@ public static class DragFormats
 
     public static readonly DataFormat<TransitionCatalogEntry> Transition =
         DataFormat<TransitionCatalogEntry>.CreateInProcessFormat<TransitionCatalogEntry>("fig.transition");
+
+    public static readonly DataFormat<TextPreset> Text =
+        DataFormat<TextPreset>.CreateInProcessFormat<TextPreset>("fig.text");
 }

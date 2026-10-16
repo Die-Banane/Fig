@@ -11,9 +11,9 @@ namespace Fig.App.Rendering;
 public static class GpuSceneBuilder
 {
     /// <summary>Copies a decoded BGRA frame into an image the GPU can sample. The frame's buffer may be reused afterwards.</summary>
-    public static SKImage ToImage(DecodedFrame frame)
+    public static SKImage ToImage(DecodedFrame frame, bool premultiplied = false)
         => SKImage.FromPixelCopy(
-            new SKImageInfo(frame.Width, frame.Height, SKColorType.Bgra8888, SKAlphaType.Opaque),
+            new SKImageInfo(frame.Width, frame.Height, SKColorType.Bgra8888, premultiplied ? SKAlphaType.Premul : SKAlphaType.Opaque),
             frame.Pixels.AsSpan(0, frame.Width * frame.Height * 4));
 
     /// <summary>
@@ -52,7 +52,7 @@ public static class GpuSceneBuilder
     }
 
     /// <summary>The clip's crop at a clip-relative time (automation sampled), or none.</summary>
-    public static CropInsets CropAt(VideoClip clip, double localT)
+    public static CropInsets CropAt(Clip clip, double localT)
     {
         var (l, t, r, b) = ClipAutomation.SampleCrop(clip, Math.Clamp(localT, 0, Math.Max(0, clip.DurSec - 1e-4)));
         return new CropInsets(l, t, r, b);
@@ -63,17 +63,18 @@ public static class GpuSceneBuilder
     /// if the stack holds an effect that has no shader yet, the whole stack runs on the CPU first so the
     /// effect is never silently skipped (and order is preserved).
     /// </summary>
-    public static GpuSource SourceFor(VideoClip clip, DecodedFrame frame, double localT)
+    public static GpuSource SourceFor(Clip clip, DecodedFrame frame, double localT)
     {
         var calls = EffectsAt(clip.Effects, localT);
         var crop = CropAt(clip, localT);
+        var alpha = clip is ILayerClip;
         if (calls.Any(c => !GpuEffects.Supports(c.TypeId)))
         {
             var rented = new List<byte[]>();
             try
             {
                 var processed = EffectPipeline.ApplyStack(frame, clip.Effects, localT, rented);
-                return new GpuSource { Image = ToImage(processed), Crop = crop };
+                return new GpuSource { Image = ToImage(processed, alpha), Crop = crop, HasAlpha = alpha };
             }
             finally
             {
@@ -82,7 +83,7 @@ public static class GpuSceneBuilder
             }
         }
 
-        return new GpuSource { Image = ToImage(frame), Effects = calls, Crop = crop };
+        return new GpuSource { Image = ToImage(frame, alpha), Effects = calls, Crop = crop, HasAlpha = alpha };
     }
 
     /// <summary>
@@ -129,7 +130,8 @@ public static class GpuSceneBuilder
 
     private static GpuSource ToGpuSource(RenderSource source) => new()
     {
-        Image = ToImage(source.Frame),
+        Image = ToImage(source.Frame, source.HasAlpha),
+        HasAlpha = source.HasAlpha,
         Effects = source.Effects,
         Crop = new CropInsets(source.Crop.Left, source.Crop.Top, source.Crop.Right, source.Crop.Bottom),
     };

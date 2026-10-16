@@ -27,6 +27,10 @@
             <Setter Property="TextWrapping" Value="Wrap"/>
             <Setter Property="Margin" Value="0,3,24,0"/>
         </Style>
+        <Style Selector="Button.recording">
+            <Setter Property="Background" Value="{StaticResource AccentSoft}"/>
+            <Setter Property="Foreground" Value="{StaticResource AccentText}"/>
+        </Style>
         <Style Selector="ListBox.pref-rail ListBoxItem">
             <Setter Property="Padding" Value="10,8"/>
             <Setter Property="Margin" Value="0,0,0,2"/>
@@ -137,6 +141,100 @@
                 </Grid>
             </StackPanel>
         </DataTemplate>
+        <DataTemplate DataType="vm:KeyboardPageViewModel">
+            <ItemsControl ItemsSource="{Binding Rows}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:ShortcutRowViewModel">
+                        <StackPanel>
+                            <TextBlock Text="{Binding Section}" IsVisible="{Binding ShowSection}" Classes="pref-note"
+                                       FontWeight="SemiBold" Margin="0,14,0,8"/>
+                            <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="6" Margin="0,0,0,8">
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock Classes="pref-label" Text="{Binding Label}"/>
+                                    <TextBlock Classes="pref-note" Text="{Binding Note}"
+                                               IsVisible="{Binding Note, Converter={x:Static ObjectConverters.IsNotNull}}"/>
+                                </StackPanel>
+                                <Button Grid.Column="1" Classes="fig compact" MinWidth="130" Command="{Binding RecordCommand}"
+                                        Content="{Binding ButtonText}" HorizontalContentAlignment="Center"
+                                        Classes.recording="{Binding IsRecording}"
+                                        ToolTip.Tip="Click, then press the new keys (Esc cancels)"/>
+                                <Button Grid.Column="2" Classes="fig compact icon" Command="{Binding ClearCommand}"
+                                        ToolTip.Tip="No shortcut" AutomationProperties.Name="Remove shortcut">
+                                    <local:StrokeIcon Icon="x" Width="13" Height="13" IconBrush="{StaticResource TextMuted}"/>
+                                </Button>
+                                <Button Grid.Column="3" Classes="fig compact icon" Command="{Binding ResetCommand}"
+                                        IsVisible="{Binding IsModified}"
+                                        ToolTip.Tip="Back to the default shortcut" AutomationProperties.Name="Reset shortcut">
+                                    <local:StrokeIcon Icon="rotate-ccw" Width="13" Height="13" IconBrush="{StaticResource TextMuted}"/>
+                                </Button>
+                            </Grid>
+                        </StackPanel>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </DataTemplate>
+
+        <DataTemplate DataType="vm:RenderingPageViewModel">
+            <StackPanel>
+                <Grid Classes="pref-row" ColumnDefinitions="*,Auto">
+                    <StackPanel>
+                        <TextBlock Classes="pref-label" Text="Renderer"/>
+                        <TextBlock Classes="pref-note" Text="{Binding Selected.Note}"/>
+                    </StackPanel>
+                    <ComboBox Grid.Column="1" ItemsSource="{Binding Options}" SelectedItem="{Binding Selected}" Width="160"
+                              VerticalAlignment="Center">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate x:DataType="vm:RendererOption">
+                                <TextBlock Text="{Binding Label}"/>
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
+                </Grid>
+                <Grid Classes="pref-row" ColumnDefinitions="*,Auto">
+                    <StackPanel>
+                        <TextBlock Classes="pref-label" Text="Graphics"/>
+                        <TextBlock Classes="pref-note" Text="{Binding CanvasStatus}"/>
+                    </StackPanel>
+                    <Button Grid.Column="1" Classes="fig compact" Content="Check again" Command="{Binding RefreshCanvasStatusCommand}"
+                            VerticalAlignment="Center"/>
+                </Grid>
+                <TextBlock Classes="pref-note" Text="The preview switches straight away. An export uses the renderer chosen when it starts."/>
+            </StackPanel>
+        </DataTemplate>
+
+        <DataTemplate DataType="vm:StoragePageViewModel">
+            <StackPanel>
+                <ItemsControl ItemsSource="{Binding Folders}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:StorageRow">
+                            <Grid Classes="pref-row" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="12">
+                                <StackPanel>
+                                    <TextBlock Classes="pref-label" Text="{Binding Label}"/>
+                                    <TextBlock Classes="pref-note" Text="{Binding Note}"/>
+                                    <TextBlock Classes="pref-note" Text="{Binding Path}" FontSize="11" Foreground="{StaticResource TextFaint}"/>
+                                </StackPanel>
+                                <TextBlock Grid.Column="1" Text="{Binding Size}" Foreground="{StaticResource TextSecondary}" FontSize="12"
+                                           VerticalAlignment="Center"/>
+                                <Button Grid.Column="2" Classes="fig compact" Content="Open" Command="{Binding OpenCommand}"
+                                        VerticalAlignment="Center"/>
+                            </Grid>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <Grid Classes="pref-row" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="12">
+                    <StackPanel>
+                        <TextBlock Classes="pref-label" Text="Previews and proxies"/>
+                        <TextBlock Classes="pref-note" Text="Thumbnails, filmstrips, waveforms and proxies. They are rebuilt when a project is opened; the open project's are kept."/>
+                        <TextBlock Classes="pref-note" Text="{Binding CacheNote}"
+                                   IsVisible="{Binding CacheNote, Converter={x:Static ObjectConverters.IsNotNull}}"/>
+                    </StackPanel>
+                    <TextBlock Grid.Column="1" Text="{Binding CacheSize}" Foreground="{StaticResource TextSecondary}" FontSize="12"
+                               VerticalAlignment="Center"/>
+                    <Button Grid.Column="2" Classes="fig compact" Content="Clear" Command="{Binding ClearCacheCommand}"
+                            VerticalAlignment="Center"/>
+                </Grid>
+            </StackPanel>
+        </DataTemplate>
     </UserControl.DataTemplates>
 
     <!-- dim the editor behind, the page itself a soft panel in the middle -->
@@ -172,7 +270,7 @@
                         <TextBlock Text="{Binding SelectedPage.Title}" FontSize="17" FontWeight="SemiBold"
                                    Foreground="{StaticResource TextPrimary}" VerticalAlignment="Center"/>
                         <Button Grid.Column="1" Classes="fig compact" Content="Reset to defaults"
-                                Command="{Binding SelectedPage.ResetToDefaultsCommand}"/>
+                                Command="{Binding SelectedPage.ResetToDefaultsCommand}" IsVisible="{Binding SelectedPage.CanReset}"/>
                         <Button Grid.Column="2" Classes="fig compact icon" Command="{Binding CloseCommand}"
                                 ToolTip.Tip="Close (Esc)" AutomationProperties.Name="Close preferences">
                             <local:StrokeIcon Icon="x" Width="14" Height="14" IconBrush="{StaticResource TextSecondary}"/>

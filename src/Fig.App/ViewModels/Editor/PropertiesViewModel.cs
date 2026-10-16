@@ -27,6 +27,7 @@ public partial class PropertiesViewModel : ViewModelBase
     {
         Transform = new TransformControlsViewModel(this, editor);
         Swirl = new SwirlControlsViewModel(this, editor);
+        Gizmo = new LayerGizmoViewModel(this, editor);
         _editor = editor;
         _editor.PropertyChanged += OnEditorPropertyChanged;
         Effects.CollectionChanged += (_, _) =>
@@ -44,6 +45,8 @@ public partial class PropertiesViewModel : ViewModelBase
 
     public TransformControlsViewModel Transform { get; }
     public SwirlControlsViewModel Swirl { get; }
+    /// <summary>The move / scale / rotate gizmo for text and image layers on the preview.</summary>
+    public LayerGizmoViewModel Gizmo { get; }
     public AutomationButtonViewModel OpacityAutomation { get; }
     public AutomationButtonViewModel VolumeAutomation { get; }
     public AutomationButtonViewModel CropTopAutomation { get; }
@@ -61,6 +64,8 @@ public partial class PropertiesViewModel : ViewModelBase
             if (Has(Facet.Picture | Facet.Sound))
                 RefreshAutomation();
             Transform.Refresh();
+            Gizmo.Refresh();
+            NotifyPreviewControlsChanged();
         }
     }
 
@@ -166,12 +171,13 @@ public partial class PropertiesViewModel : ViewModelBase
     private bool _showPreviewControls = true;
 
     /// <summary>Something selected has handles that can be shown on the preview.</summary>
-    public bool HasPreviewControls => Transform.IsActive || Swirl.IsActive;
+    public bool HasPreviewControls => Transform.IsActive || Swirl.IsActive || Gizmo.Items.Count > 0;
 
     partial void OnShowPreviewControlsChanged(bool value)
     {
         Transform.NotifyControlsVisibilityChanged();
         Swirl.NotifyControlsVisibilityChanged();
+        Gizmo.NotifyControlsVisibilityChanged();
     }
 
     internal void NotifyPreviewControlsChanged() => OnPropertyChanged(nameof(HasPreviewControls));
@@ -277,6 +283,8 @@ public partial class PropertiesViewModel : ViewModelBase
         RefreshCore();
         Transform.Refresh();
         Swirl.Refresh();
+        Gizmo.Refresh();
+        NotifyPreviewControlsChanged();
     }
 
     private void RefreshCore()
@@ -292,6 +300,12 @@ public partial class PropertiesViewModel : ViewModelBase
         if (shared == Facet.None)
         {
             ShowEmpty();
+            if (items.Count > 1)
+            {
+                // a mixed selection (clips and markers, say) has nothing every item can be edited as
+                Title = $"{items.Count} selected";
+                Subtitle = "Nothing to edit that they all share";
+            }
             return;
         }
 
@@ -395,20 +409,21 @@ public partial class PropertiesViewModel : ViewModelBase
             FadeOutValue = clip.FadeOutSec;
             VolumeValue = clip.Volume;
             SpeedValue = clip.Speed;
-            (CropLeft, CropTop, CropRight, CropBottom) = clip is VideoClip video
-                ? (video.CropL, video.CropT, video.CropR, video.CropB)
+            (CropLeft, CropTop, CropRight, CropBottom) = clip is ICroppable crop
+                ? (crop.CropL, crop.CropT, crop.CropR, crop.CropB)
                 : (0, 0, 0, 0);
             ClipDurationSec = Math.Max(0.01, clip.DurSec);
             RetimedDurationLabel = FormatTime(clip.DurSec);
             OriginalDurationLabel = FormatTime(clip.DurSec * clip.Speed);
             if (clip.MediaId is { } mediaId)
                 _editor.MediaById.TryGetValue(mediaId, out asset);
-            if (Has(Facet.Source) && clip.MediaId is not null)
+            if (Has(Facet.Source) && clip.HasSourceRange)
                 SourceRangeLabel = $"{FormatTime(clip.SourceIn)} → {FormatTime(clip.SourceOut > 0 ? clip.SourceOut : clip.SourceIn + clip.DurSec * clip.Speed)}";
             else
                 SourceRangeLabel = null;
             LinkedToLabel = clip.LinkGroupId is not null && asset is not null ? $"Linked to {asset.FileName}" : null;
             OnPropertyChanged(nameof(IsLinked));
+            LoadLayer(clip);
             RefreshAutomation();
             if (single)
                 Subtitle = asset?.FileName ?? ClipTimingLabel;
@@ -1230,20 +1245,14 @@ public partial class PropertiesViewModel : ViewModelBase
     }
 
     partial void OnOpacityValueChanged(double value)
-    {
-        if (_suppressApply || _clipId is null || !Has(Facet.Picture))
-            return;
-        _editor.Editor.SetOpacity(_clipId, value);
-        _editor.Preview.RefreshFrame();
-    }
+        => SetOnSelection(Facet.Picture, "opacity", c => c.Opacity, (c, v) => c.Opacity = v, Math.Clamp(value, 0, 1));
 
     partial void OnFadeInValueChanged(double value)
     {
-        if (_suppressApply || _clipId is null || !Has(Facet.Fades))
-            return;
-        _editor.Editor.SetFadeIn(_clipId, value);
+        // each clip clamps the fade to the room it has
+        SetOnSelection(Facet.Fades, "fade in", c => c.FadeInSec, ClipFade.ApplyFadeIn, Math.Max(0, value));
         // Reflect clamp back into the slider without re-entering Apply
-        var clip = FindClip(_clipId);
+        var clip = _clipId is null ? null : FindClip(_clipId);
         if (clip is not null && Math.Abs(clip.FadeInSec - value) > 1e-6)
         {
             _suppressApply = true;
@@ -1255,10 +1264,8 @@ public partial class PropertiesViewModel : ViewModelBase
 
     partial void OnFadeOutValueChanged(double value)
     {
-        if (_suppressApply || _clipId is null || !Has(Facet.Fades))
-            return;
-        _editor.Editor.SetFadeOut(_clipId, value);
-        var clip = FindClip(_clipId);
+        SetOnSelection(Facet.Fades, "fade out", c => c.FadeOutSec, ClipFade.ApplyFadeOut, Math.Max(0, value));
+        var clip = _clipId is null ? null : FindClip(_clipId);
         if (clip is not null && Math.Abs(clip.FadeOutSec - value) > 1e-6)
         {
             _suppressApply = true;
@@ -1269,11 +1276,7 @@ public partial class PropertiesViewModel : ViewModelBase
     }
 
     partial void OnVolumeValueChanged(double value)
-    {
-        if (_suppressApply || _clipId is null || !Has(Facet.Sound))
-            return;
-        _editor.Editor.SetVolume(_clipId, value);
-    }
+        => SetOnSelection(Facet.Sound, "volume", c => c.Volume, (c, v) => c.Volume = v, Math.Clamp(value, 0, 1));
 
     partial void OnSpeedValueChanged(double value)
     {
@@ -1288,24 +1291,22 @@ public partial class PropertiesViewModel : ViewModelBase
     partial void OnCropRightChanged(double value) => ApplyCrop();
     partial void OnCropBottomChanged(double value) => ApplyCrop();
 
-    private void ApplyCrop()
-    {
-        if (_suppressApply || _clipId is null || !Has(Facet.Picture))
-            return;
-        _editor.Editor.SetCrop(_clipId, CropLeft, CropTop, CropRight, CropBottom);
-        _editor.Preview.RefreshFrame();
-    }
+    private void ApplyCrop() => SetCrop(SetCropCommand.Normalize(CropLeft, CropTop, CropRight, CropBottom));
+
+    /// <summary>Crops every selected picture that can be cropped to the same insets, as one undo step.</summary>
+    private void SetCrop((double L, double T, double R, double B) crop)
+        => SetOnSelection(Facet.Crop, "crop",
+            c => (((ICroppable)c).CropL, ((ICroppable)c).CropT, ((ICroppable)c).CropR, ((ICroppable)c).CropB),
+            (c, v) => (((ICroppable)c).CropL, ((ICroppable)c).CropT, ((ICroppable)c).CropR, ((ICroppable)c).CropB) = v,
+            crop);
 
     [RelayCommand]
     private void ResetCrop()
     {
-        if (_clipId is null || !Has(Facet.Picture))
-            return;
         _suppressApply = true;
         CropLeft = CropTop = CropRight = CropBottom = 0;
         _suppressApply = false;
-        _editor.Editor.SetCrop(_clipId, 0, 0, 0, 0);
-        _editor.Preview.RefreshFrame();
+        SetCrop((0, 0, 0, 0));
     }
 
     private Clip? FindClip(string id)

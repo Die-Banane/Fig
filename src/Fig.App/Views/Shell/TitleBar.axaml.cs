@@ -1,9 +1,7 @@
 using System;
-using System.Collections.Generic;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
-using Avalonia.Threading;
 
 namespace Fig.App.Views;
 
@@ -13,9 +11,6 @@ namespace Fig.App.Views;
 /// </summary>
 public partial class TitleBar : UserControl
 {
-    private readonly List<Button> _menus = new();
-    private Button? _open;
-
     public static readonly DirectProperty<TitleBar, Window?> OwnerProperty =
         AvaloniaProperty.RegisterDirect<TitleBar, Window?>(nameof(Owner), o => o.Owner);
 
@@ -31,22 +26,6 @@ public partial class TitleBar : UserControl
     public TitleBar()
     {
         InitializeComponent();
-        _menus.AddRange([FileMenu, EditMenu, ViewMenu, HelpMenu]);
-        foreach (var menu in _menus)
-        {
-            var button = menu;
-            button.PointerEntered += (_, _) => SwitchTo(button);
-            if (button.Flyout is { } flyout)
-            {
-                flyout.Opened += (_, _) => { _open = button; button.Classes.Set("open", true); };
-                flyout.Closed += (_, _) =>
-                {
-                    button.Classes.Set("open", false);
-                    if (ReferenceEquals(_open, button))
-                        _open = null;
-                };
-            }
-        }
     }
 
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
@@ -75,15 +54,6 @@ public partial class TitleBar : UserControl
 
     private void UpdateMaximizeIcon()
         => MaximizeIcon.Icon = Owner?.WindowState == WindowState.Maximized ? "copy" : "square";
-
-    /// <summary>Like a desktop menu bar: while one menu is open, moving over another opens that one instead.</summary>
-    private void SwitchTo(Button next)
-    {
-        if (_open is null || ReferenceEquals(_open, next) || !next.IsEnabled)
-            return;
-        _open.Flyout?.Hide();
-        Dispatcher.UIThread.Post(() => next.Flyout?.ShowAt(next), DispatcherPriority.Input);
-    }
 
     private void Minimize_Click(object? sender, RoutedEventArgs e)
     {

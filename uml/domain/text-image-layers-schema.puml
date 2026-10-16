@@ -1,86 +1,107 @@
 @startuml
-title Text and image layers (draft)
+title Text and image layers
 
 package "Fig.Core.Timeline" {
-  abstract class Clip
+  abstract class Clip {
+    +Facets: Facet
+    +HasSourceRange: bool
+    +Clone(): Clip
+  }
+  interface ILayerClip {
+    +Layout: LayerTransform
+  }
+  interface ICroppable {
+    +CropL, CropT, CropR, CropB
+  }
   class VideoClip
-  class ImageClip <<new>> {
+  class ImageClip {
     +SourceId: string  (a MediaAsset of kind Image)
-    +Facets = Picture | Fades | Effects | Source
+    +Facets = Picture | Crop | Layout | Fades | Effects | Source
     default length 5 s, no retime
   }
-  class TextClip <<exists, extended>> {
-    +Text: string  (exists)
-    +Font, Size, Color  (exist: replaced by Style)
+  class TextClip {
+    +Text: string
     +Style: TextStyle
-    +Facets = Text | Picture | Fades | Effects
+    +Facets = Text | Picture | Layout | Fades | Effects
     default length 3 s
   }
   class TextStyle <<record>> {
-    +FontFamily
-    +Weight
+    +FontFamily, Bold, Italic
     +SizePercent  (of the frame height)
-    +Italic
-    +Color
-    +Opacity
-    +Align
-    +Shadow
-    +Background
-    +BackgroundColor
+    +Color, Align
+    +Shadow, Background, BackgroundColor
   }
   class LayerTransform <<record>> {
-    +CenterX / CenterY (0..1)
-    +Scale
-    +Rotation
-    animated by keyframes like any clip property
+    +CenterX, CenterY  (0..1 of the frame)
+    +Scale, Rotation
   }
-  class Track {
-    Kind = Video holds video, image and text clips
+  class TextPreset <<record>> {
+    +Name, Text, Style, Layout, DurSec
   }
+  class TimelineEditor {
+    +AddText(track, start, preset): TextClip
+    +SetClipValue(ids, property, get, set, value)
+    +EditTargets(ids, facet): ids
+  }
+  class AddClipCommand
+  class SetClipValueCommand<T>
 }
 
 package "Fig.Core.Media.Rendering" {
   class RenderSource {
     +Frame: DecodedFrame
-    +HasAlpha: bool  <<new>>
+    +HasAlpha: bool
   }
-  interface ILayerRasterizer <<new>> {
-    +Rasterize(clip, width, height, t): DecodedFrame (premultiplied BGRA)
+  interface ILayerRasterizer {
+    +Rasterize(clip, width, height, t): DecodedFrame
   }
-  class CpuSceneRenderer
+  class CpuSceneRenderer {
+    premultiplied "over" when HasAlpha
+  }
 }
 
 package "Fig.App.Rendering" {
-  class SkiaLayerRasterizer <<new>> {
-    text -> Skia typeface/paragraph; image -> decoded still
-    cache by (content, style, size)
+  class SkiaLayerRasterizer {
+    text: typeface + lines; image: decoded still
+    cache by (content, style, layout, size)
   }
   class GpuSceneRenderer {
-    draws RenderSource with alpha-over when HasAlpha
+    decal sampling, alpha kept, when HasAlpha
   }
 }
 
-package "Fig.App.Views" {
-  class TextInspector <<new>> {
-    the Text section (typography, colour, shadow, background)
+package "Fig.App.ViewModels" {
+  class TextSection {
+    text, font, bold, italic, size,
+    colour, alignment, shadow, background
   }
-  class LayerOverlay <<new>> {
-    drag, scale and rotate handles on the preview
-    (reuses TransformOverlay)
+  class LayoutSection {
+    X, Y, scale, rotation
+  }
+  class PropertiesViewModel {
+    edits reach every selected clip
+    with the facet, as one undo step
   }
 }
 
 Clip <|-- VideoClip
 Clip <|-- ImageClip
 Clip <|-- TextClip
+ICroppable <|.. VideoClip
+ICroppable <|.. ImageClip
+ILayerClip <|.. ImageClip
+ILayerClip <|.. TextClip
 TextClip *-- TextStyle
-TextClip *-- LayerTransform
-ImageClip *-- LayerTransform
-Track o-- Clip
+ILayerClip *-- LayerTransform
+TextPreset ..> TextStyle
+TimelineEditor ..> TextPreset
+TimelineEditor ..> AddClipCommand : one undo step
+TimelineEditor ..> SetClipValueCommand
 ILayerRasterizer <|.. SkiaLayerRasterizer
-RenderSource ..> ILayerRasterizer : text and image clips are rasterized
+RenderSource ..> ILayerRasterizer : ILayerClip frames come from it
 GpuSceneRenderer ..> RenderSource
 CpuSceneRenderer ..> RenderSource
-TextInspector ..> TextClip
-LayerOverlay ..> LayerTransform
+PropertiesViewModel *-- TextSection
+PropertiesViewModel *-- LayoutSection
+PropertiesViewModel ..> TimelineEditor : SetClipValue
 @enduml

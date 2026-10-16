@@ -1,3 +1,6 @@
+using Avalonia.Input;
+using System.Linq;
+using System.Collections.Generic;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
@@ -38,13 +41,39 @@ public partial class AppViewModel : ViewModelBase
     public bool IsPreferencesOpen => PreferencesPage is not null;
 
     [RelayCommand]
-    private void OpenPreferences() => PreferencesPage ??= new PreferencesViewModel(Preferences, () => PreferencesPage = null);
+    private void OpenPreferences() => PreferencesPage ??= new PreferencesViewModel(Preferences, ClosePreferences,
+        IsEditing ? Editor.ProjectManager?.CacheDirectory : null, suspend => ShortcutsSuspended = suspend);
+
+    private void ClosePreferences()
+    {
+        PreferencesPage = null;
+        ShortcutsSuspended = false;
+    }
+
+    /// <summary>
+    /// True while the Keyboard page is waiting for new keys. Window key bindings run before any key event
+    /// reaches the page, so they are taken off the window meanwhile, or pressing Ctrl+S to record it would save.
+    /// </summary>
+    [ObservableProperty]
+    private bool _shortcutsSuspended;
+
+    /// <summary>Each rebindable action's current keys (or null), so the menus show the shortcuts that really apply.</summary>
+    public IReadOnlyDictionary<string, KeyGesture?> Shortcuts { get; private set; } = new Dictionary<string, KeyGesture?>();
+
+    private void RefreshShortcuts()
+    {
+        Shortcuts = ShortcutCatalog.All.ToDictionary(a => a.Id,
+            a => ShortcutCatalog.Parse(ShortcutCatalog.GestureFor(Preferences.Current, a)));
+        OnPropertyChanged(nameof(Shortcuts));
+    }
 
     public AppViewModel(ProjectStore store, GestureRegistry gestures, PreferenceService? preferences = null)
     {
         _store = store;
         Gestures = gestures;
         Preferences = preferences ?? new PreferenceService();
+        RefreshShortcuts();
+        Preferences.Changed += RefreshShortcuts;
         Home = new HomeViewModel(store);
         Editor = new EditorViewModel(gestures, Preferences);
         Editor.Notify = msg => Toasts.Show(msg);

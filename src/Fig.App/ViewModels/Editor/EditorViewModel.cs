@@ -22,6 +22,7 @@ public enum LibraryPanelTab
 {
     Media,
     Templates,
+    Text,
     Transitions,
     Effects,
     Markers,
@@ -42,11 +43,12 @@ public sealed class PreviewLayer
     public string SourcePath { get; }
     public double TimeSec { get; }
     public double Opacity { get; }
-    public Fig.Core.Timeline.VideoClip Clip { get; }
+    /// <summary>A video clip (decoded from <see cref="SourcePath"/>) or a drawn layer (text, still image).</summary>
+    public Fig.Core.Timeline.Clip Clip { get; }
     public int TrackIndex { get; }
 
     public PreviewLayer(string sourcePath, double timeSec, double opacity,
-        Fig.Core.Timeline.VideoClip clip, int trackIndex)
+        Fig.Core.Timeline.Clip clip, int trackIndex)
     {
         SourcePath = sourcePath;
         TimeSec = timeSec;
@@ -175,6 +177,7 @@ public partial class EditorViewModel : ViewModelBase
     [
         new(LibraryPanelTab.Media, "film", "Media"),
         new(LibraryPanelTab.Templates, "clapperboard", "Templates"),
+        new(LibraryPanelTab.Text, "type", "Text"),
         new(LibraryPanelTab.Transitions, "blend", "Transitions"),
         new(LibraryPanelTab.Effects, "wand-sparkles", "Effects"),
         new(LibraryPanelTab.Markers, "flag", "Markers"),
@@ -183,6 +186,7 @@ public partial class EditorViewModel : ViewModelBase
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsLibraryMedia))]
     [NotifyPropertyChangedFor(nameof(IsLibraryTemplates))]
+    [NotifyPropertyChangedFor(nameof(IsLibraryText))]
     [NotifyPropertyChangedFor(nameof(IsLibraryTransitions))]
     [NotifyPropertyChangedFor(nameof(IsLibraryEffects))]
     [NotifyPropertyChangedFor(nameof(IsLibraryMarkers))]
@@ -192,6 +196,7 @@ public partial class EditorViewModel : ViewModelBase
 
     public bool IsLibraryMedia => SelectedLibraryTab?.Tab == LibraryPanelTab.Media;
     public bool IsLibraryTemplates => SelectedLibraryTab?.Tab == LibraryPanelTab.Templates;
+    public bool IsLibraryText => SelectedLibraryTab?.Tab == LibraryPanelTab.Text;
     public bool IsLibraryTransitions => SelectedLibraryTab?.Tab == LibraryPanelTab.Transitions;
     public bool IsLibraryEffects => SelectedLibraryTab?.Tab == LibraryPanelTab.Effects;
     public bool IsLibraryMarkers => SelectedLibraryTab?.Tab == LibraryPanelTab.Markers;
@@ -199,6 +204,12 @@ public partial class EditorViewModel : ViewModelBase
 
     public IReadOnlyList<EffectCatalogEntry> EffectCatalogItems => EffectCatalog.All;
     public IReadOnlyList<TransitionCatalogEntry> TransitionCatalogItems => TransitionCatalog.All;
+    public IReadOnlyList<TextPreset> TextPresetItems => TextPresets.All;
+
+    /// <summary>Adds a library title at the playhead, on the active track when it has room there.</summary>
+    [RelayCommand]
+    private void AddText(TextPreset? preset)
+        => Editor.AddText(Editor.Selection.ActiveTrackId, PlayheadTimeSec, preset ?? TextPresets.All[0]);
 
     // ---- effects / transitions browsers: search + category filtering ----
     // ---- presets: named, reusable keyframed effects (built in, plus the user's own) ----
@@ -391,6 +402,8 @@ public partial class EditorViewModel : ViewModelBase
         Editor = CreateSeededEditor();
         Editor.MediaResolver = FindAssetById;
         Preview = new PreviewViewModel(_mediaService, ResolvePreviewLayers);
+        Preview.Layers = Layers;
+        Preview.Renderer = Preferences.Current.Rendering.Renderer;
         Preview.AttachEditor(this);
         Properties = new PropertiesViewModel(this);
         Markers = new MarkersPanelViewModel(this);
@@ -414,7 +427,7 @@ public partial class EditorViewModel : ViewModelBase
         InitializePlaybackForCurrentEditor();
         Properties.Refresh();
 
-        Exports = new ExportJobRunner(_mediaService);
+        Exports = new ExportJobRunner(_mediaService, () => Preferences.Current.Rendering.Renderer, Layers);
         Exports.Jobs.CollectionChanged += (_, e) =>
         {
             if (e.NewItems is not null)
@@ -695,9 +708,16 @@ public partial class EditorViewModel : ViewModelBase
 
             foreach (var clip in track.Clips)
             {
-                if (clip is not VideoClip vc || !vc.Enabled)
+                if (!clip.Enabled || timeSec < clip.StartSec || timeSec >= clip.StartSec + clip.DurSec)
                     continue;
-                if (timeSec < clip.StartSec || timeSec >= clip.StartSec + clip.DurSec)
+                if (clip is ILayerClip)
+                {
+                    // drawn, not decoded: the preview asks the rasterizer for it
+                    var layerT = timeSec - clip.StartSec;
+                    layers.Add(new PreviewLayer("", layerT, ClipFade.EffectiveOpacity(clip, layerT), clip, i));
+                    continue;
+                }
+                if (clip is not VideoClip vc)
                     continue;
 
                 if (!MediaById.TryGetValue(vc.SourceId, out var asset) || string.IsNullOrEmpty(asset.Url) || asset.Offline)

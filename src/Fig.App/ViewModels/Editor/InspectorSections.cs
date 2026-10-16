@@ -22,6 +22,20 @@ public abstract class InspectorSection : ViewModelBase
     public abstract string Icon { get; }
 }
 
+public sealed class TextSection(PropertiesViewModel host) : InspectorSection(host)
+{
+    public override Facet Facet => Facet.Text;
+    public override string Title => "Text";
+    public override string Icon => "type";
+}
+
+public sealed class LayoutSection(PropertiesViewModel host) : InspectorSection(host)
+{
+    public override Facet Facet => Facet.Layout;
+    public override string Title => "Position";
+    public override string Icon => "move";
+}
+
 public sealed class PictureSection(PropertiesViewModel host) : InspectorSection(host)
 {
     public override Facet Facet => Facet.Picture;
@@ -90,7 +104,9 @@ public static class InspectorSections
 {
     private static readonly (Facet Facet, Func<PropertiesViewModel, InspectorSection> Create)[] Registry =
     [
+        (Facet.Text, host => new TextSection(host)),
         (Facet.Picture, host => new PictureSection(host)),
+        (Facet.Layout, host => new LayoutSection(host)),
         (Facet.Sound, host => new SoundSection(host)),
         (Facet.Retime, host => new RetimeSection(host)),
         (Facet.Fades, host => new FadesSection(host)),
@@ -101,8 +117,11 @@ public static class InspectorSections
         (Facet.Source, host => new SourceSection(host)),
     ];
 
-    /// <summary>The facets that have an inspector section so far (a new facet is simply absent until its section exists).</summary>
-    public static Facet Supported => Registry.Aggregate(Facet.None, (all, entry) => all | entry.Facet);
+    /// <summary>Facets edited inside another facet's section rather than in a tab of their own (crop sits under Picture).</summary>
+    private const Facet Nested = Facet.Crop;
+
+    /// <summary>The facets the inspector can edit so far (a new facet is simply absent until its section exists).</summary>
+    public static Facet Supported => Registry.Aggregate(Nested, (all, entry) => all | entry.Facet);
 
     /// <summary>The sections for a selection whose items all have <paramref name="shared"/>, in tab order.</summary>
     public static IEnumerable<InspectorSection> For(Facet shared, PropertiesViewModel host)

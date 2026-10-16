@@ -83,9 +83,9 @@ library file) is an `ISelectable` (`Fig.Core/Timeline/Editing/Selectable.cs`): a
 
 ## The window
 
-`MainWindow` has no system decorations. `TitleBar` draws the brand, the menus (`MenuFlyout`s themed in
-`Styles/FigTheme.axaml`), the project name, the project actions and the window buttons; `WindowDecorationProperties`
-roles make it draggable and give the edges resize grips. Colours and radii are tokens in `FigTheme.axaml`; use the
+`MainWindow` has no system decorations. `TitleBar` draws the brand, the menus (a standard `Menu`, themed in
+`Styles/FigTheme.axaml` and `TitleBar.axaml`), the project name, the project actions and the window buttons; `WindowDecorationProperties`
+roles make it draggable and give the edges resize grips; anything clickable in the bar (buttons, the `Menu`) has the `User` role, or the bar's `TitleBar` role turns its clicks into window drags. Colours and radii are tokens in `FigTheme.axaml`; use the
 token, not a hex value. Menu actions are commands (View menu zoom is `EditorViewModel.TimelineZoomRequested`), so the
 bar does not depend on the editor view.
 

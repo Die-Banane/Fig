@@ -10,6 +10,11 @@ public partial class EditorViewModel
 {
     private bool _applyingPreferences;
 
+    private Fig.App.Rendering.SkiaLayerRasterizer? _layers;
+
+    /// <summary>Draws text and image clips for the preview and for export (one cache shared by both).</summary>
+    public Fig.App.Rendering.SkiaLayerRasterizer Layers => _layers ??= new Fig.App.Rendering.SkiaLayerRasterizer(FindAssetById);
+
     /// <summary>The user's preferences, shared with the rest of the app.</summary>
     public PreferenceService Preferences { get; private set; } = new();
 
@@ -31,6 +36,8 @@ public partial class EditorViewModel
             LinkedSelection = p.Editing.LinkedSelection;
             AudioScrub = p.Playback.AudioScrub;
             LoopPlayback = p.Playback.Loop;
+            if (Preview is not null)
+                Preview.Renderer = p.Rendering.Renderer;
         }
         finally
         {

@@ -9,6 +9,8 @@ class Preferences {
   + Editing : EditingPreferences
   + Playback : PlaybackPreferences
   + Export : ExportPreferences
+  + Rendering : RenderingPreferences
+  + Keyboard : KeyboardPreferences
   + Unknown : Dictionary<string, JsonElement>?
   + Normalize() : void
 }
@@ -35,6 +37,34 @@ class ExportPreferences {
   + Folder : string?
 }
 
+enum RendererChoice {
+  Automatic
+  Gpu
+  Cpu
+}
+
+class RenderingPreferences {
+  + Renderer : RendererChoice = Automatic
+}
+
+class KeyboardPreferences {
+  + Shortcuts : Dictionary<string, string>
+  (action id -> gesture; only changed ones; "" = none)
+}
+
+class ShortcutAction <<record>> {
+  + Id : string
+  + Section : string
+  + Label : string
+  + DefaultGesture : string
+  + Command : Func<AppViewModel, ICommand?>
+}
+
+class ShortcutCatalog <<static>> {
+  + All : IReadOnlyList<ShortcutAction>
+  + GestureFor(prefs : Preferences, action : ShortcutAction) : string
+}
+
 class PreferenceService {
   - _loader : PreferenceLoader
   + Current : Preferences
@@ -42,6 +72,43 @@ class PreferenceService {
   + PreferenceService()
   + PreferenceService(loader : PreferenceLoader)
   + Save() : void
+}
+
+class RenderingPageViewModel {
+  + Renderer : RendererChoice
+  + CanvasStatus : string
+}
+
+class KeyboardPageViewModel {
+  + Rows : ShortcutRowViewModel[]
+}
+
+class ShortcutRowViewModel {
+  + Label : string
+  + Gesture : string
+  + IsRecording : bool
+  + Conflict : string?
+  + Record() : void
+  + Assign(gesture : KeyGesture) : void
+  + Clear() : void
+  + Reset() : void
+}
+
+class StoragePageViewModel {
+  + Folders : StorageRow[]
+  + CacheSize : string
+  + ClearCache() : void
+}
+
+class StorageRow {
+  + Label : string
+  + Path : string
+  + Size : string
+  + Open() : void
+}
+
+class MainWindow {
+  - ApplyShortcuts() : void
 }
 
 class PreferencesViewModel {
@@ -80,6 +147,43 @@ class ExportPageViewModel {
   + Folder : string
 }
 
+class RenderingPageViewModel {
+  + Renderer : RendererChoice
+  + CanvasStatus : string
+}
+
+class KeyboardPageViewModel {
+  + Rows : ShortcutRowViewModel[]
+}
+
+class ShortcutRowViewModel {
+  + Label : string
+  + Gesture : string
+  + IsRecording : bool
+  + Conflict : string?
+  + Record() : void
+  + Assign(gesture : KeyGesture) : void
+  + Clear() : void
+  + Reset() : void
+}
+
+class StoragePageViewModel {
+  + Folders : StorageRow[]
+  + CacheSize : string
+  + ClearCache() : void
+}
+
+class StorageRow {
+  + Label : string
+  + Path : string
+  + Size : string
+  + Open() : void
+}
+
+class MainWindow {
+  - ApplyShortcuts() : void
+}
+
 class PreferencesView
 class AppViewModel {
   + Preferences : PreferenceService
@@ -101,6 +205,11 @@ Preferences *-- GeneralPreferences
 Preferences *-- EditingPreferences
 Preferences *-- PlaybackPreferences
 Preferences *-- ExportPreferences
+Preferences *-- RenderingPreferences
+Preferences *-- KeyboardPreferences
+RenderingPreferences --> RendererChoice
+ShortcutCatalog o-- "*" ShortcutAction
+ShortcutCatalog ..> KeyboardPreferences : overrides
 PreferenceService *-- Preferences
 PreferenceService --> PreferenceLoader
 PreferencesViewModel *-- PreferencePageViewModel
@@ -108,6 +217,13 @@ PreferencePageViewModel <|-- GeneralPageViewModel
 PreferencePageViewModel <|-- EditingPageViewModel
 PreferencePageViewModel <|-- PlaybackPageViewModel
 PreferencePageViewModel <|-- ExportPageViewModel
+PreferencePageViewModel <|-- RenderingPageViewModel
+PreferencePageViewModel <|-- KeyboardPageViewModel
+PreferencePageViewModel <|-- StoragePageViewModel
+KeyboardPageViewModel *-- ShortcutRowViewModel
+KeyboardPageViewModel ..> ShortcutCatalog
+StoragePageViewModel *-- StorageRow
+MainWindow ..> ShortcutCatalog : builds key bindings
 PreferencePageViewModel --> PreferenceService
 PreferencesView ..> PreferencesViewModel : binds
 AppViewModel --> PreferenceService

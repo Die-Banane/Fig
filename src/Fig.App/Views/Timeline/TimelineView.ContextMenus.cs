@@ -219,7 +219,7 @@ namespace Fig.App.Views
                 InvalidateVisual();
             }));
             menu.Items.Add(new Separator());
-            menu.Items.Add(Item("Select all clips", SelectAllClips, ed.Document.Tracks.Any(t => t.Clips.Count > 0)));
+            menu.Items.Add(Item("Select all", SelectAll, ed.Document.Tracks.Any(t => t.Clips.Count > 0 || t.Effects.Count > 0)));
             menu.Items.Add(Item("Zoom to fit sequence", () => ZoomToFitSequence(vm.SequenceEndSec)));
             menu.Items.Add(new Separator());
             menu.Items.Add(Item("Add video track", () => { ed.AddTrack(TrackKind.Video); InvalidateMeasure(); InvalidateVisual(); }));

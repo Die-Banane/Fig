@@ -21,6 +21,9 @@ public sealed class GpuSource
     public required SKImage Image { get; init; }
     public IReadOnlyList<EffectCall> Effects { get; init; } = Array.Empty<EffectCall>();
     public CropInsets Crop { get; init; } = CropInsets.None;
+
+    /// <summary>A drawn layer (text, image) with real transparency; decoded video is treated as opaque.</summary>
+    public bool HasAlpha { get; init; }
 }
 
 /// <summary>

@@ -70,14 +70,16 @@ namespace Fig.Core.Timeline
         public static bool HasAnyAutomation(Clip clip)
             => clip.Keyframes.Count > 0;
 
-        /// <summary>Samples the four crop insets at a clip-relative time (base values when no track).</summary>
-        public static (double L, double T, double R, double B) SampleCrop(VideoClip clip, double localT)
+        /// <summary>Samples the four crop insets at a clip-relative time (base values when no track; none for clips that can't be cropped).</summary>
+        public static (double L, double T, double R, double B) SampleCrop(Clip clip, double localT)
         {
+            if (clip is not ICroppable crop)
+                return (0, 0, 0, 0);
             return (
-                Evaluate(clip, AutomationKeys.CropLeft, localT, clip.CropL),
-                Evaluate(clip, AutomationKeys.CropTop, localT, clip.CropT),
-                Evaluate(clip, AutomationKeys.CropRight, localT, clip.CropR),
-                Evaluate(clip, AutomationKeys.CropBottom, localT, clip.CropB));
+                Evaluate(clip, AutomationKeys.CropLeft, localT, crop.CropL),
+                Evaluate(clip, AutomationKeys.CropTop, localT, crop.CropT),
+                Evaluate(clip, AutomationKeys.CropRight, localT, crop.CropR),
+                Evaluate(clip, AutomationKeys.CropBottom, localT, crop.CropB));
         }
     }
 }

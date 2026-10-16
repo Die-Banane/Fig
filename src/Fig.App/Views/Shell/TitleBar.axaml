@@ -14,8 +14,27 @@
              drag area, and only elements with the User role receive input there
              (https://docs.avaloniaui.net/api/avalonia/input/windowdecorationselementrole). The caption buttons
              set their own roles below, which win over this style. -->
-        <Style Selector="Button, ToggleButton">
+        <Style Selector="Button, ToggleButton, Menu">
             <Setter Property="WindowDecorationProperties.ElementRole" Value="User"/>
+        </Style>
+
+        <!-- the menu bar's own items: flat, rounded, the open one lifted -->
+        <Style Selector="Menu">
+            <Setter Property="Background" Value="Transparent"/>
+        </Style>
+        <Style Selector="Menu > MenuItem">
+            <Setter Property="Padding" Value="11,6"/>
+            <Setter Property="Margin" Value="0"/>
+            <Setter Property="MinHeight" Value="30"/>
+            <Setter Property="CornerRadius" Value="8"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="Foreground" Value="{StaticResource TextSecondary}"/>
+        </Style>
+        <Style Selector="Menu > MenuItem:pointerover /template/ Border#PART_LayoutRoot">
+            <Setter Property="Background" Value="{StaticResource ChipBg}"/>
+        </Style>
+        <Style Selector="Menu > MenuItem:open /template/ Border#PART_LayoutRoot">
+            <Setter Property="Background" Value="{StaticResource HoverBg}"/>
         </Style>
         <Style Selector="Button.bar-icon">
             <Setter Property="Width" Value="32"/>
@@ -64,80 +83,63 @@
                            HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,-1,0,0"/>
             </Border>
 
-            <Button x:Name="FileMenu" Classes="menu-btn" Content="File">
-                <Button.Flyout>
-                    <MenuFlyout Placement="BottomEdgeAlignedLeft">
-                        <MenuItem Header="Import…" Command="{Binding Editor.ImportCommand}" CommandParameter="{Binding #TitleRoot.Owner}"
-                                  IsEnabled="{Binding IsEditing}"/>
-                        <Separator/>
-                        <MenuItem Header="Save" Command="{Binding Editor.SaveCommand}" InputGesture="Ctrl+S" IsEnabled="{Binding IsEditing}"/>
-                        <MenuItem Header="Save as…" Command="{Binding Editor.SaveAsCommand}" CommandParameter="{Binding #TitleRoot.Owner}"
-                                  IsEnabled="{Binding IsEditing}"/>
-                        <MenuItem Header="Export…" Command="{Binding Editor.ExportCommand}" CommandParameter="{Binding #TitleRoot.Owner}"
-                                  IsEnabled="{Binding IsEditing}"/>
-                        <MenuItem Header="Export marked ranges…" Command="{Binding Editor.ExportMarkedRangesCommand}"
-                                  CommandParameter="{Binding #TitleRoot.Owner}" IsEnabled="{Binding IsEditing}"/>
-                        <Separator/>
-                        <MenuItem Header="Preferences…" Command="{Binding OpenPreferencesCommand}" InputGesture="Ctrl+OemComma"/>
-                        <Separator/>
-                        <MenuItem Header="Close project" Command="{Binding CloseProjectCommand}" CommandParameter="{Binding #TitleRoot.Owner}"
-                                  InputGesture="Ctrl+W" IsEnabled="{Binding IsEditing}"/>
-                        <Separator/>
-                        <MenuItem Header="Exit" Click="Exit_Click"/>
-                    </MenuFlyout>
-                </Button.Flyout>
-            </Button>
-
-            <Button x:Name="EditMenu" Classes="menu-btn" Content="Edit" IsEnabled="{Binding IsEditing}">
-                <Button.Flyout>
-                    <MenuFlyout Placement="BottomEdgeAlignedLeft">
-                        <MenuItem Header="Undo" Command="{Binding Editor.UndoCommand}" InputGesture="Ctrl+Z"/>
-                        <MenuItem Header="Redo" Command="{Binding Editor.RedoCommand}" InputGesture="Ctrl+Y"/>
-                        <Separator/>
-                        <MenuItem Header="Cut" Command="{Binding Editor.CutSelectedCommand}" InputGesture="Ctrl+X"/>
-                        <MenuItem Header="Copy" Command="{Binding Editor.CopySelectedCommand}" InputGesture="Ctrl+C"/>
-                        <MenuItem Header="Paste" Command="{Binding Editor.PasteCommand}" InputGesture="Ctrl+V"/>
-                        <MenuItem Header="Duplicate" Command="{Binding Editor.DuplicateSelectedCommand}" InputGesture="Ctrl+D"/>
-                        <Separator/>
-                        <MenuItem Header="Split at playhead" Command="{Binding Editor.SplitAtPlayheadCommand}" InputGesture="Ctrl+K"/>
-                        <MenuItem Header="Ripple delete" Command="{Binding Editor.RippleDeleteSelectedCommand}"/>
-                        <MenuItem Header="Lift delete" Command="{Binding Editor.LiftSelectedCommand}"/>
-                        <MenuItem Header="Enable / disable" Command="{Binding Editor.ToggleClipEnabledSelectedCommand}" InputGesture="Ctrl+E"/>
-                        <Separator/>
-                        <MenuItem Header="Add marker at playhead" Command="{Binding Editor.AddMarkerAtPlayheadCommand}" InputGesture="M"/>
-                        <MenuItem Header="Create ranges from bookmarks…" Command="{Binding Editor.CreateRangesFromBookmarksCommand}"
-                                  CommandParameter="{Binding #TitleRoot.Owner}"/>
-                        <MenuItem Header="Delete marker" Command="{Binding Editor.DeleteSelectedMarkerCommand}" InputGesture="Shift+Delete"/>
-                    </MenuFlyout>
-                </Button.Flyout>
-            </Button>
-
-            <Button x:Name="ViewMenu" Classes="menu-btn" Content="View" IsEnabled="{Binding IsEditing}">
-                <Button.Flyout>
-                    <MenuFlyout Placement="BottomEdgeAlignedLeft">
-                        <MenuItem Header="Media panel" Command="{Binding Editor.Layout.ToggleLeftCommand}" ToggleType="CheckBox"
-                                  IsChecked="{Binding Editor.Layout.IsLeftVisible, Mode=OneWay}" InputGesture="Ctrl+1"/>
-                        <MenuItem Header="Inspector" Command="{Binding Editor.Layout.ToggleRightCommand}" ToggleType="CheckBox"
-                                  IsChecked="{Binding Editor.Layout.IsRightVisible, Mode=OneWay}" InputGesture="Ctrl+2"/>
-                        <MenuItem Header="Reset layout" Command="{Binding Editor.Layout.ResetCommand}"/>
-                        <Separator/>
-                        <MenuItem Header="Audio scrubbing" Command="{Binding Editor.ToggleAudioScrubCommand}" ToggleType="CheckBox"
-                                  IsChecked="{Binding Editor.AudioScrub, Mode=OneWay}" InputGesture="Shift+S"/>
-                        <Separator/>
-                        <MenuItem Header="Zoom to fit sequence" Command="{Binding Editor.ZoomTimelineToFitCommand}"/>
-                        <MenuItem Header="Zoom in" Command="{Binding Editor.ZoomTimelineInCommand}"/>
-                        <MenuItem Header="Zoom out" Command="{Binding Editor.ZoomTimelineOutCommand}"/>
-                    </MenuFlyout>
-                </Button.Flyout>
-            </Button>
-
-            <Button x:Name="HelpMenu" Classes="menu-btn" Content="Help">
-                <Button.Flyout>
-                    <MenuFlyout Placement="BottomEdgeAlignedLeft">
-                        <MenuItem Header="Keyboard shortcuts" Click="Shortcuts_Click"/>
-                    </MenuFlyout>
-                </Button.Flyout>
-            </Button>
+            <Menu VerticalAlignment="Center">
+                <MenuItem Header="_File">
+                    <MenuItem Header="_Import…" Command="{Binding Editor.ImportCommand}" CommandParameter="{Binding #TitleRoot.Owner}"
+                              IsEnabled="{Binding IsEditing}"/>
+                    <Separator/>
+                    <MenuItem Header="_Save" Command="{Binding Editor.SaveCommand}" InputGesture="{Binding Shortcuts[project.save]}" IsEnabled="{Binding IsEditing}"/>
+                    <MenuItem Header="Save _as…" Command="{Binding Editor.SaveAsCommand}" CommandParameter="{Binding #TitleRoot.Owner}"
+                              IsEnabled="{Binding IsEditing}"/>
+                    <MenuItem Header="_Export…" Command="{Binding Editor.ExportCommand}" CommandParameter="{Binding #TitleRoot.Owner}"
+                              IsEnabled="{Binding IsEditing}"/>
+                    <MenuItem Header="Export marked _ranges…" Command="{Binding Editor.ExportMarkedRangesCommand}"
+                              CommandParameter="{Binding #TitleRoot.Owner}" IsEnabled="{Binding IsEditing}"/>
+                    <Separator/>
+                    <MenuItem Header="_Preferences…" Command="{Binding OpenPreferencesCommand}" InputGesture="{Binding Shortcuts[app.preferences]}"/>
+                    <Separator/>
+                    <MenuItem Header="_Close project" Command="{Binding CloseProjectCommand}" CommandParameter="{Binding #TitleRoot.Owner}"
+                              InputGesture="{Binding Shortcuts[project.close]}" IsEnabled="{Binding IsEditing}"/>
+                    <Separator/>
+                    <MenuItem Header="E_xit" Click="Exit_Click"/>
+                </MenuItem>
+                <MenuItem Header="_Edit" IsEnabled="{Binding IsEditing}">
+                    <MenuItem Header="_Undo" Command="{Binding Editor.UndoCommand}" InputGesture="{Binding Shortcuts[edit.undo]}"/>
+                    <MenuItem Header="_Redo" Command="{Binding Editor.RedoCommand}" InputGesture="{Binding Shortcuts[edit.redo]}"/>
+                    <Separator/>
+                    <MenuItem Header="Cu_t" Command="{Binding Editor.CutSelectedCommand}" InputGesture="{Binding Shortcuts[edit.cut]}"/>
+                    <MenuItem Header="_Copy" Command="{Binding Editor.CopySelectedCommand}" InputGesture="{Binding Shortcuts[edit.copy]}"/>
+                    <MenuItem Header="_Paste" Command="{Binding Editor.PasteCommand}" InputGesture="{Binding Shortcuts[edit.paste]}"/>
+                    <MenuItem Header="_Duplicate" Command="{Binding Editor.DuplicateSelectedCommand}" InputGesture="{Binding Shortcuts[edit.duplicate]}"/>
+                    <Separator/>
+                    <MenuItem Header="S_plit at playhead" Command="{Binding Editor.SplitAtPlayheadCommand}" InputGesture="{Binding Shortcuts[edit.split]}"/>
+                    <MenuItem Header="R_ipple delete" Command="{Binding Editor.RippleDeleteSelectedCommand}"/>
+                    <MenuItem Header="_Lift delete" Command="{Binding Editor.LiftSelectedCommand}"/>
+                    <MenuItem Header="E_nable / disable" Command="{Binding Editor.ToggleClipEnabledSelectedCommand}" InputGesture="Ctrl+E"/>
+                    <Separator/>
+                    <MenuItem Header="Add _marker at playhead" Command="{Binding Editor.AddMarkerAtPlayheadCommand}" InputGesture="M"/>
+                    <MenuItem Header="Create ranges from _bookmarks…" Command="{Binding Editor.CreateRangesFromBookmarksCommand}"
+                              CommandParameter="{Binding #TitleRoot.Owner}"/>
+                    <MenuItem Header="Delete mar_ker" Command="{Binding Editor.DeleteSelectedMarkerCommand}" InputGesture="Shift+Delete"/>
+                </MenuItem>
+                <MenuItem Header="_View" IsEnabled="{Binding IsEditing}">
+                    <MenuItem Header="_Media panel" Command="{Binding Editor.Layout.ToggleLeftCommand}" ToggleType="CheckBox"
+                              IsChecked="{Binding Editor.Layout.IsLeftVisible, Mode=OneWay}" InputGesture="{Binding Shortcuts[view.mediaPanel]}"/>
+                    <MenuItem Header="_Inspector" Command="{Binding Editor.Layout.ToggleRightCommand}" ToggleType="CheckBox"
+                              IsChecked="{Binding Editor.Layout.IsRightVisible, Mode=OneWay}" InputGesture="{Binding Shortcuts[view.inspector]}"/>
+                    <MenuItem Header="_Reset layout" Command="{Binding Editor.Layout.ResetCommand}"/>
+                    <Separator/>
+                    <MenuItem Header="_Audio scrubbing" Command="{Binding Editor.ToggleAudioScrubCommand}" ToggleType="CheckBox"
+                              IsChecked="{Binding Editor.AudioScrub, Mode=OneWay}" InputGesture="{Binding Shortcuts[play.audioScrub]}"/>
+                    <Separator/>
+                    <MenuItem Header="Zoom to _fit sequence" Command="{Binding Editor.ZoomTimelineToFitCommand}"/>
+                    <MenuItem Header="Zoom i_n" Command="{Binding Editor.ZoomTimelineInCommand}"/>
+                    <MenuItem Header="Zoom _out" Command="{Binding Editor.ZoomTimelineOutCommand}"/>
+                </MenuItem>
+                <MenuItem Header="_Help">
+                    <MenuItem Header="_Keyboard shortcuts" Click="Shortcuts_Click"/>
+                </MenuItem>
+            </Menu>
         </StackPanel>
 
         <!-- what is open -->

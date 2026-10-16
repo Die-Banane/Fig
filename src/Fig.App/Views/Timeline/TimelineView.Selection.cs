@@ -22,7 +22,6 @@ namespace Fig.App.Views
         private bool _marqueeArmed;
         private bool _marqueeActive;
         private bool _marqueeAdditive;
-        private bool _marqueeEffects;      // a box that started in the effect strip picks effect bars, not clips
         private Clip? _marqueeClickClip;   // region select started on this clip: a plain click still selects it
         private Point _marqueeFrom;
         private Point _marqueeTo;
@@ -57,11 +56,11 @@ namespace Fig.App.Views
             if (modifiers.HasFlag(KeyModifiers.Control))
             {
                 var allIn = ids.All(Editor.Selection.IsSelected);
-                Editor.Selection.SelectClips(allIn ? current.Except(ids) : current.Union(ids));
+                Editor.Selection.SetClips(allIn ? current.Except(ids) : current.Union(ids));
             }
             else if (modifiers.HasFlag(KeyModifiers.Shift))
             {
-                Editor.Selection.SelectClips(current.Union(ids));
+                Editor.Selection.SetClips(current.Union(ids));
             }
             else if (Editor.Selection.IsSelected(clip.Id) && current.Count > 1)
             {
@@ -74,11 +73,12 @@ namespace Fig.App.Views
             _selectedTrackId = null;
         }
 
-        private void SelectAllClips()
+        /// <summary>Ctrl+A: every clip, effect bar and marker at once.</summary>
+        private void SelectAll()
         {
             if (Editor is null)
                 return;
-            Editor.Selection.SelectClips(Editor.Document.Tracks.SelectMany(t => t.Clips).Select(c => c.Id));
+            Editor.SelectAll();
             InvalidateVisual();
         }
 
@@ -99,7 +99,6 @@ namespace Fig.App.Views
             _marqueeFrom = at;
             _marqueeTo = at;
             _marqueeAdditive = modifiers.HasFlag(KeyModifiers.Shift) || modifiers.HasFlag(KeyModifiers.Control);
-            _marqueeEffects = InRackZone(at);
         }
 
         /// <summary>Returns true while a box selection is in progress and consumed the move.</summary>
@@ -145,19 +144,12 @@ namespace Fig.App.Views
                 return;
             }
 
-            if (_marqueeEffects)
-            {
-                var bars = EffectsInBox(MarqueeBox()).Select(b => (b.OwnerId, b.EffectId));
-                Editor.Selection.SelectEffects(bars, _marqueeAdditive);
-                InvalidateVisual();
-                return;
-            }
-
-            var hit = ClipsInBox(MarqueeBox());
-
-            // exactly what the box touches: a region does not pull in clips from other lanes through links
-            var ids = hit.Select(c => c.Id);
-            Editor.Selection.SelectClips(_marqueeAdditive ? Editor.Selection.SelectedClipIds.Union(ids) : ids);
+            // exactly what the box touches, clips and effect bars alike: a region does not pull in clips from
+            // other lanes through links
+            var box = MarqueeBox();
+            var keys = EffectsInBox(box).Select(b => new SelectionKey(SelectionGroup.Effect, b.EffectId, b.OwnerId))
+                .Concat(ClipsInBox(box).Select(c => c.Key));
+            Editor.Selection.Replace(_marqueeAdditive ? Editor.Selection.Items.Concat(keys) : keys);
             _selectedTrackId = null;
             InvalidateVisual();
         }
@@ -197,13 +189,8 @@ namespace Fig.App.Views
                 return;
             var box = MarqueeBox();
             var outline = new Pen(new SolidColorBrush(Color.FromArgb(235, 0x5f, 0x9c, 0xf8)), 2);
-            if (_marqueeEffects)
-            {
-                foreach (var bar in EffectsInBox(box))
-                    context.DrawRectangle(null, outline, bar.Rect);
-                context.DrawRectangle(MarqueeFill, MarqueePen, box);
-                return;
-            }
+            foreach (var bar in EffectsInBox(box))
+                context.DrawRectangle(null, outline, bar.Rect);
             foreach (var clip in ClipsInBox(box))
             {
                 var index = Editor.Document.Tracks.FindIndex(t => t.Clips.Contains(clip));

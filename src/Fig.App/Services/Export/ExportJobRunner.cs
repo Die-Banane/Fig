@@ -19,14 +19,19 @@ namespace Fig.App.Services
     public sealed class ExportJobRunner : IDisposable
     {
         private readonly MediaService _media;
+        private readonly Func<RendererChoice> _renderer;
+        private readonly ILayerRasterizer? _layers;
         private readonly SemaphoreSlim _gate = new(1, 1);
         private bool _disposed;
 
         public ObservableCollection<ExportJob> Jobs { get; } = new();
 
-        public ExportJobRunner(MediaService media)
+        /// <param name="renderer">Reads the user's renderer preference when a job starts.</param>
+        public ExportJobRunner(MediaService media, Func<RendererChoice>? renderer = null, ILayerRasterizer? layers = null)
         {
             _media = media;
+            _layers = layers;
+            _renderer = renderer ?? (() => RendererChoice.Automatic);
         }
 
         public ExportJob Enqueue(string outputPath, int width, int height, int crf,
@@ -50,10 +55,10 @@ namespace Fig.App.Services
                 try
                 {
                     // the GPU when the window has one, the CPU kernels otherwise: same scenes, same picture
-                    var renderer = await SkiaSceneRenderer.CreateAsync();
+                    var renderer = await SkiaSceneRenderer.CreateAsync(_renderer());
                     await Task.Run(() => _media.RenderTimeline(
                         project, timeline, job.OutputPath, job.Width, job.Height, crf,
-                        p => Dispatcher.UIThread.Post(() => job.Progress = p), startSec, endSec, renderer));
+                        p => Dispatcher.UIThread.Post(() => job.Progress = p), startSec, endSec, renderer, _layers));
                     job.Status = ExportJobStatus.Done;
                     job.Progress = 1;
                 }

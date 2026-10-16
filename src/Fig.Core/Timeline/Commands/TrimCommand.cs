@@ -56,22 +56,13 @@ namespace Fig.Core.Timeline
             if (outSec <= inSec)
                 throw new ArgumentOutOfRangeException(nameof(outSec), "Out must be after in");
 
-            switch (clip)
+            if (clip.HasSourceRange)
             {
-                case VideoClip v:
-                    v.SrcInSec = inSec;
-                    v.SrcOutSec = outSec;
-                    v.DurSec = (outSec - inSec) / v.Speed;
-                    break;
-                case AudioClip a:
-                    a.SrcInSec = inSec;
-                    a.SrcOutSec = outSec;
-                    a.DurSec = (outSec - inSec) / a.Speed;
-                    break;
-                default:
-                    clip.DurSec = outSec - inSec;
-                    break;
+                clip.SetSourceRange(inSec, outSec);
+                clip.DurSec = (outSec - inSec) / clip.Speed;
             }
+            else
+                clip.DurSec = outSec - inSec;
         }
     }
 }

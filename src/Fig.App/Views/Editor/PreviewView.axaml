@@ -113,6 +113,7 @@
             <Border CornerRadius="0" Background="#0b0c0e" ClipToBounds="True">
                 <Grid>
                     <local:PreviewSurface x:Name="Surface"/>
+                    <ctrls:LayerGizmo DataContext="{Binding Gizmo}" IsVisible="{Binding ShowOverlay, FallbackValue=False}"/>
                     <ctrls:TransformOverlay DataContext="{Binding Transform}" IsVisible="{Binding ShowOverlay, FallbackValue=False}"/>
                     <ctrls:SwirlOverlay DataContext="{Binding Swirl}" IsVisible="{Binding ShowOverlay, FallbackValue=False}"/>
                 </Grid>

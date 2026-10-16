@@ -3,7 +3,9 @@ title Selection: everything selectable is one thing
 
 package "Fig.Core.Timeline" {
   enum Facet <<flags>> {
-    Picture   (opacity, crop)
+    Picture   (opacity)
+    Crop      (shown in the Picture tab)
+    Layout    (position, scale, rotation)
     Sound     (volume)
     Fades
     Retime    (speed)
@@ -34,8 +36,8 @@ package "Fig.Core.Timeline" {
   abstract class Clip
   class VideoClip
   class AudioClip
-  class TextClip <<draft>>
-  class ImageClip <<draft>>
+  class TextClip
+  class ImageClip
   class Track
   class Marker
   class CutTransition
@@ -43,15 +45,20 @@ package "Fig.Core.Timeline" {
     owner + effect (a bar on the timeline)
   }
   class SelectionState {
-    -items: SelectionKey[] (one ordered list)
+    -items: SelectionKey[] (one ordered list, any mix of groups)
     +Items
-    +Replace(key) / Add / Toggle / Remove / Clear
+    +Replace(keys) / Add / Toggle / Remove / Clear
+    +SetGroup(group, keys)  (change one group, keep the rest)
     +Changed
   }
   class TimelineEditor {
     +Selection: SelectionState
     +Resolve(key): ISelectable?
     +Selected: ISelectable[]
+    +SelectAll()
+    +DeleteSelection()  (group by group, one undo step)
+    +EditTargets(ids, facet): ids
+    +SetClipValue(ids, property, value)
   }
 }
 
@@ -60,6 +67,8 @@ package "Fig.App.ViewModels" {
     +Sections: InspectorSection[]
     +OpenSection(facet)
     +Refresh(selected)
+    edits reach every selected item
+    with the facet, as one undo step
   }
   abstract class InspectorSection {
     +Facet
@@ -86,6 +95,7 @@ SelectionKey --> SelectionGroup
 SelectionState o-- SelectionKey
 TimelineEditor *-- SelectionState
 TimelineEditor ..> ISelectable : resolves keys
+PropertiesViewModel ..> TimelineEditor : SetClipValue
 PropertiesViewModel --> SectionRegistry
 PropertiesViewModel *-- InspectorSection
 SectionRegistry ..> InspectorSection : creates

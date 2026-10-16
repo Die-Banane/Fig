@@ -413,7 +413,7 @@
                                             </StackPanel>
                                         </Border>
 
-                                        <Border Classes="inspector-group">
+                                        <Border Classes="inspector-group" IsVisible="{Binding HasCrop}">
                                             <StackPanel Spacing="7">
                                                 <Grid ColumnDefinitions="*,Auto">
                                                     <TextBlock Classes="inspector-section" Text="Crop" VerticalAlignment="Center"/>
@@ -466,6 +466,137 @@
                                     </StackPanel>
                                 </ScrollViewer>
     
+                    </DataTemplate>
+                </ContentControl.ContentTemplate>
+            </ContentControl>
+        </DataTemplate>
+
+        <!-- Text: what a title says and how it looks -->
+        <DataTemplate DataType="vm:TextSection">
+            <ContentControl Content="{Binding Host}">
+                <ContentControl.ContentTemplate>
+                    <DataTemplate x:DataType="vm:PropertiesViewModel">
+                        <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                            <StackPanel>
+                                <Border Classes="inspector-group">
+                                    <StackPanel Spacing="8">
+                                        <TextBlock Classes="inspector-section" Text="Text"/>
+                                        <TextBox Text="{Binding TextValue}" AcceptsReturn="True" TextWrapping="Wrap"
+                                                 MinHeight="64" AutomationProperties.Name="Title text"/>
+                                    </StackPanel>
+                                </Border>
+                                <Border Classes="inspector-group">
+                                    <StackPanel Spacing="8">
+                                        <TextBlock Classes="inspector-section" Text="Font"/>
+                                        <ComboBox ItemsSource="{Binding FontFamilies}" SelectedItem="{Binding FontFamilyValue}"
+                                                  HorizontalAlignment="Stretch" AutomationProperties.Name="Font">
+                                            <ComboBox.ItemsPanel>
+                                                <ItemsPanelTemplate><VirtualizingStackPanel/></ItemsPanelTemplate>
+                                            </ComboBox.ItemsPanel>
+                                        </ComboBox>
+                                        <StackPanel Orientation="Horizontal" Spacing="4">
+                                            <ToggleButton Classes="fig icon" IsChecked="{Binding TextBold}" ToolTip.Tip="Bold">
+                                                <local:StrokeIcon Icon="bold" Width="14" Height="14"/>
+                                            </ToggleButton>
+                                            <ToggleButton Classes="fig icon" IsChecked="{Binding TextItalic}" ToolTip.Tip="Italic">
+                                                <local:StrokeIcon Icon="italic" Width="14" Height="14"/>
+                                            </ToggleButton>
+                                            <ComboBox ItemsSource="{Binding TextAligns}" SelectedItem="{Binding TextAlignValue}"
+                                                      MinWidth="96" Margin="6,0,0,0" AutomationProperties.Name="Alignment"/>
+                                        </StackPanel>
+                                                <Grid ColumnDefinitions="58,*,48" ColumnSpacing="7">
+                                                    <TextBlock Text="Size" Classes="field-label" VerticalAlignment="Center"/>
+                                                    <ctrls:FigSlider Grid.Column="1" Minimum="1" Maximum="40"
+                                                                       Value="{Binding TextSizeValue}" VerticalAlignment="Center"/>
+                                                    <Border Grid.Column="2" Classes="inspector-value">
+                                                        <TextBlock Text="{Binding TextSizeValue, StringFormat={}{0:0.#}%}" Classes="field-value" FontSize="10"
+                                                                   HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                                                    </Border>
+                                                </Grid>
+                                                <Grid ColumnDefinitions="58,Auto,*" ColumnSpacing="7">
+                                                    <TextBlock Text="Colour" Classes="field-label" VerticalAlignment="Center"/>
+                                                    <Border Grid.Column="1" Width="24" Height="24" CornerRadius="{StaticResource RadiusControl}"
+                                                            BorderBrush="{StaticResource Border}" BorderThickness="1"
+                                                            Background="{Binding TextColorBrush}"/>
+                                                    <TextBox Grid.Column="2" Text="{Binding TextColorHex}" FontSize="11" Padding="8,5"
+                                                             AutomationProperties.Name="Colour colour"/>
+                                                </Grid>
+                                    </StackPanel>
+                                </Border>
+                                <Border Classes="inspector-group">
+                                    <StackPanel Spacing="8">
+                                        <TextBlock Classes="inspector-section" Text="Backing"/>
+                                        <CheckBox Content="Drop shadow" IsChecked="{Binding TextShadow}"/>
+                                        <CheckBox Content="Background box" IsChecked="{Binding TextBackground}"/>
+                                                <Grid ColumnDefinitions="58,Auto,*" ColumnSpacing="7" IsVisible="{Binding TextBackground}">
+                                                    <TextBlock Text="Box" Classes="field-label" VerticalAlignment="Center"/>
+                                                    <Border Grid.Column="1" Width="24" Height="24" CornerRadius="{StaticResource RadiusControl}"
+                                                            BorderBrush="{StaticResource Border}" BorderThickness="1"
+                                                            Background="{Binding TextBackgroundBrush}"/>
+                                                    <TextBox Grid.Column="2" Text="{Binding TextBackgroundHex}" FontSize="11" Padding="8,5"
+                                                             AutomationProperties.Name="Box colour"/>
+                                                </Grid>
+                                    </StackPanel>
+                                </Border>
+                            </StackPanel>
+                        </ScrollViewer>
+                    </DataTemplate>
+                </ContentControl.ContentTemplate>
+            </ContentControl>
+        </DataTemplate>
+
+        <!-- Position: where a drawn layer (text, still) sits in the frame -->
+        <DataTemplate DataType="vm:LayoutSection">
+            <ContentControl Content="{Binding Host}">
+                <ContentControl.ContentTemplate>
+                    <DataTemplate x:DataType="vm:PropertiesViewModel">
+                        <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                            <Border Classes="inspector-group">
+                                <StackPanel Spacing="8">
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <TextBlock Classes="inspector-section" Text="Position" VerticalAlignment="Center"/>
+                                        <Button Grid.Column="1" Content="Reset" Classes="btn-ghost" Padding="7,3"
+                                                Command="{Binding ResetLayoutCommand}" ToolTip.Tip="Centre it, at full size, unrotated"/>
+                                    </Grid>
+                                                <Grid ColumnDefinitions="58,*,48" ColumnSpacing="7">
+                                                    <TextBlock Text="X" Classes="field-label" VerticalAlignment="Center"/>
+                                                    <ctrls:FigSlider Grid.Column="1" Minimum="0" Maximum="1"
+                                                                       Value="{Binding LayoutX}" VerticalAlignment="Center"/>
+                                                    <Border Grid.Column="2" Classes="inspector-value">
+                                                        <TextBlock Text="{Binding LayoutX, StringFormat={}{0:P0}}" Classes="field-value" FontSize="10"
+                                                                   HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                                                    </Border>
+                                                </Grid>
+                                                <Grid ColumnDefinitions="58,*,48" ColumnSpacing="7">
+                                                    <TextBlock Text="Y" Classes="field-label" VerticalAlignment="Center"/>
+                                                    <ctrls:FigSlider Grid.Column="1" Minimum="0" Maximum="1"
+                                                                       Value="{Binding LayoutY}" VerticalAlignment="Center"/>
+                                                    <Border Grid.Column="2" Classes="inspector-value">
+                                                        <TextBlock Text="{Binding LayoutY, StringFormat={}{0:P0}}" Classes="field-value" FontSize="10"
+                                                                   HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                                                    </Border>
+                                                </Grid>
+                                                <Grid ColumnDefinitions="58,*,48" ColumnSpacing="7">
+                                                    <TextBlock Text="Scale" Classes="field-label" VerticalAlignment="Center"/>
+                                                    <ctrls:FigSlider Grid.Column="1" Minimum="0.1" Maximum="4"
+                                                                       Value="{Binding LayoutScale}" VerticalAlignment="Center"/>
+                                                    <Border Grid.Column="2" Classes="inspector-value">
+                                                        <TextBlock Text="{Binding LayoutScale, StringFormat={}{0:P0}}" Classes="field-value" FontSize="10"
+                                                                   HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                                                    </Border>
+                                                </Grid>
+                                                <Grid ColumnDefinitions="58,*,48" ColumnSpacing="7">
+                                                    <TextBlock Text="Rotate" Classes="field-label" VerticalAlignment="Center"/>
+                                                    <ctrls:FigSlider Grid.Column="1" Minimum="-180" Maximum="180"
+                                                                       Value="{Binding LayoutRotation}" VerticalAlignment="Center"/>
+                                                    <Border Grid.Column="2" Classes="inspector-value">
+                                                        <TextBlock Text="{Binding LayoutRotation, StringFormat={}{0:0}°}" Classes="field-value" FontSize="10"
+                                                                   HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                                                    </Border>
+                                                </Grid>
+                                </StackPanel>
+                            </Border>
+                        </ScrollViewer>
                     </DataTemplate>
                 </ContentControl.ContentTemplate>
             </ContentControl>
@@ -1430,6 +1561,47 @@
                         </DockPanel>
 
                         <!-- Transitions catalog -->
+                        <DockPanel IsVisible="{Binding IsLibraryText}">
+                            <StackPanel DockPanel.Dock="Top" Spacing="8" Margin="0,0,0,10">
+                                <Button Classes="fig primary" HorizontalAlignment="Stretch"
+                                        Content="Add text" Command="{Binding AddTextCommand}"
+                                        ToolTip.Tip="Add a title at the playhead"/>
+                                <TextBlock Classes="field-label" TextWrapping="Wrap"
+                                           Text="Click a style to add it at the playhead, or drag it onto a video track."/>
+                            </StackPanel>
+                            <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                                <ItemsControl ItemsSource="{Binding TextPresetItems}">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate><UniformGrid Columns="2"/></ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="core:TextPreset">
+                                            <Border Margin="0,0,8,8" Padding="8"
+                                                    Background="#212328" CornerRadius="{StaticResource RadiusCard}"
+                                                    Cursor="Hand"
+                                                    PointerPressed="CatalogCard_PointerPressed"
+                                                    PointerMoved="CatalogCard_PointerMoved"
+                                                    PointerReleased="CatalogCard_PointerReleased">
+                                                <StackPanel Spacing="6">
+                                                    <Border Height="44" CornerRadius="{StaticResource RadiusControl}"
+                                                            Background="#0e0f11" ClipToBounds="True">
+                                                        <TextBlock Text="{Binding Text}" Foreground="White"
+                                                                   FontFamily="{Binding Style.FontFamily}"
+                                                                   FontWeight="{Binding Style.Bold, Converter={x:Static conv:LayerConverters.Weight}}"
+                                                                   FontStyle="{Binding Style.Italic, Converter={x:Static conv:LayerConverters.Slant}}"
+                                                                   FontSize="13" MaxLines="2" TextTrimming="CharacterEllipsis"
+                                                                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                                   TextAlignment="Center"/>
+                                                    </Border>
+                                                    <TextBlock Text="{Binding Name}" Foreground="{StaticResource TextPrimary}"
+                                                               FontSize="11" TextTrimming="CharacterEllipsis"/>
+                                                </StackPanel>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </ScrollViewer>
+                        </DockPanel>
                         <DockPanel IsVisible="{Binding IsLibraryTransitions}">
                             <StackPanel DockPanel.Dock="Top" Spacing="8" Margin="0,0,0,10">
                                 <TextBox Text="{Binding TransitionSearchText}" PlaceholderText="Search transitions"

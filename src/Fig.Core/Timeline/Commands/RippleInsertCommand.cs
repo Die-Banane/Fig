@@ -83,22 +83,10 @@ namespace Fig.Core.Timeline
             {
                 _track.Clips.Remove(_splitLeft);
                 _track.Clips.Remove(_splitRight);
-                var original = _splitLeft.Kind switch
-                {
-                    ClipKind.Video => new VideoClip
-                    {
-                        SourceId = ((VideoClip)_splitLeft).SourceId,
-                        SrcInSec = ((VideoClip)_splitLeft).SrcInSec,
-                        SrcOutSec = ((VideoClip)_splitRight).SrcOutSec,
-                    } as Clip,
-                    ClipKind.Audio => new AudioClip
-                    {
-                        SourceId = ((AudioClip)_splitLeft).SourceId,
-                        SrcInSec = ((AudioClip)_splitLeft).SrcInSec,
-                        SrcOutSec = ((AudioClip)_splitRight).SrcOutSec,
-                    } as Clip,
-                    _ => new TextClip { Text = ((TextClip)_splitLeft).Text } as Clip,
-                };
+                // the clip as it was before the split: the left half, stretched back over the right half's source
+                var original = _splitLeft.Clone();
+                if (_splitLeft.HasSourceRange)
+                    original.SetSourceRange(_splitLeft.SourceIn, _splitRight.SourceOut);
                 original.StartSec = _splitClipOldStart;
                 original.DurSec = _splitLeft.DurSec + _splitRight.DurSec;
                 _editor.InsertClip(_track, original);

@@ -11,6 +11,9 @@ namespace Fig.Core.Media
         public DecodedFrame? Frame { get; set; }
         public double Opacity { get; set; } = 1.0;
         public RectI? Crop { get; set; }
+
+        /// <summary>The frame is premultiplied with real alpha (a drawn layer): blend it "over", not as opaque.</summary>
+        public bool Premultiplied { get; set; }
     }
 
     /// <summary>Integer pixel rectangle (in source pixel space) for cropping a layer.</summary>
@@ -83,7 +86,9 @@ namespace Fig.Core.Media
 
                 var opacity = (byte)Math.Clamp((int)Math.Round(layer.Opacity * 255), 0, 255);
 
-                if (opacity >= 255)
+                if (layer.Premultiplied)
+                    BlendPremultiplied(pixels, src, width, height, opacity);
+                else if (opacity >= 255)
                     BlendOpaque(pixels, src, width, height);
                 else
                     BlendAlpha(pixels, src, width, height, opacity);
@@ -124,6 +129,26 @@ namespace Fig.Core.Media
                     dst[di + 1] = src[si + 1];
                     dst[di + 2] = src[si + 2];
                     dst[di + 3] = src[si + 3];
+                }
+            });
+        }
+
+        /// <summary>Premultiplied "over": dst = src·k + dst·(1 − alpha·k), where k is the layer opacity.</summary>
+        private static void BlendPremultiplied(byte[] dst, byte[] src, int width, int height, byte opacity)
+        {
+            PixelOps.Rows(height, y =>
+            {
+                var row = y * width * 4;
+                for (var x = 0; x < width; x++)
+                {
+                    var i = row + x * 4;
+                    var a = src[i + 3] * opacity / 255;
+                    if (a == 0)
+                        continue;
+                    var keep = 255 - a;
+                    dst[i] = (byte)Math.Min(255, src[i] * opacity / 255 + dst[i] * keep / 255);
+                    dst[i + 1] = (byte)Math.Min(255, src[i + 1] * opacity / 255 + dst[i + 1] * keep / 255);
+                    dst[i + 2] = (byte)Math.Min(255, src[i + 2] * opacity / 255 + dst[i + 2] * keep / 255);
                 }
             });
         }

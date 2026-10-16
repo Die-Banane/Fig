@@ -2,51 +2,54 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Fig.App.Services;
+using Fig.App.ViewModels;
 
 namespace Fig.App.Views;
 
 /// <summary>A read-only cheat sheet of the editor's keyboard and mouse shortcuts.</summary>
 public static class ShortcutsDialog
 {
-    private static readonly (string Section, (string Keys, string What)[] Items)[] Groups =
+    /// <summary>Keys that only work inside the timeline or with the mouse; these are not rebindable yet.</summary>
+    private static readonly (string Section, (string Keys, string What)[] Items)[] Fixed =
     [
-        ("Playback", [("Space", "Play / pause"), ("Ctrl+L", "Loop playback")]),
-        ("Editing", [
-            ("Ctrl+K", "Split at playhead"),
-            ("Ctrl+C / Ctrl+X / Ctrl+V", "Copy / cut / paste clips at the playhead"),
-            ("Ctrl+D", "Duplicate the selection after itself"),
-            ("Delete", "Delete selection (leave a gap)"),
-            ("Ctrl+Z / Ctrl+Y", "Undo / redo"),
-            ("Ctrl+E", "Enable or disable the selected clip"),
-            ("N", "Turn snapping on or off"),
-            ("M", "Add a marker at the playhead"),
-            ("Shift+Delete", "Delete the selected marker"),
-        ]),
         ("Timeline", [
+            ("Space", "Play / pause"),
+            ("Delete", "Delete the selection (leave a gap)"),
+            ("Shift+Delete", "Delete the selected marker"),
+            ("M", "Add a marker at the playhead"),
+            ("N", "Turn snapping on or off"),
+            ("Ctrl+A", "Select everything in the focused panel"),
             ("Ctrl+Wheel", "Zoom in or out"),
             ("Wheel / Shift+Wheel", "Scroll sideways"),
             ("Middle-drag", "Pan the timeline"),
         ]),
-        ("Workspace", [
-            ("Ctrl+1", "Show or hide the media panel"),
-            ("Ctrl+2", "Show or hide the inspector"),
-            ("Ctrl+Shift+F", "Focus the preview"),
-            ("Ctrl+S", "Save"),
-            ("Ctrl+W", "Back to projects"),
-        ]),
     ];
+
+    /// <summary>The rebindable shortcuts as they are now (with the user's changes), then the fixed ones.</summary>
+    private static IEnumerable<(string Section, (string Keys, string What)[] Items)> Groups(Preferences? preferences)
+    {
+        var current = preferences ?? new Preferences();
+        foreach (var section in ShortcutCatalog.All.GroupBy(a => a.Section))
+            yield return (section.Key, section
+                .Select(a => (ShortcutCatalog.Display(ShortcutCatalog.GestureFor(current, a)), a.Label))
+                .ToArray());
+        foreach (var group in Fixed)
+            yield return group;
+    }
 
     public static void Show(Window owner)
     {
         var panel = new StackPanel { Margin = new Thickness(24), Spacing = 6 };
         panel.Children.Add(new TextBlock { Text = "Keyboard shortcuts", FontSize = 15, FontWeight = FontWeight.SemiBold, Margin = new Thickness(0, 0, 0, 6) });
-        foreach (var (section, items) in Groups)
+        var preferences = (owner.DataContext as AppViewModel)?.Preferences.Current;
+        foreach (var (section, items) in Groups(preferences))
         {
-            panel.Children.Add(new TextBlock { Text = section, Foreground = new SolidColorBrush(Color.Parse("#8A8A8A")), Margin = new Thickness(0, 10, 0, 2) });
+            panel.Children.Add(new TextBlock { Text = section, Foreground = new SolidColorBrush(Color.Parse("#868a95")), Margin = new Thickness(0, 10, 0, 2) });
             foreach (var (keys, what) in items)
             {
                 var row = new Grid { ColumnDefinitions = new ColumnDefinitions("170,*") };
-                row.Children.Add(new TextBlock { Text = keys, FontFamily = new FontFamily("monospace"), Foreground = new SolidColorBrush(Color.Parse("#C8C8C8")) });
+                row.Children.Add(new TextBlock { Text = keys, FontFamily = new FontFamily("monospace"), Foreground = new SolidColorBrush(Color.Parse("#b8bbc4")) });
                 var desc = new TextBlock { Text = what };
                 Grid.SetColumn(desc, 1);
                 row.Children.Add(desc);
@@ -64,7 +67,7 @@ public static class ShortcutsDialog
             SizeToContent = SizeToContent.Height,
             CanResize = false,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            Background = new SolidColorBrush(Color.Parse("#1D1E20")),
+            Background = new SolidColorBrush(Color.Parse("#1a1b1f")),
             Content = new ScrollViewer { Content = panel },
         };
         close.Click += (_, _) => dialog.Close();

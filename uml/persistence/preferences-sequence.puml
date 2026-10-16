@@ -37,6 +37,16 @@ Service -> Loader : Save(Current)
 Service -> Caller : Changed
 Caller -> Service : re-read what it holds (e.g. Snap)
 
+== rebind a shortcut ==
+participant "KeyboardPageViewModel" as Keys
+participant MainWindow
+User -> Keys : click "Split at playhead", press Ctrl+B
+Keys -> Keys : another action already uses Ctrl+B? it loses it
+Keys -> Service : Current.Keyboard.Shortcuts["edit.split"] = "Ctrl+B"
+Keys -> Service : Save()
+Service -> MainWindow : Changed
+MainWindow -> MainWindow : ApplyShortcuts() (rebuild key bindings)
+
 == change from the editor (a toolbar toggle) ==
 Caller -> Service : Current.Editing.Snap = false
 Caller -> Service : Save()

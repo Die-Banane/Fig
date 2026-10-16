@@ -31,6 +31,8 @@ namespace Fig.App.Views
         // catalog drop targets (effect → clip, transition → cut)
         private string? _dropEffectClipId;
         private double _dropEffectDuration = 3;
+        /// <summary>The drag is a title: its ghost is a clip bar on the track, not an effect strip under it.</summary>
+        private bool _dropLayer;
 
         private double _dropTransitionCutSec = -1;
 
@@ -39,6 +41,7 @@ namespace Fig.App.Views
         private void ClearDropPreview()
         {
             _dropTimeSec = -1;
+            _dropLayer = false;
             _dropPreviewTime = -1;
             _dropPreviewTrack = null;
             _dropPreviewAsset = null;
@@ -69,6 +72,20 @@ namespace Fig.App.Views
                 _dropEffectClipId = null;
                 _dropTransitionCutSec = -1;
                 _dropTransitionTrack = null;
+                InvalidateVisual();
+                return;
+            }
+
+            if (e.DataTransfer.Contains(DragFormats.Text))
+            {
+                ClearDropPreview();
+                // any track works: a title dropped off a video track goes on one that has room
+                e.DragEffects = DragDropEffects.Copy;
+                _dropLayer = true;
+                _dropPreviewTrack = track?.Kind == TrackKind.Video ? track : null;
+                _dropPreviewTime = Snap(time);
+                _dropTimeSec = _dropPreviewTrack is null ? _dropPreviewTime : -1;
+                _dropEffectDuration = e.DataTransfer.TryGetValue(DragFormats.Text)?.DurSec ?? 3;
                 InvalidateVisual();
                 return;
             }
@@ -181,6 +198,21 @@ namespace Fig.App.Views
                                 Editor.AddMediaNewTracks(asset, snapped);
                         }
                     }
+                }
+                ClearDropPreview();
+                InvalidateVisual();
+                return;
+            }
+
+            if (e.DataTransfer.Contains(DragFormats.Text))
+            {
+                e.Handled = true;
+                var title = e.DataTransfer.TryGetValue(DragFormats.Text);
+                var pos = e.GetPosition(this);
+                if (title is not null)
+                {
+                    Editor.AddText(HitTestTrack(pos.Y)?.Id, Snap(XToTime(pos.X)), title);
+                    InvalidateMeasure();
                 }
                 ClearDropPreview();
                 InvalidateVisual();

@@ -469,6 +469,8 @@ namespace Fig.App.Views
             _rackMoved = false;
             _rackDrag = new RackDrag(hit.Clip.Id, item.Effect.Id, hit.Part,
                 item.StartSec, item.DurSec, XToTime(pos.X), Guid.NewGuid().ToString("N"));
+            if (hit.Part == RackPart.Body && Editor.Selection.IsEffectSelected(item.Effect.Id))
+                BeginCarryForEffects(hit.Clip.Id);
             InvalidateVisual();
             return true;
         }
@@ -502,14 +504,15 @@ namespace Fig.App.Views
                     break;
                 }
             }
-            if (drag.Part == RackPart.Body && Editor.Selection.SelectedEffects.Count > 1
-                && Editor.Selection.IsEffectSelected(drag.EffectId))
+            if (drag.Part == RackPart.Body && Editor.Selection.IsEffectSelected(drag.EffectId)
+                && (Editor.Selection.SelectedEffects.Count > 1 || CarriesClips))
             {
-                // every selected bar slides by the same amount, as one undo step
+                // every selected bar slides by the same amount, and selected clips with them, as one undo step
                 var delta = start - drag.OrigStart;
                 if (Math.Abs(delta) > 1e-9)
                     _rackMoved = true;
-                Editor.MoveEffects(Editor.Selection.SelectedEffects, delta, drag.Gesture);
+                Editor.MoveEffects(BarsToSlide(Editor.Selection.SelectedEffects), delta, drag.Gesture);
+                Carry(delta);
             }
             else
             {
@@ -546,6 +549,7 @@ namespace Fig.App.Views
             _rackMoved = false;
             _rackDrag = null;
             _keyDrag = null;
+            EndCarry();
         }
 
         /// <summary>The effect bars whose drawn rectangle the box touches.</summary>

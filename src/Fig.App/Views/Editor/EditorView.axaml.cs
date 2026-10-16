@@ -395,7 +395,7 @@ public partial class EditorView : UserControl
     {
         if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
             return;
-        if (sender is not Control { DataContext: EffectCatalogEntry or TransitionCatalogEntry or EffectPreset })
+        if (sender is not Control { DataContext: EffectCatalogEntry or TransitionCatalogEntry or EffectPreset or TextPreset })
             return;
 
         _dragArmed = true;
@@ -427,6 +427,9 @@ public partial class EditorView : UserControl
             case EffectPreset preset:
                 transfer.Add(DataTransferItem.Create(PresetFormat, preset));
                 break;
+            case TextPreset title:
+                transfer.Add(DataTransferItem.Create(DragFormats.Text, title));
+                break;
             default:
                 return;
         }
@@ -436,6 +439,9 @@ public partial class EditorView : UserControl
 
     private void CatalogCard_PointerReleased(object? sender, PointerReleasedEventArgs e)
     {
+        // a click (no drag) on a title card adds it at the playhead
+        if (_dragArmed && sender is Control { DataContext: TextPreset title } && DataContext is EditorViewModel vm)
+            vm.AddTextCommand.Execute(title);
         _dragArmed = false;
     }
 

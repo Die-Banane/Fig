@@ -62,6 +62,7 @@ public partial class PreviewViewModel : ViewModelBase
     /// <summary>The zoom-region controls drawn over the picture (null until an editor is attached).</summary>
     public TransformControlsViewModel? Transform => _editor?.Properties?.Transform;
     public SwirlControlsViewModel? Swirl => _editor?.Properties?.Swirl;
+    public LayerGizmoViewModel? Gizmo => _editor?.Properties?.Gizmo;
 
     /// <summary>Width ÷ height of the preview picture.</summary>
     public double CanvasAspect => _baseCanvasW / (double)Math.Max(1, _baseCanvasH);
@@ -101,15 +102,43 @@ public partial class PreviewViewModel : ViewModelBase
     public event Action<GpuScene>? SceneReady;
 
     private volatile bool _gpuCanvas = true;
+    private Fig.App.Services.RendererChoice _renderer = Fig.App.Services.RendererChoice.Automatic;
+    private bool? _canvasIsGpu;
 
     /// <summary>
     /// True when the preview is drawn by the GPU from a scene; false when frames are composited on the CPU.
-    /// Starts true and is switched off by the view if the canvas turns out not to be GPU-backed.
+    /// Decided by <see cref="Renderer"/> and, on Automatic, by whether the canvas turned out GPU-backed.
     /// </summary>
     public bool UseGpuCanvas => _gpuCanvas;
 
+    /// <summary>The user's renderer preference.</summary>
+    public Fig.App.Services.RendererChoice Renderer
+    {
+        get => _renderer;
+        set
+        {
+            _renderer = value;
+            UpdateRenderer();
+        }
+    }
+
+    /// <summary>The view reports what the canvas is once it has drawn (a software canvas runs shaders on the CPU).</summary>
+    public void ReportCanvas(bool gpuBacked)
+    {
+        _canvasIsGpu = gpuBacked;
+        UpdateRenderer();
+    }
+
+    private void UpdateRenderer() => SetGpuCanvas(_renderer switch
+    {
+        Fig.App.Services.RendererChoice.Gpu => true,
+        Fig.App.Services.RendererChoice.Cpu => false,
+        // the SIMD compositor is faster than Skia's software shaders, so only use shaders on a real GPU
+        _ => _canvasIsGpu != false,
+    });
+
     /// <summary>Chooses the GPU scene path or the CPU compositor and re-renders the current frame.</summary>
-    public void SetGpuCanvas(bool enabled)
+    private void SetGpuCanvas(bool enabled)
     {
         if (_gpuCanvas == enabled)
             return;
@@ -117,6 +146,9 @@ public partial class PreviewViewModel : ViewModelBase
         ClearPresentQueue();
         RequestFrame();
     }
+
+    /// <summary>Draws text and image layers; set by the editor.</summary>
+    public ILayerRasterizer? Layers { get; set; }
 
     public PreviewViewModel(IMediaService media, Func<double, IReadOnlyList<PreviewLayer>> resolver)
     {
@@ -918,7 +950,9 @@ public partial class PreviewViewModel : ViewModelBase
                             frame = EffectPipeline.ApplyStack(frame, layer.Clip.Effects, localT, rented);
                             if (document is not null && document.Tracks[layer.TrackIndex].Effects.Count > 0)
                             {
-                                frame = ApplyCrop(frame, layer.Clip, localT, rented);
+                                // a drawn layer keeps its transparency, so it isn't flattened by a crop first
+                                if (layer.Clip is not ILayerClip)
+                                    frame = ApplyCrop(frame, layer.Clip, localT, rented);
                                 frame = EffectPipeline.ApplyStack(frame, document.Tracks[layer.TrackIndex].Effects, target, rented);
                             }
                         }
@@ -931,6 +965,7 @@ public partial class PreviewViewModel : ViewModelBase
                     {
                         Frame = frame,
                         Opacity = layer.Opacity,
+                        Premultiplied = layer.Clip is ILayerClip,
                         Crop = document is not null && document.Tracks[layer.TrackIndex].Effects.Count > 0 ? null
                             : ToPixelCrop(layer.Clip, target - layer.Clip.StartSec, _targetWidth, _targetHeight),
                     }));
@@ -982,6 +1017,9 @@ public partial class PreviewViewModel : ViewModelBase
         PreviewLayer layer, bool needsSeek, PreviewDecodeMode mode, out bool fromCache)
     {
         fromCache = false;
+        // text and still images are drawn, not decoded; the rasterizer keeps its own cache
+        if (layer.Clip is ILayerClip)
+            return Layers?.Rasterize(layer.Clip, _targetWidth, _targetHeight, layer.TimeSec);
         // Cache the pre-effect source frame (the pool owns a copy); effects are applied after
         // retrieval, so effect clips benefit from the cache too instead of re-decoding every frame.
         if (_frameCache.TryGet(layer.SourcePath, layer.TimeSec, _targetWidth, _targetHeight, out var cached)
@@ -1134,7 +1172,7 @@ public partial class PreviewViewModel : ViewModelBase
         return true;
     }
 
-    private DecodedFrame ApplyCrop(DecodedFrame frame, VideoClip clip, double localT, List<byte[]> rented)
+    private DecodedFrame ApplyCrop(DecodedFrame frame, Clip clip, double localT, List<byte[]> rented)
     {
         var crop = ToPixelCrop(clip, localT, _targetWidth, _targetHeight);
         if (crop is null)
@@ -1151,7 +1189,7 @@ public partial class PreviewViewModel : ViewModelBase
     /// <summary>Re-decode the current playhead (e.g. after opacity/crop changes).</summary>
     public void RefreshFrame() => RequestFrame();
 
-    private static RectI? ToPixelCrop(Fig.Core.Timeline.VideoClip clip, double localT, int width, int height)
+    private static RectI? ToPixelCrop(Fig.Core.Timeline.Clip clip, double localT, int width, int height)
     {
         var (l, t, r, b) = ClipAutomation.SampleCrop(clip, Math.Clamp(localT, 0, Math.Max(0, clip.DurSec - 1e-4)));
         if ((l <= 1e-6 && t <= 1e-6 && r <= 1e-6 && b <= 1e-6) || width <= 0 || height <= 0)

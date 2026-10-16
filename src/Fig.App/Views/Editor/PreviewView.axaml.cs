@@ -36,12 +36,7 @@ public partial class PreviewView : UserControl
         Surface.PresentScene(scene);
     }
 
-    private void OnGpuBackingDetected(bool gpu)
-    {
-        // a software canvas runs the shaders on the CPU; the SIMD compositor is faster there
-        if (!gpu)
-            _vm?.SetGpuCanvas(false);
-    }
+    private void OnGpuBackingDetected(bool gpu) => _vm?.ReportCanvas(gpu);
 
     private void OnFrameReady(int width, int height, byte[] bgra)
     {

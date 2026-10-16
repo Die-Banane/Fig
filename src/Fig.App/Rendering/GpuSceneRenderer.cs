@@ -83,8 +83,12 @@ public static class GpuSceneRenderer
 
     private static SKShader BuildSource(GpuSource source, int width, int height, ShaderScope scope)
     {
-        var shader = scope.Add(source.Image.ToShader(SKShaderTileMode.Clamp, SKShaderTileMode.Clamp, Linear));
-        shader = GpuEffects.Opaque(shader, scope);
+        // a drawn layer keeps its transparency (transparent outside its edges); video is forced opaque
+        var shader = scope.Add(source.Image.ToShader(
+            source.HasAlpha ? SKShaderTileMode.Decal : SKShaderTileMode.Clamp,
+            source.HasAlpha ? SKShaderTileMode.Decal : SKShaderTileMode.Clamp, Linear));
+        if (!source.HasAlpha)
+            shader = GpuEffects.Opaque(shader, scope);
         // same order as the CPU path: the clip's effect stack first, then its crop
         foreach (var effect in source.Effects)
             shader = GpuEffects.Apply(shader, effect, width, height, scope);

@@ -144,20 +144,7 @@ namespace Fig.Core.Timeline
             return result;
         }
 
-        private static void SetSourceRange(Clip clip, double inSec, double outSec)
-        {
-            switch (clip)
-            {
-                case VideoClip v:
-                    v.SrcInSec = inSec;
-                    v.SrcOutSec = outSec;
-                    break;
-                case AudioClip a:
-                    a.SrcInSec = inSec;
-                    a.SrcOutSec = outSec;
-                    break;
-            }
-        }
+        private static void SetSourceRange(Clip clip, double inSec, double outSec) => clip.SetSourceRange(inSec, outSec);
 
         // Splitting redistributes markers; it doesn't duplicate them. Keep their identities
         // so multi-selection and subsequent marker edits survive execute/undo/redo.

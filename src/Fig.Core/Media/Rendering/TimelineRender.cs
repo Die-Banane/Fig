@@ -22,7 +22,8 @@ namespace Fig.Core.Media
         /// </summary>
         public unsafe void RenderTimeline(ProjectModel project, TimelineModel timeline,
             string outputPath, int width, int height, int crf = 23, Action<double>? progress = null,
-            double? rangeStartSec = null, double? rangeEndSec = null, ISceneRenderer? renderer = null)
+            double? rangeStartSec = null, double? rangeEndSec = null, ISceneRenderer? renderer = null,
+            ILayerRasterizer? layers = null)
         {
             if (timeline.Tracks.Count == 0)
                 throw new InvalidOperationException("Timeline has no tracks");
@@ -127,7 +128,7 @@ namespace Fig.Core.Media
                     for (var f = 0L; f < totalFrames; f++)
                     {
                         var t = start + f / (double)fps;
-                        var scene = BuildScene(project, timeline, sources, t, width, height);
+                        var scene = BuildScene(project, timeline, sources, t, width, height, layers);
                         var canvas = spare.Count > 0 ? spare.Pop() : new byte[width * height * 4];
                         inFlight.Enqueue((f, t, canvas, renderer.RenderAsync(scene, canvas)));
                         while (inFlight.Count >= depth)
@@ -253,7 +254,7 @@ namespace Fig.Core.Media
         /// top, each with its resolved effects, crop, transition and opacity. Nothing is drawn here.
         /// </summary>
         private RenderScene BuildScene(ProjectModel project, TimelineModel timeline,
-            Dictionary<string, IVideoFrameSource> sources, double t, int width, int height)
+            Dictionary<string, IVideoFrameSource> sources, double t, int width, int height, ILayerRasterizer? rasterizer)
         {
             var layers = new List<RenderLayer>();
             // the first track is the bottom of the stack (matches the preview)
@@ -292,17 +293,29 @@ namespace Fig.Core.Media
                 var trackLayers = new List<RenderLayer>();
                 foreach (var clip in track.Clips)
                 {
-                    if (clip is not VideoClip vc || !vc.Enabled)
+                    if (!clip.Enabled || t < clip.StartSec || t >= clip.StartSec + clip.DurSec)
                         continue;
-                    if (t < clip.StartSec || t >= clip.StartSec + clip.DurSec)
-                        continue;
-                    if (!TryDecodeClip(project, timeline, sources, vc, t, width, height, out var frame, out var localT))
+                    var localT = t - clip.StartSec;
+                    DecodedFrame? frame;
+                    if (clip is ILayerClip)
+                        frame = rasterizer?.Rasterize(clip, width, height, localT);   // drawn, with transparency
+                    else if (clip is VideoClip vc && TryDecodeClip(project, timeline, sources, vc, t, width, height, out var decoded, out _))
+                        frame = decoded;
+                    else
+                        frame = null;
+                    if (frame is null)
                         continue;
                     trackLayers.Add(new RenderLayer
                     {
-                        Source = SourceFor(vc, frame!, localT),
+                        Source = new RenderSource
+                        {
+                            Frame = frame,
+                            Effects = EffectPipeline.ResolveStack(clip.Effects, localT),
+                            Crop = CropAt(clip, localT),
+                            HasAlpha = clip is ILayerClip,
+                        },
                         Effects = trackEffects,
-                        Opacity = ClipFade.EffectiveOpacity(vc, localT),
+                        Opacity = ClipFade.EffectiveOpacity(clip, localT),
                     });
                 }
                 // clips earlier in a track sit above later ones
@@ -320,8 +333,8 @@ namespace Fig.Core.Media
                 Crop = CropAt(clip, localT),
             };
 
-        /// <summary>The clip's crop at a clip-relative time (automation sampled).</summary>
-        public static SceneCrop CropAt(VideoClip clip, double localT)
+        /// <summary>The clip's crop at a clip-relative time (automation sampled); none for clips that can't be cropped.</summary>
+        public static SceneCrop CropAt(Clip clip, double localT)
         {
             localT = Math.Clamp(localT, 0, Math.Max(0, clip.DurSec - 1e-4));
             var (l, top, r, bottom) = ClipAutomation.SampleCrop(clip, localT);

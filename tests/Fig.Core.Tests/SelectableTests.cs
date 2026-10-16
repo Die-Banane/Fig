@@ -54,13 +54,13 @@ public class SelectableTests
     }
 
     [Fact]
-    public void A_selection_never_mixes_groups()
+    public void A_selection_can_mix_groups()
     {
         var (editor, video, _, track) = Setup();
         editor.Selection.Replace(video.Key);
-        editor.Selection.Add(track.Key);   // a track is not a clip: it takes over
-        Assert.Equal([track.Key], editor.Selection.Items);
-        editor.Selection.Add(video.Key);
+        editor.Selection.Add(track.Key);   // adding keeps what is there, whatever its group
+        Assert.Equal([video.Key, track.Key], editor.Selection.Items);
+        editor.Selection.Replace(video.Key);   // a plain pick still replaces everything
         Assert.Equal([video.Key], editor.Selection.Items);
     }
 

@@ -81,10 +81,10 @@ namespace Fig.Core.Timeline
 
         private IEnumerable<Clip> Targets()
         {
-            // opacity is visual — apply to the selected clip and any linked video peers
+            // opacity is visual — apply to the selected clip and any linked peers that have a picture
             foreach (var clip in _editor.LinkGroup(_clipId))
             {
-                if (clip is VideoClip || clip.Id == _clipId)
+                if (clip.Facets.HasFlag(Facet.Picture) || clip.Id == _clipId)
                     yield return clip;
             }
         }
@@ -318,8 +318,8 @@ namespace Fig.Core.Timeline
 
         public void Execute()
         {
-            var clip = _editor.FindClip(_clipId) as VideoClip
-                ?? throw new InvalidOperationException($"Video clip '{_clipId}' not found");
+            var clip = _editor.FindClip(_clipId) as ICroppable
+                ?? throw new InvalidOperationException($"Croppable clip '{_clipId}' not found");
             _oldL = clip.CropL;
             _oldT = clip.CropT;
             _oldR = clip.CropR;
@@ -353,7 +353,7 @@ namespace Fig.Core.Timeline
 
         private void Apply(double l, double t, double r, double b)
         {
-            if (_editor.FindClip(_clipId) is not VideoClip clip)
+            if (_editor.FindClip(_clipId) is not ICroppable clip)
                 return;
             clip.CropL = l;
             clip.CropT = t;
@@ -488,10 +488,8 @@ namespace Fig.Core.Timeline
             var oldSpeed = clip.Speed;
             clip.Speed = _newValue;
             double span = 0;
-            if (clip is VideoClip vc)
-                span = (vc.SrcOutSec > 0 ? vc.SrcOutSec : vc.SrcInSec + clip.DurSec * oldSpeed) - vc.SrcInSec;
-            else if (clip is AudioClip ac)
-                span = (ac.SrcOutSec > 0 ? ac.SrcOutSec : ac.SrcInSec + clip.DurSec * oldSpeed) - ac.SrcInSec;
+            if (clip.HasSourceRange)
+                span = (clip.SourceOut > 0 ? clip.SourceOut : clip.SourceIn + clip.DurSec * oldSpeed) - clip.SourceIn;
             if (span > 1e-9)
                 clip.DurSec = span / _newValue;
         }
@@ -500,7 +498,7 @@ namespace Fig.Core.Timeline
         {
             foreach (var clip in _editor.LinkGroup(_clipId))
             {
-                if (clip is VideoClip || clip is AudioClip)
+                if (clip.Facets.HasFlag(Facet.Retime))
                     yield return clip;
             }
         }

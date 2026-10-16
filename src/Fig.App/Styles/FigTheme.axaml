@@ -90,25 +90,6 @@
   </Style>
 
   <!-- ===== title bar ===== -->
-  <Style Selector="Button.menu-btn">
-    <Setter Property="Background" Value="Transparent"/>
-    <Setter Property="BorderThickness" Value="0"/>
-    <Setter Property="Padding" Value="11,6"/>
-    <Setter Property="MinHeight" Value="30"/>
-    <Setter Property="CornerRadius" Value="8"/>
-    <Setter Property="FontSize" Value="13"/>
-    <Setter Property="Foreground" Value="{StaticResource TextSecondary}"/>
-    <Setter Property="VerticalAlignment" Value="Center"/>
-  </Style>
-  <Style Selector="Button.menu-btn:pointerover /template/ ContentPresenter">
-    <Setter Property="Background" Value="{StaticResource ChipBg}"/>
-    <Setter Property="Foreground" Value="{StaticResource TextPrimary}"/>
-  </Style>
-  <Style Selector="Button.menu-btn.open /template/ ContentPresenter">
-    <Setter Property="Background" Value="{StaticResource HoverBg}"/>
-    <Setter Property="Foreground" Value="{StaticResource TextPrimary}"/>
-  </Style>
-
   <Style Selector="Button.caption">
     <Setter Property="Width" Value="42"/>
     <Setter Property="Height" Value="30"/>

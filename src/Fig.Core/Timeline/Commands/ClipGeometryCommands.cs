@@ -7,12 +7,9 @@ namespace Fig.Core.Timeline
     /// <summary>A clip's position and extent on the timeline, and its source range where it has one.</summary>
     public readonly record struct ClipGeometry(string ClipId, double StartSec, double DurSec, double? SrcInSec, double? SrcOutSec)
     {
-        public static ClipGeometry Capture(Clip clip) => clip switch
-        {
-            VideoClip v => new ClipGeometry(clip.Id, clip.StartSec, clip.DurSec, v.SrcInSec, v.SrcOutSec),
-            AudioClip a => new ClipGeometry(clip.Id, clip.StartSec, clip.DurSec, a.SrcInSec, a.SrcOutSec),
-            _ => new ClipGeometry(clip.Id, clip.StartSec, clip.DurSec, null, null),
-        };
+        public static ClipGeometry Capture(Clip clip) => clip.HasSourceRange
+            ? new ClipGeometry(clip.Id, clip.StartSec, clip.DurSec, clip.SourceIn, clip.SourceOut)
+            : new ClipGeometry(clip.Id, clip.StartSec, clip.DurSec, null, null);
 
         internal void ApplyTo(Clip clip)
         {

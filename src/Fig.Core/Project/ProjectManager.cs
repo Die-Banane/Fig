@@ -58,7 +58,7 @@ namespace Fig.Core.Project
             if (existing is not null)
                 return new ProbeResult { Asset = existing };
 
-            if (asset.Kind == MediaKind.Video)
+            if (asset.Kind is MediaKind.Video or MediaKind.Image)
             {
                 var thumbPath = Path.Combine(CacheDirectory, $"{asset.Hash}.jpg");
                 if (!File.Exists(thumbPath))

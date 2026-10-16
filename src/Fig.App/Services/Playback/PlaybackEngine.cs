@@ -226,7 +226,7 @@ namespace Fig.App.Services
                 if (wasPlaying)
                     await Task.Run(_mixer.ResetSources);
 
-                if (wasPlaying && _device is not null && _seekBaseSec < TimelineEnd(_editor.Document) - 1e-6)
+                if (wasPlaying && _device is not null && FramesLeft(_seekBaseSec, TimelineEnd(_editor.Document)) > 0)
                 {
                     SetState(PlaybackState.Buffering);
                     await Task.Run(() => FillUntil(PrebufferFrames));
@@ -269,7 +269,7 @@ namespace Fig.App.Services
                 var end = TimelineEnd(_editor.Document);
                 if (end <= 0)
                     return;
-                if (_seekBaseSec >= end - 1e-6 || State == PlaybackState.Ended)
+                if (FramesLeft(_seekBaseSec, end) == 0 || State == PlaybackState.Ended)
                     _seekBaseSec = 0;
 
                 _queue.Reset();
@@ -383,14 +383,19 @@ namespace Fig.App.Services
             var timelineEnd = TimelineEnd(timeline);
             var produced = _queue.TotalSamplesEnqueued / 2;
             var startSec = _seekBaseSec + produced / (double)AudioMixer.SampleRate;
-            if (startSec >= timelineEnd)
+            // less than half a frame left mixes to an empty chunk, which would never advance the playhead
+            var frames = Math.Min(ChunkFrames, FramesLeft(startSec, timelineEnd));
+            if (frames == 0)
                 return false;
 
-            var durationSec = Math.Min(ChunkFrames / (double)AudioMixer.SampleRate, timelineEnd - startSec);
-            var chunk = _mixer.Mix(timeline, startSec, durationSec);
+            var chunk = _mixer.Mix(timeline, startSec, frames / (double)AudioMixer.SampleRate);
             _queue.AddSamples(chunk);
             return true;
         }
+
+        /// <summary>Whole frames between <paramref name="startSec"/> and <paramref name="endSec"/>, rounded the way the mixer rounds.</summary>
+        internal static int FramesLeft(double startSec, double endSec) =>
+            endSec <= startSec ? 0 : (int)Math.Min(int.MaxValue, Math.Round((endSec - startSec) * AudioMixer.SampleRate));
 
         private async Task StopProducerAsync()
         {

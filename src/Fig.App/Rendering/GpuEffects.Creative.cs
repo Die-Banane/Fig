@@ -387,25 +387,25 @@ internal static partial class GpuEffects
         ["dirBlur"] = """
             uniform shader src; uniform float2 size; uniform float2 stepv;
             half4 main(float2 p) {
-                float3 sum = float3(0.0);
+                float4 sum = float4(0.0);
                 for (int k = -4; k <= 4; k++) {
                     float2 q = clamp(p + stepv * float(k), float2(0.5), size - 0.5);
-                    sum += float3(src.eval(q).rgb);
+                    sum += float4(src.eval(q));
                 }
-                return half4(half3(sum / 9.0), 1.0);
+                return half4(sum / 9.0);
             }
             """,
         ["zoomBlur"] = """
             uniform shader src; uniform float2 size; uniform float amount;
             half4 main(float2 p) {
                 float2 c = size * 0.5;
-                float3 sum = float3(0.0);
+                float4 sum = float4(0.0);
                 for (int k = 0; k < 10; k++) {
                     float s = 1.0 - amount * float(k) / 9.0;
                     float2 q = clamp(c + (p - c) * s, float2(0.5), size - 0.5);
-                    sum += float3(src.eval(q).rgb);
+                    sum += float4(src.eval(q));
                 }
-                return half4(half3(sum / 10.0), 1.0);
+                return half4(sum / 10.0);
             }
             """,
         ["glowHigh"] = """
@@ -446,7 +446,8 @@ internal static partial class GpuEffects
                 float r = src.eval(float2(clamp(p.x + shiftx + bleed, 0.5, size.x - 0.5), y)).r;
                 float g = src.eval(float2(clamp(p.x + shiftx, 0.5, size.x - 0.5), y)).g;
                 float b = src.eval(float2(clamp(p.x + shiftx - bleed, 0.5, size.x - 0.5), y)).b;
-                return half4(half3(clamp(float3(r, g, b) * scan + noise, 0.0, 1.0)), 1.0);
+                float a = src.eval(p).a;
+                return half4(half3(clamp(float3(r, g, b) * scan + noise * a, 0.0, a)), half(a));
             }
             """,
         ["glitch"] = HashFn + """
@@ -459,7 +460,7 @@ internal static partial class GpuEffects
                 float r = src.eval(float2(clamp(p.x + shiftx + split, 0.5, size.x - 0.5), p.y)).r;
                 float g = src.eval(float2(clamp(p.x + shiftx, 0.5, size.x - 0.5), p.y)).g;
                 float b = src.eval(float2(clamp(p.x + shiftx - split, 0.5, size.x - 0.5), p.y)).b;
-                return half4(half3(float3(r, g, b)), 1.0);
+                return half4(half3(float3(r, g, b)), src.eval(p).a);
             }
             """,
         ["zoomShift"] = """

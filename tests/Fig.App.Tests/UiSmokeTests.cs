@@ -220,21 +220,22 @@ public sealed class UiSmokeTests : IDisposable
             window.UpdateLayout();
             Shot(window, "shell-editor");
             var bar = window.GetVisualDescendants().OfType<TitleBar>().Single();
-            var labels = bar.GetVisualDescendants().OfType<Button>().Where(b => b.Classes.Contains("menu-btn")).Select(b => b.Content).ToList();
-            Assert.Equal(new object[] { "File", "Edit", "View", "Help" }, labels);
-            // the menus live in the title bar row, not in a bar of their own beneath it
+            // the menus are a standard Menu, in the title bar row rather than a bar of their own beneath it
+            var menu = bar.GetVisualDescendants().OfType<Menu>().Single();
+            Assert.Equal(new object[] { "_File", "_Edit", "_View", "_Help" }, menu.Items.OfType<MenuItem>().Select(m => m.Header).ToArray());
             Assert.True(bar.Bounds.Height < 60);
             Assert.True(app.IsEditing);
-            Assert.Empty(window.GetVisualDescendants().OfType<Menu>());
             Assert.Equal(WindowDecorations.None, window.WindowDecorations);
 
-            // an open menu is drawn by us too: rounded, padded items with their shortcuts
-            var edit = bar.GetVisualDescendants().OfType<Button>().First(b => Equals(b.Content, "Edit"));
-            edit.Flyout!.ShowAt(edit);
+            var edit = menu.Items.OfType<MenuItem>().First(m => Equals(m.Header, "_Edit"));
+            edit.Open();
             window.UpdateLayout();
             Shot(window, "shell-menu-edit");
-            Assert.True(edit.Flyout.IsOpen);
-            edit.Flyout.Hide();
+            Assert.True(edit.IsSubMenuOpen);
+            // shortcut text comes from the shortcut table, so a rebind shows in the menu
+            var undo = edit.Items.OfType<MenuItem>().First(m => Equals(m.Header, "_Undo"));
+            Assert.Equal(Avalonia.Input.KeyGesture.Parse("Ctrl+Z"), undo.InputGesture);
+            edit.Close();
         }
         finally
         {

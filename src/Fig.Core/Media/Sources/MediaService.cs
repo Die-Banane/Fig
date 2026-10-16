@@ -49,6 +49,14 @@ namespace Fig.Core.Media
                     probe.Width = codec->width;
                     probe.Height = codec->height;
                     probe.Kind = MediaKind.Video;
+                    if (IsStillImage(path, inCtx))
+                    {
+                        // a still has no length of its own: an image clip lasts as long as the user makes it
+                        probe.Kind = MediaKind.Image;
+                        probe.DurationSec = 0;
+                        probe.HasAudio = false;
+                        return probe;
+                    }
                     probe.HasAudio = HasAudioStream(inCtx);
                     if (fpsNum > 0 && fpsDen > 0)
                         probe.SourceRate = new Fig.Core.Timeline.FrameRate(fpsNum, fpsDen);
@@ -76,6 +84,20 @@ namespace Fig.Core.Media
                     ffmpeg.avformat_close_input(&pIn);
                 }
             }
+        }
+
+        private static readonly HashSet<string> StillExtensions =
+            new(StringComparer.OrdinalIgnoreCase) { ".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff" };
+
+        /// <summary>
+        /// A single picture rather than a video: FFmpeg opens stills with its image demuxers ("image2",
+        /// "png_pipe", ...), which report one frame. Animated formats (GIF) stay video.
+        /// </summary>
+        private static unsafe bool IsStillImage(string path, AVFormatContext* ctx)
+        {
+            var format = ctx->iformat is null ? "" : System.Runtime.InteropServices.Marshal.PtrToStringAnsi((IntPtr)ctx->iformat->name) ?? "";
+            return format == "image2" || format.EndsWith("_pipe", StringComparison.Ordinal)
+                   || StillExtensions.Contains(Path.GetExtension(path));
         }
 
         private static unsafe bool HasAudioStream(AVFormatContext* ctx)

@@ -12,7 +12,7 @@ namespace Fig.Core.Timeline
     public enum Facet
     {
         None = 0,
-        /// <summary>Opacity and crop.</summary>
+        /// <summary>Opacity.</summary>
         Picture = 1 << 0,
         /// <summary>Volume.</summary>
         Sound = 1 << 1,
@@ -32,6 +32,10 @@ namespace Fig.Core.Timeline
         Marker = 1 << 8,
         /// <summary>A transition across a cut.</summary>
         Transition = 1 << 9,
+        /// <summary>Crop insets from each edge.</summary>
+        Crop = 1 << 10,
+        /// <summary>Where a layer sits on the frame: position, size and rotation.</summary>
+        Layout = 1 << 11,
     }
 
     /// <summary>

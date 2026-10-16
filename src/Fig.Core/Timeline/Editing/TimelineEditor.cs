@@ -280,6 +280,7 @@ namespace Fig.Core.Timeline
             return asset.Kind switch
             {
                 MediaKind.Audio => new AudioClip { SourceId = asset.Id, DurSec = asset.DurationSec, SourceRate = asset.SourceRate },
+                MediaKind.Image => new ImageClip { SourceId = asset.Id, DurSec = ImageClip.DefaultDurationSec },
                 _ => new VideoClip { SourceId = asset.Id, DurSec = asset.DurationSec, SourceRate = asset.SourceRate },
             };
         }
@@ -1358,7 +1359,7 @@ namespace Fig.Core.Timeline
 
         public void SetCrop(string clipId, double cropL, double cropT, double cropR, double cropB)
         {
-            if (FindClip(clipId) is not VideoClip clip)
+            if (FindClip(clipId) is not ICroppable clip)
                 return;
             (cropL, cropT, cropR, cropB) = SetCropCommand.Normalize(cropL, cropT, cropR, cropB);
             if (Near(clip.CropL, cropL) && Near(clip.CropT, cropT)

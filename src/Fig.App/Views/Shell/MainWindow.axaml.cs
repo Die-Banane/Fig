@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Linq;
 using System.Windows.Input;
 using Avalonia;
@@ -5,26 +6,78 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.VisualTree;
+using Fig.App.Services;
 using Fig.App.ViewModels;
 
 namespace Fig.App.Views;
 
 public partial class MainWindow : Window
 {
+    private readonly Dictionary<KeyGesture, ICommand> _typable = new();
+    private AppViewModel? _app;
+
     public MainWindow()
     {
         InitializeComponent();
-        // Shortcuts on plain letters cannot be KeyBindings: a binding marks the key handled, and a handled
-        // key never becomes text, so typing "shake" in a search box lost its "k". They are routed here
-        // instead, after the focused control has had its chance, and never while the user is typing.
-        AddHandler(KeyDownEvent, OnPlainShortcut, RoutingStrategies.Bubble);
+        // Shortcuts that are also typed characters (J, K, L, Shift+S) cannot be KeyBindings: a binding marks the
+        // key handled, and a handled key never becomes text, so typing "shake" in a search box lost its "k".
+        // They are routed here instead, after the focused control has had its chance, and never while typing.
+        AddHandler(KeyDownEvent, OnTypableShortcut, RoutingStrategies.Bubble);
+        DataContextChanged += (_, _) => Attach(DataContext as AppViewModel);
     }
 
-    private void OnPlainShortcut(object? sender, KeyEventArgs e)
+    protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
-        if (e.Handled || DataContext is not AppViewModel app)
+        base.OnPropertyChanged(change);
+        // a maximized window can't be resized, so its edges shouldn't offer to
+        if (change.Property == WindowStateProperty)
+            ResizeGrips.IsVisible = WindowState == WindowState.Normal;
+    }
+
+    private void Attach(AppViewModel? app)
+    {
+        if (_app is not null)
+        {
+            _app.Preferences.Changed -= ApplyShortcuts;
+            _app.PropertyChanged -= OnAppPropertyChanged;
+        }
+        _app = app;
+        if (_app is not null)
+        {
+            _app.Preferences.Changed += ApplyShortcuts;
+            _app.PropertyChanged += OnAppPropertyChanged;
+        }
+        ApplyShortcuts();
+    }
+
+    private void OnAppPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(AppViewModel.ShortcutsSuspended))
+            ApplyShortcuts();
+    }
+
+    /// <summary>Rebuilds every keyboard shortcut from the shortcut table and the user's changes to it.</summary>
+    private void ApplyShortcuts()
+    {
+        KeyBindings.Clear();
+        _typable.Clear();
+        if (_app is null || _app.ShortcutsSuspended)
             return;
-        if (e.KeyModifiers != KeyModifiers.None && e.KeyModifiers != KeyModifiers.Shift)
+        foreach (var action in ShortcutCatalog.All)
+        {
+            if (ShortcutCatalog.Parse(ShortcutCatalog.GestureFor(_app.Preferences.Current, action)) is not { } gesture
+                || action.Command(_app) is not { } command)
+                continue;
+            if (ShortcutCatalog.IsTypable(gesture))
+                _typable[gesture] = command;
+            else
+                KeyBindings.Add(new KeyBinding { Gesture = gesture, Command = command });
+        }
+    }
+
+    private void OnTypableShortcut(object? sender, KeyEventArgs e)
+    {
+        if (e.Handled || _app is null)
             return;
         if (e.Source is Visual source)
         {
@@ -36,15 +89,7 @@ public partial class MainWindow : Window
                 return;
         }
 
-        ICommand? command = (e.Key, e.KeyModifiers) switch
-        {
-            (Key.L, KeyModifiers.None) => app.Editor.ShuttleForwardCommand,
-            (Key.J, KeyModifiers.None) => app.Editor.ShuttleBackCommand,
-            (Key.K, KeyModifiers.None) => app.Editor.ShuttleStopCommand,
-            (Key.S, KeyModifiers.Shift) => app.Editor.ToggleAudioScrubCommand,
-            _ => null,
-        };
-        if (command?.CanExecute(null) == true)
+        if (_typable.TryGetValue(new KeyGesture(e.Key, e.KeyModifiers), out var command) && command.CanExecute(null))
         {
             command.Execute(null);
             e.Handled = true;

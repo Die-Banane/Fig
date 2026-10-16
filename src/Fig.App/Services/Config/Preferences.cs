@@ -17,6 +17,8 @@ namespace Fig.App.Services
         public EditingPreferences Editing { get; set; } = new();
         public PlaybackPreferences Playback { get; set; } = new();
         public ExportPreferences Export { get; set; } = new();
+        public RenderingPreferences Rendering { get; set; } = new();
+        public KeyboardPreferences Keyboard { get; set; } = new();
 
         /// <summary>Keys this build doesn't know about (written by a newer one); kept so saving doesn't erase them.</summary>
         [JsonExtensionData]
@@ -29,6 +31,11 @@ namespace Fig.App.Services
             Editing ??= new();
             Playback ??= new();
             Export ??= new();
+            Rendering ??= new();
+            Keyboard ??= new();
+            Keyboard.Shortcuts ??= new();
+            if (!Enum.IsDefined(Rendering.Renderer))
+                Rendering.Renderer = RendererChoice.Automatic;
 
             General.AutosaveSeconds = Math.Clamp(General.AutosaveSeconds, 0.2, 30);
             Editing.SnapReachPx = Math.Clamp(Editing.SnapReachPx, 2, 40);
@@ -65,5 +72,28 @@ namespace Fig.App.Services
         public int Quality { get; set; } = 23;
         /// <summary>Where exports go; null means the Videos folder.</summary>
         public string? Folder { get; set; }
+    }
+
+    /// <summary>What draws the preview and export frames.</summary>
+    [JsonConverter(typeof(JsonStringEnumConverter<RendererChoice>))]
+    public enum RendererChoice
+    {
+        /// <summary>The GPU when the window's canvas is GPU-backed, otherwise the CPU.</summary>
+        Automatic,
+        /// <summary>Always the shaders (on a software canvas they run on the CPU, slowly).</summary>
+        Gpu,
+        /// <summary>Always the CPU kernels.</summary>
+        Cpu,
+    }
+
+    public sealed class RenderingPreferences
+    {
+        public RendererChoice Renderer { get; set; } = RendererChoice.Automatic;
+    }
+
+    public sealed class KeyboardPreferences
+    {
+        /// <summary>Only the shortcuts the user changed: action id → key gesture ("" means no shortcut).</summary>
+        public Dictionary<string, string> Shortcuts { get; set; } = new();
     }
 }

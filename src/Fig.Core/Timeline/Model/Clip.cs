@@ -9,6 +9,7 @@ namespace Fig.Core.Timeline
     [JsonDerivedType(typeof(VideoClip), "video")]
     [JsonDerivedType(typeof(AudioClip), "audio")]
     [JsonDerivedType(typeof(TextClip), "text")]
+    [JsonDerivedType(typeof(ImageClip), "image")]
     public abstract class Clip : IEffectOwner, ISelectable
     {
         public abstract ClipKind Kind { get; }
@@ -85,20 +86,100 @@ namespace Fig.Core.Timeline
         /// <summary>Source-format provenance preserved across imports.</summary>
         public Dictionary<string, JsonElement> Metadata { get; set; } = new();
 
+        /// <summary>Where the clip starts in its source. A clip without a source (text, a still) "plays" itself: 0.</summary>
         [JsonIgnore]
-        public virtual double SourceIn => throw new NotSupportedException($"{GetType().Name} has no source range");
+        public virtual double SourceIn => 0;
+        /// <summary>Where the clip ends in its source; for a clip without one, its own length.</summary>
         [JsonIgnore]
-        public virtual double SourceOut => throw new NotSupportedException($"{GetType().Name} has no source range");
+        public virtual double SourceOut => DurSec;
+
+        /// <summary>
+        /// True for clips that play a range of a media file (video, audio). Clips without one (text, a still
+        /// image) can be made any length.
+        /// </summary>
+        [JsonIgnore]
+        public virtual bool HasSourceRange => false;
+
+        /// <summary>Sets the played range of the source; ignored by clips that have none.</summary>
+        public virtual void SetSourceRange(double srcInSec, double srcOutSec)
+        {
+        }
+
+        /// <summary>
+        /// A copy with a new id. Every field is copied, and the lists the copy must not share with the
+        /// original (effects, markers, keyframes, metadata, transitions) are copied too.
+        /// </summary>
+        public Clip Clone()
+        {
+            var copy = (Clip)MemberwiseClone();
+            copy.Id = Guid.NewGuid().ToString();
+            copy.Effects = Effects.ConvertAll(e => e.Clone());
+            copy.Markers = Markers.ConvertAll(m => m.Clone());
+            copy.Keyframes = new Dictionary<string, List<KeyframePoint>>(Keyframes.Count);
+            foreach (var (key, track) in Keyframes)
+                copy.Keyframes[key] = new List<KeyframePoint>(track);
+            copy.Metadata = new Dictionary<string, JsonElement>(Metadata);
+            copy.TransitionIn = TransitionIn?.Clone();
+            copy.TransitionOut = TransitionOut?.Clone();
+            return copy;
+        }
+    }
+
+    /// <summary>A clip whose picture can be cropped.</summary>
+    public interface ICroppable
+    {
+        double CropL { get; set; }
+        double CropT { get; set; }
+        double CropR { get; set; }
+        double CropB { get; set; }
+    }
+
+    /// <summary>
+    /// A clip that is drawn rather than decoded (text, a still image). It is rasterized into a transparent,
+    /// frame-sized picture and composited over what is below it.
+    /// </summary>
+    public interface ILayerClip
+    {
+        LayerTransform Layout { get; set; }
+    }
+
+    /// <summary>Where a layer sits on the frame. Centre is a fraction of the frame; rotation is in degrees.</summary>
+    public sealed record LayerTransform(double CenterX = 0.5, double CenterY = 0.5, double Scale = 1, double Rotation = 0)
+    {
+        public static readonly LayerTransform Default = new();
+    }
+
+    public enum TextAlign
+    {
+        Left,
+        Center,
+        Right,
+    }
+
+    /// <summary>How a text clip is set. Size is a share of the frame height, so text looks the same at every resolution.</summary>
+    public sealed record TextStyle(
+        string FontFamily = "Inter",
+        bool Bold = true,
+        bool Italic = false,
+        double SizePercent = 8,
+        uint Color = 0xFFFFFFFF,
+        TextAlign Align = TextAlign.Center,
+        bool Shadow = true,
+        bool Background = false,
+        uint BackgroundColor = 0xB0000000)
+    {
+        public static readonly TextStyle Default = new();
     }
 
     public enum ClipKind
     {
         Video,
         Audio,
-        Text
+        Text,
+        Image,
     }
 
-    public sealed class VideoClip : Clip
+    public sealed class VideoClip : Clip, ICroppable
     {
         public override ClipKind Kind => ClipKind.Video;
         [JsonIgnore]
@@ -106,10 +187,19 @@ namespace Fig.Core.Timeline
         [JsonIgnore]
         public override string? MediaId => SourceId;
         [JsonIgnore]
-        public override Facet Facets => Facet.Picture | Facet.Sound | Facet.Fades | Facet.Retime | Facet.Effects | Facet.Source;
+        public override Facet Facets => Facet.Picture | Facet.Crop | Facet.Sound | Facet.Fades | Facet.Retime | Facet.Effects | Facet.Source;
         public string SourceId { get; set; } = "";
         public double SrcInSec { get; set; }
         public double SrcOutSec { get; set; }
+
+        [JsonIgnore]
+        public override bool HasSourceRange => true;
+
+        public override void SetSourceRange(double srcInSec, double srcOutSec)
+        {
+            SrcInSec = srcInSec;
+            SrcOutSec = srcOutSec;
+        }
 
         /// <summary>Normalized crop inset from the left edge (0..1).</summary>
         public double CropL { get; set; }
@@ -143,21 +233,51 @@ namespace Fig.Core.Timeline
         public double SrcOutSec { get; set; }
 
         [JsonIgnore]
+        public override bool HasSourceRange => true;
+
+        public override void SetSourceRange(double srcInSec, double srcOutSec)
+        {
+            SrcInSec = srcInSec;
+            SrcOutSec = srcOutSec;
+        }
+
+        [JsonIgnore]
         public override double SourceIn => SrcInSec;
         [JsonIgnore]
         public override double SourceOut => SrcOutSec;
     }
 
-    public sealed class TextClip : Clip
+    /// <summary>Words on the frame: drawn, not decoded, and composited over the layers below.</summary>
+    public sealed class TextClip : Clip, ILayerClip
     {
         public override ClipKind Kind => ClipKind.Text;
         [JsonIgnore]
         public override string DisplayName => "Text clip";
         [JsonIgnore]
-        public override Facet Facets => Facet.Text | Facet.Picture | Facet.Fades | Facet.Effects;
+        public override Facet Facets => Facet.Text | Facet.Picture | Facet.Layout | Facet.Fades | Facet.Effects;
         public string Text { get; set; } = "";
-        public string Font { get; set; } = "";
-        public int Size { get; set; } = 48;
-        public string Color { get; set; } = "#fff";
+        public TextStyle Style { get; set; } = TextStyle.Default;
+        public LayerTransform Layout { get; set; } = LayerTransform.Default;
+    }
+
+    /// <summary>A still picture from the library, held for as long as the clip lasts.</summary>
+    public sealed class ImageClip : Clip, ICroppable, ILayerClip
+    {
+        /// <summary>How long a still lasts when it is first placed.</summary>
+        public const double DefaultDurationSec = 5;
+
+        public override ClipKind Kind => ClipKind.Image;
+        [JsonIgnore]
+        public override string DisplayName => "Image clip";
+        [JsonIgnore]
+        public override string? MediaId => SourceId;
+        [JsonIgnore]
+        public override Facet Facets => Facet.Picture | Facet.Crop | Facet.Layout | Facet.Fades | Facet.Effects | Facet.Source;
+        public string SourceId { get; set; } = "";
+        public LayerTransform Layout { get; set; } = LayerTransform.Default;
+        public double CropL { get; set; }
+        public double CropT { get; set; }
+        public double CropR { get; set; }
+        public double CropB { get; set; }
     }
 }

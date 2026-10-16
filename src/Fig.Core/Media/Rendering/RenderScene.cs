@@ -26,6 +26,12 @@ namespace Fig.Core.Media
         public required DecodedFrame Frame { get; init; }
         public IReadOnlyList<EffectCall> Effects { get; init; } = Array.Empty<EffectCall>();
         public SceneCrop Crop { get; init; } = SceneCrop.None;
+
+        /// <summary>
+        /// True for a drawn layer (text, a still image): <see cref="Frame"/> is premultiplied BGRA whose alpha
+        /// says where it covers what is below. Decoded video is opaque (its alpha is ignored).
+        /// </summary>
+        public bool HasAlpha { get; init; }
     }
 
     /// <summary>One layer: a single source, or a transition between two. Opacity already includes fades.</summary>
@@ -49,6 +55,22 @@ namespace Fig.Core.Media
         public required int Width { get; init; }
         public required int Height { get; init; }
         public required IReadOnlyList<RenderLayer> Layers { get; init; }
+    }
+
+    /// <summary>
+    /// Draws the clips that are drawn rather than decoded (<see cref="ILayerClip"/>: text, still images) into a
+    /// transparent, frame-sized, premultiplied BGRA picture. The returned frame belongs to the rasterizer (it
+    /// may cache it): callers must not change it or return it to the frame pool.
+    /// </summary>
+    public interface ILayerRasterizer
+    {
+        DecodedFrame? Rasterize(Clip clip, int width, int height, double localT);
+
+        /// <summary>
+        /// The size of what the layer draws before its layout scales and turns it, as a share of the frame height
+        /// (the gizmo's box). Null when there is nothing to draw.
+        /// </summary>
+        LayerSize? Measure(Clip clip, int width, int height);
     }
 
     /// <summary>Draws a <see cref="RenderScene"/> into a BGRA canvas. Implemented on the CPU here and on the GPU in the app.</summary>

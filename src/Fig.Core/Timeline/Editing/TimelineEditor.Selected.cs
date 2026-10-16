@@ -27,12 +27,54 @@ namespace Fig.Core.Timeline
             var keys = Selection.Items;
             if (keys.Count == 0)
                 return null;
-            var behavior = SelectionGroups.Of(keys[0].Group);
-            if (behavior.Delete is null)
+            // things that sit on clips and tracks go before the clips and tracks that hold them
+            var groups = keys.GroupBy(k => k.Group)
+                .Where(g => SelectionGroups.Of(g.Key).Delete is not null)
+                .OrderBy(g => DeleteOrder.IndexOf(g.Key))
+                .ToList();
+            if (groups.Count == 0)
                 return null;
-            var count = behavior.Delete(this, keys);
-            return count > 0 ? (count, behavior.Noun) : null;
+
+            var total = 0;
+            var nouns = new List<string>();
+            using (History.Group())
+            {
+                foreach (var group in groups)
+                {
+                    var behavior = SelectionGroups.Of(group.Key);
+                    // each group's delete sees just its own items selected (some read the selection)
+                    Selection.Replace(group);
+                    var removed = behavior.Delete!(this, group.ToList());
+                    total += removed;
+                    if (removed > 0)
+                        nouns.Add(behavior.Noun);
+                }
+            }
+            Selection.Clear();
+            return total > 0 ? (total, nouns.Count == 1 ? nouns[0] : "item") : null;
         }
+
+        /// <summary>Selects everything on the timeline: every clip, every effect bar (on tracks and clips) and every marker.</summary>
+        public void SelectAll()
+        {
+            var keys = new List<SelectionKey>();
+            foreach (var track in Document.Tracks)
+            {
+                keys.AddRange(track.Effects.Select(fx => new SelectionKey(SelectionGroup.Effect, fx.Id, track.Id)));
+                foreach (var clip in track.Clips)
+                    keys.AddRange(clip.Effects.Select(fx => new SelectionKey(SelectionGroup.Effect, fx.Id, clip.Id)));
+            }
+            keys.AddRange(AllMarkers().Select(m => new SelectionKey(SelectionGroup.Marker, m.Marker.Id)));
+            // clips last, so the primary item (what single-item panels show) is a clip
+            keys.AddRange(Document.Tracks.SelectMany(t => t.Clips).Select(c => c.Key));
+            Selection.Replace(keys);
+        }
+
+        private static readonly List<SelectionGroup> DeleteOrder =
+        [
+            SelectionGroup.Effect, SelectionGroup.Marker, SelectionGroup.Transition,
+            SelectionGroup.Clip, SelectionGroup.Track, SelectionGroup.Media,
+        ];
 
         /// <summary>What the status bar says about the selection, and a hint for what to do next.</summary>
         public (string Summary, string Hint) DescribeSelection()
@@ -40,8 +82,15 @@ namespace Fig.Core.Timeline
             var items = Selected;
             if (items.Count == 0)
                 return ("Nothing selected", "Click a clip to select it · drag empty space to box-select · Space plays · M adds a marker");
-            var behavior = SelectionGroups.Of(items[0].Key.Group);
-            return (behavior.Summary(items), behavior.Hint(items.Count));
+            var groups = items.GroupBy(item => item.Key.Group).ToList();
+            if (groups.Count == 1)
+            {
+                var behavior = SelectionGroups.Of(groups[0].Key);
+                return (behavior.Summary(items), behavior.Hint(items.Count));
+            }
+            // a mixed selection: say what is in it, group by group
+            var summary = string.Join(" · ", groups.Select(g => SelectionGroups.Of(g.Key).Summary(g.ToList())));
+            return (summary, "Delete removes everything selected · Ctrl-click adds or removes · Esc clears");
         }
 
         /// <summary>Everything selected that still exists, in the order it was picked.</summary>

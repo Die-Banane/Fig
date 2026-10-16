@@ -6,9 +6,9 @@ namespace Fig.Core.Timeline
 {
     /// <summary>
     /// What is selected, as one ordered list of keys. Clips, tracks, markers, transitions and effect bars
-    /// are all the same kind of entry; the list only ever holds one <see cref="SelectionGroup"/> (picking
-    /// something from another group replaces it). The clip/marker/effect members below are views over that
-    /// list for the callers that only care about one group.
+    /// are all the same kind of entry, and one selection can hold any mix of them (clips and effect bars and
+    /// markers at once). A plain pick replaces everything; Ctrl/Shift picks add to it. The clip/marker/effect
+    /// members below are views over that list for the callers that only care about one group.
     /// </summary>
     public class SelectionState
     {
@@ -33,7 +33,7 @@ namespace Fig.Core.Timeline
         /// <summary>Selects exactly this item.</summary>
         public void Replace(SelectionKey key) => Replace(new[] { key });
 
-        /// <summary>Selects exactly these items (which must be of one group; the first item's group wins).</summary>
+        /// <summary>Selects exactly these items (of any groups).</summary>
         public void Replace(IEnumerable<SelectionKey> keys)
         {
             var next = Distinct(keys);
@@ -44,13 +44,11 @@ namespace Fig.Core.Timeline
             Changed?.Invoke();
         }
 
-        /// <summary>Adds an item to the selection (or replaces the selection when it is of another group).</summary>
+        /// <summary>Adds an item to the selection, whatever else is selected.</summary>
         public void Add(SelectionKey key)
         {
             if (_items.Contains(key))
                 return;
-            if (_items.Count > 0 && _items[0].Group != key.Group)
-                _items.Clear();
             _items.Add(key);
             Changed?.Invoke();
         }
@@ -71,6 +69,13 @@ namespace Fig.Core.Timeline
                 Add(key);
         }
 
+        /// <summary>
+        /// Makes <paramref name="keys"/> the selected items of <paramref name="group"/>, leaving the other groups
+        /// selected as they are (Ctrl-clicking a clip while effect bars are selected keeps the bars).
+        /// </summary>
+        public void SetGroup(SelectionGroup group, IEnumerable<SelectionKey> keys)
+            => Replace(_items.Where(k => k.Group != group).Concat(keys.Where(k => k.Group == group)));
+
         public void Clear()
         {
             if (_items.Count == 0)
@@ -85,8 +90,6 @@ namespace Fig.Core.Timeline
             var result = new List<SelectionKey>();
             foreach (var key in keys)
             {
-                if (result.Count > 0 && result[0].Group != key.Group)
-                    continue;
                 if (!result.Contains(key))
                     result.Add(key);
             }
@@ -112,7 +115,13 @@ namespace Fig.Core.Timeline
 
         /// <summary>Replaces the selection with these clips in one notification (used after split so the right halves stay selected).</summary>
         public void SelectClips(IEnumerable<string> clipIds)
-            => Replace(clipIds.Where(id => !string.IsNullOrEmpty(id)).Select(id => new SelectionKey(SelectionGroup.Clip, id)));
+            => Replace(ClipKeys(clipIds));
+
+        /// <summary>Makes these the selected clips, keeping whatever else is selected (a Ctrl/Shift pick).</summary>
+        public void SetClips(IEnumerable<string> clipIds) => SetGroup(SelectionGroup.Clip, ClipKeys(clipIds));
+
+        private static IEnumerable<SelectionKey> ClipKeys(IEnumerable<string> clipIds)
+            => clipIds.Where(id => !string.IsNullOrEmpty(id)).Select(id => new SelectionKey(SelectionGroup.Clip, id));
 
         // ---- tracks ---------------------------------------------------------------------------
 
@@ -167,11 +176,8 @@ namespace Fig.Core.Timeline
             {
                 if (value is null)
                 {
-                    if (_items.Count > 0 && _items[0].Group == SelectionGroup.Marker)
-                    {
-                        _markerAnchorId = null;
-                        Clear();
-                    }
+                    _markerAnchorId = null;
+                    SetGroup(SelectionGroup.Marker, Array.Empty<SelectionKey>());
                 }
                 else
                     SelectMarker(value);
@@ -188,12 +194,13 @@ namespace Fig.Core.Timeline
             Replace(ids.Select(id => new SelectionKey(SelectionGroup.Marker, id)));
         }
 
+        /// <summary>Adds the marker to the selection, or takes it out (anything else selected stays).</summary>
         public void ToggleMarker(string markerId)
         {
-            var next = SelectedMarkerIds.ToList();
-            if (!next.Remove(markerId))
-                next.Add(markerId);
-            SelectMarkers(next);
+            Toggle(new SelectionKey(SelectionGroup.Marker, markerId));
+            // Shift-click ranges keep measuring from the anchor while it is still selected
+            if (!SelectedMarkerIds.Contains(_markerAnchorId ?? ""))
+                _markerAnchorId = SelectedMarkerIds.FirstOrDefault();
         }
 
         public void SelectMarkerRange(string markerId, IReadOnlyList<string> orderedIds, bool additive = false)
@@ -208,8 +215,13 @@ namespace Fig.Core.Timeline
             }
             var range = ids.Skip(Math.Min(start, end)).Take(Math.Abs(end - start) + 1);
             // in timeline order, however the markers were picked
-            var chosen = additive ? SelectedMarkerIds.Concat(range).Distinct().OrderBy(id => ids.IndexOf(id)).ToArray() : range;
-            SelectMarkers(chosen, _markerAnchorId);
+            if (!additive)
+            {
+                SelectMarkers(range, _markerAnchorId);
+                return;
+            }
+            var chosen = SelectedMarkerIds.Concat(range).Distinct().OrderBy(id => ids.IndexOf(id));
+            SetGroup(SelectionGroup.Marker, chosen.Select(id => new SelectionKey(SelectionGroup.Marker, id)));
         }
 
         // ---- effect bars ----------------------------------------------------------------------
@@ -227,13 +239,11 @@ namespace Fig.Core.Timeline
         /// <summary>Selects exactly one effect bar.</summary>
         public void SelectEffect(string clipId, string effectId) => SelectEffects(new[] { (clipId, effectId) });
 
-        /// <summary>Selects exactly these effect bars, or adds them to the current effect selection.</summary>
+        /// <summary>Selects exactly these effect bars, or adds them to whatever is selected.</summary>
         public void SelectEffects(IEnumerable<(string ClipId, string EffectId)> effects, bool additive = false)
         {
             var keys = effects.Select(e => new SelectionKey(SelectionGroup.Effect, e.EffectId, e.ClipId));
-            if (additive && _items.Count > 0 && _items[0].Group == SelectionGroup.Effect)
-                keys = _items.Concat(keys);
-            Replace(keys);
+            Replace(additive ? _items.Concat(keys) : keys);
         }
 
         /// <summary>Adds the effect bar to the selection, or takes it out when it is already in.</summary>

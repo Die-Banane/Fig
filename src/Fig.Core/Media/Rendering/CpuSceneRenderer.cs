@@ -49,7 +49,7 @@ namespace Fig.Core.Media
                     var frame = FramePool.MakeDistinct(layer.Source.Frame, seen, rented);
                     frame = EffectPipeline.ApplyCalls(frame, layer.Source.Effects, rented);
                     RectI? crop;
-                    if (layer.Effects.Count > 0)
+                    if (layer.Effects.Count > 0 && !layer.Source.HasAlpha)
                     {
                         // track effects see the cropped picture, so the crop cannot wait for the compositor
                         frame = ApplyCrop(frame, layer.Source.Crop, width, height, rented);
@@ -57,8 +57,16 @@ namespace Fig.Core.Media
                         crop = null;
                     }
                     else
+                    {
+                        // a drawn layer keeps its transparency, so its track effects run on it directly
+                        if (layer.Source.HasAlpha)
+                            frame = EffectPipeline.ApplyCalls(frame, layer.Effects, rented);
                         crop = ToPixelCrop(layer.Source.Crop, width, height);
-                    composites.Add(new CompositeLayer { Frame = frame, Opacity = layer.Opacity, Crop = crop });
+                    }
+                    composites.Add(new CompositeLayer
+                    {
+                        Frame = frame, Opacity = layer.Opacity, Crop = crop, Premultiplied = layer.Source.HasAlpha,
+                    });
                 }
                 FrameCompositor.ComposeInto(composites, width, height, canvas, ref cropScratch);
             }

@@ -266,7 +266,7 @@ Design: `uml/media/effects-graph-schema.puml`, `uml/media/effects-graph-pipeline
 ### 3.15 Effect bars on the timeline
 | ID | Requirement | Priority | Status |
 | --- | --- | --- | --- |
-| FR-170 | Effect bars SHALL be selectable one at a time and as a group: Shift-click or Ctrl-click adds or removes a bar, and a box dragged from empty space in the effect strip selects the bars it touches (clips are not selected by such a box). | P0 | X |
+| FR-170 | Effect bars SHALL be selectable one at a time and as a group: Shift-click or Ctrl-click adds or removes a bar, and a box dragged from empty space selects every clip and effect bar it touches. | P0 | X |
 | FR-171 | Dragging one bar of a group SHALL move every selected bar by the same amount, keyframes included and spacing preserved, as one undo step. | P0 | X |
 | FR-172 | Delete SHALL remove every selected effect bar as one undo step. | P0 | X |
 
@@ -286,10 +286,12 @@ Design: `uml/playback/gpu-render-schema.puml`, `uml/playback/gpu-render-sequence
 | ID | Requirement | Priority | Status |
 | --- | --- | --- | --- |
 | FR-190 | Clips (video, audio, text), tracks, markers, transitions, effect bars and library media SHALL all be selectable things that declare a name and the facets they can be edited as. Nothing else in the app SHALL need to ask which kind of thing is selected. | P0 | X |
-| FR-191 | The selection SHALL be one ordered list holding one group at a time; picking something from another group SHALL replace it. | P0 | X |
+| FR-191 | The selection SHALL be one ordered list that can hold any mix of clips, effect bars, markers, transitions and tracks. A plain click SHALL replace it; Ctrl/Shift-click SHALL add to it; Ctrl+A SHALL select every clip, effect bar and marker (every marker, when only markers are selected). Delete SHALL remove everything selected as one undo step, and dragging a clip SHALL carry the selected effect bars (and dragging a track's effect bar the selected clips) as one undo step. | P0 | X |
 | FR-192 | The inspector SHALL show one tab per facet that every selected item has, icon-only, and keep the open tab while values are edited. | P0 | X |
 | FR-193 | Delete and the status bar text SHALL come from the selected things, through one table of per-group behaviour. | P0 | X |
 | FR-194 | A rack row (level, fades) SHALL be able to open its tab by facet. | P1 | X |
+| FR-194a | Trimming a clip into its neighbour SHALL push the neighbour (and any clip it then touches, with their linked partners) rather than overlap it; pulling the trim back SHALL let them return; the trim and the pushes SHALL be one undo step. A leftward push SHALL stop at the start of the timeline. | P0 | X |
+| FR-194b | The outer edge of a clip SHALL always trim; fade handles SHALL only be grabbed in the top half of a clip, so a trim never catches a fade. | P0 | X |
 
 Design: `uml/domain/selection-schema.puml`, `uml/domain/selection-sequence.puml`.
 
@@ -298,19 +300,21 @@ Design: `uml/domain/selection-schema.puml`, `uml/domain/selection-sequence.puml`
 | --- | --- | --- | --- |
 | FR-195 | Recording a keyframe (the stopwatch) SHALL only add keyframes; clearing every keyframe SHALL be a separate, explicit, undoable action. | P0 | X |
 | FR-196 | The window SHALL draw its own title bar with the menus, the project name and save state, project actions and the window buttons in it, and its own resize edges. | P1 | X |
-| FR-197 | Menus and context menus SHALL be drawn in the app's theme (rounded, padded, no mnemonic underlines), and moving over another menu while one is open SHALL open that one. | P1 | X |
+| FR-197 | The menu bar SHALL be a standard `Menu` of `MenuItem`s with access keys, drawn in the app's theme (rounded, padded); context menus SHALL use the same theme. | P1 | X |
 | FR-198 | The interface SHALL be flat and soft: panels told apart by tone rather than outlines or shadows, generous corner radii, and all colours and radii defined once in the theme. | P1 | X |
 | FR-199 | There SHALL be no separate "focus preview" mode; the panels are shown and hidden individually. | P2 | X |
 
-### 3.19 Text and image layers (drafted)
+### 3.19 Text and image layers
 | ID | Requirement | Priority | Status |
 | --- | --- | --- | --- |
-| FR-200 | An image from the library SHALL be placeable on a video track as a clip with a default length, and selectable like any clip (picture, fades, effects, file). | P1 | - |
-| FR-201 | A text clip SHALL carry its text and style (font, weight, size as a share of the frame height, colour, opacity, alignment, shadow, background) and be edited in a Text tab. | P1 | - |
-| FR-202 | Text and image clips SHALL be positioned, scaled and rotated with handles on the preview, with keyframes. | P1 | - |
-| FR-203 | Text and image layers SHALL composite with their own transparency, identically in the preview, on the GPU and in export. | P1 | - |
+| FR-200 | An image from the library SHALL be placeable on a video track as a clip with a default length, and selectable like any clip (picture, crop, position, fades, effects, file). | P1 | X |
+| FR-201 | A text clip SHALL carry its text and style (font, bold, italic, size as a share of the frame height, colour, alignment, shadow, background) and be edited in a Text tab; titles SHALL be added from the library's Text tab by a click (at the playhead) or a drag (onto the timeline), as one undo step. | P1 | X |
+| FR-202 | Text and image clips SHALL be positioned, scaled and rotated in a Position tab, and with a gizmo on the preview (click a layer to select it; drag to move, a corner to scale, the knob to turn; every selected layer follows; one undo step per drag), with keyframes. | P1 | O |
+| FR-205 | Moving a layer on the preview SHALL snap its centre to the middle of the frame (Ctrl places freely), and turning it SHALL step by 15° with Shift. | P2 | X |
+| FR-203 | Text and image layers SHALL composite with their own transparency, identically in the preview, on the GPU and in export. | P1 | X |
+| FR-204 | An inspector edit SHALL apply to every selected clip that has the facet being edited (and the clips linked to them), as one undo step; a slider drag SHALL be one step. Speed stays on the primary clip, because it ripples. | P0 | X |
 
-Design (draft): `uml/domain/text-image-layers-schema.puml`, `uml/domain/text-image-layers-sequence.puml`. `TextClip` and `ClipKind.Text` exist in the model; nothing draws or edits them yet.
+Design: `uml/domain/text-image-layers-schema.puml`, `uml/domain/text-image-layers-sequence.puml`. Gizmo: `uml/domain/layer-gizmo-schema.puml`, `uml/domain/layer-gizmo-sequence.puml`. FR-202 is partial: the Position tab and the gizmo work; layout keyframes are not built.
 
 ### 3.20 Preferences
 | ID | Requirement | Priority | Status |
@@ -322,7 +326,9 @@ Design (draft): `uml/domain/text-image-layers-schema.puml`, `uml/domain/text-ima
 | FR-214 | Values SHALL be clamped back into range after loading and before saving. | P1 | X |
 | FR-215 | Preferences SHALL open as an in-window page (File, Preferences; Ctrl+Comma), one page per section, with "Reset to defaults" per page. | P1 | X |
 | FR-216 | The export dialog SHALL start from the user's export quality and folder. | P1 | X |
-| FR-217 | Key bindings SHALL be editable on a Keyboard page backed by `GestureRegistry`, compatible with a hand-edited `gestures.json`. | P2 | - |
+| FR-217 | The window's keyboard shortcuts SHALL come from one table (`ShortcutCatalog`) plus the user's changes, and SHALL be rebindable on a Keyboard page (click, press keys, Esc cancels); keys another action has SHALL be taken from it; each shortcut can be removed or reset. Shortcuts that are typed characters SHALL never fire while a text box has focus. | P1 | X |
+| FR-219 | A Rendering page SHALL choose the renderer (Automatic, GPU, CPU) for the preview and for exports, and say whether the window's canvas is GPU-backed. | P1 | X |
+| FR-220 | A Storage page SHALL list Fig's folders with their sizes and open them, and SHALL clear the previews and proxies of every project that isn't open. | P2 | X |
 | FR-218 | Remembered state (panel sizes, open tabs, zoom) SHALL stay automatic and SHALL NOT appear as preferences. | P2 | X |
 
 Design: `uml/persistence/preferences-schema.puml`, `uml/persistence/preferences-sequence.puml`; the first set of preferences is in `docs/preferences.md`. The editor's Snap, Link, Loop and Audio scrubbing toggles are preferences: they start from the saved value and flipping one saves it.
