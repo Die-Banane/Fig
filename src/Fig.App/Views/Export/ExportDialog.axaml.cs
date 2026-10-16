@@ -18,10 +18,14 @@ public partial class ExportDialog : Window
     }
 
     public ExportDialog(double fps, int defaultWidth, int defaultHeight, TimelineModel? timeline = null,
-        string projectName = "", bool chapterMode = false)
+        string projectName = "", bool chapterMode = false, Fig.App.Services.ExportPreferences? defaults = null)
     {
         Model = new ExportDialogViewModel(fps, defaultWidth, defaultHeight, timeline) { ProjectName = projectName };
-        var videos = Environment.GetFolderPath(Environment.SpecialFolder.MyVideos);
+        if (defaults is not null)
+            Model.Quality = defaults.Quality;
+        var videos = defaults?.Folder is { Length: > 0 } folder && Directory.Exists(folder)
+            ? folder
+            : Environment.GetFolderPath(Environment.SpecialFolder.MyVideos);
         if (string.IsNullOrEmpty(videos))
             videos = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         var safeName = string.IsNullOrWhiteSpace(projectName) ? "export" : projectName.Trim();

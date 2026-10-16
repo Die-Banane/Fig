@@ -371,6 +371,7 @@ public partial class EditorViewModel : ViewModelBase
     {
         if (Editor is not null)
             Editor.MagneticSnap = value;
+        Remember(p => p.Editing.Snap = value);
     }
 
     private bool _constructed;
@@ -378,9 +379,10 @@ public partial class EditorViewModel : ViewModelBase
     private System.Threading.CancellationTokenSource? _autosaveCts;
     private readonly object _autosaveLock = new();
 
-    public EditorViewModel(GestureRegistry gestures)
+    public EditorViewModel(GestureRegistry gestures, PreferenceService? preferences = null)
     {
         Gestures = gestures;
+        AttachPreferences(preferences ?? new PreferenceService());
         SelectedLibraryTab = LibraryTabs[0];
         RefreshEffectFilter();
         RefreshTransitionFilter();
@@ -871,7 +873,7 @@ public partial class EditorViewModel : ViewModelBase
     {
         try
         {
-            await Task.Delay(TimeSpan.FromMilliseconds(800), token);
+            await Task.Delay(TimeSpan.FromSeconds(Preferences.Current.General.AutosaveSeconds), token);
             if (token.IsCancellationRequested)
                 return;
 
@@ -925,7 +927,7 @@ public partial class EditorViewModel : ViewModelBase
     {
         Beats.Cancel();
         UnwireEditorEvents(Editor);
-        Editor = new TimelineEditor(timeline);
+        Editor = new TimelineEditor(timeline, Preferences.Current.Editing.UndoSteps);
         Editor.MediaResolver = FindAssetById;
         Editor.MagneticSnap = MagneticSnap;
         Editor.RefreshTrackIndices();
@@ -1559,7 +1561,8 @@ public partial class EditorViewModel : ViewModelBase
 
         var timeline = Editor.Document;
         var settings = Project.Export;
-        var dialog = new ExportDialog(timeline.Rate.Fps, settings.Width, settings.Height, timeline, Project.Name, chapterMode);
+        var dialog = new ExportDialog(timeline.Rate.Fps, settings.Width, settings.Height, timeline, Project.Name, chapterMode,
+            Preferences.Current.Export);
         dialog.Model.CreateRangesFromBookmarks = () => CreateRangesFromBookmarksAsync(dialog);
         var options = await dialog.ShowDialog<ExportOptions?>(owner);
         if (options is null)
@@ -1750,13 +1753,13 @@ public partial class EditorViewModel : ViewModelBase
         Media.Remove(asset);
     }
 
-    private static TimelineEditor CreateSeededEditor()
+    private TimelineEditor CreateSeededEditor()
     {
         var timeline = new TimelineModel
         {
             Rate = FrameRate.Common(30),
         };
-        var editor = new TimelineEditor(timeline);
+        var editor = new TimelineEditor(timeline, Preferences.Current.Editing.UndoSteps);
         editor.EnsureTrack(TrackKind.Video);
         editor.EnsureTrack(TrackKind.Audio);
         return editor;

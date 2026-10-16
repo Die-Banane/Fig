@@ -28,6 +28,7 @@ public partial class EditorViewModel
     {
         if (Playback is not null)
             Playback.AudioScrubEnabled = value;
+        Remember(p => p.Playback.AudioScrub = value);
         StatusHint = value ? "Audio scrubbing on" : "Audio scrubbing off";
     }
 

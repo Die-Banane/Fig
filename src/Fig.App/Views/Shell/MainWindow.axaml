@@ -26,6 +26,7 @@
         <KeyBinding Gesture="Ctrl+D" Command="{Binding Editor.DuplicateSelectedCommand}"/>
         <KeyBinding Gesture="Ctrl+L" Command="{Binding Editor.ToggleLoopCommand}"/>
         <KeyBinding Gesture="Ctrl+W" Command="{Binding CloseProjectCommand}"/>
+        <KeyBinding Gesture="Ctrl+OemComma" Command="{Binding OpenPreferencesCommand}"/>
         <KeyBinding Gesture="Left" Command="{Binding Editor.StepBackFrameCommand}"/>
         <KeyBinding Gesture="Right" Command="{Binding Editor.StepForwardFrameCommand}"/>
         <KeyBinding Gesture="Shift+Left" Command="{Binding Editor.StepBackSecondCommand}"/>
@@ -39,6 +40,8 @@
             <views:TitleBar Grid.Row="0"/>
             <ContentControl Grid.Row="1" Content="{Binding CurrentView}"/>
         </Grid>
+        <!-- the Preferences page sits over everything below the title bar -->
+        <ContentControl Margin="0,46,0,0" Content="{Binding PreferencesPage}" IsVisible="{Binding IsPreferencesOpen}"/>
         <views:ToastHost DataContext="{Binding Toasts}"/>
         <!-- gives export access to the GPU (the render thread owns the context); one pixel, draws nothing -->
         <render:GpuJobHost HorizontalAlignment="Left" VerticalAlignment="Bottom"/>

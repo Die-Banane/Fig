@@ -16,10 +16,11 @@ namespace Fig.Core.Timeline
 
         public event Action? TimelineChanged;
 
-        public TimelineEditor(Timeline document)
+        /// <param name="undoSteps">How many edits can be undone before the oldest are forgotten.</param>
+        public TimelineEditor(Timeline document, int undoSteps = 100)
         {
             Document = document;
-            History = new CommandHistory();
+            History = new CommandHistory(undoSteps);
             Selection = new SelectionState();
         }
 

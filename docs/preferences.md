@@ -1,6 +1,6 @@
 # Preferences (draft)
 
-Status: **drafted, not built.** Design: `uml/persistence/preferences-schema.puml`, `uml/persistence/preferences-sequence.puml`. Requirements: FR-210 to FR-219 in `software_requirements.md`.
+Status: **built** for General, Editing, Playback and Export (see below); the Keyboard, Rendering, Storage and Appearance pages are not built yet. Design: `uml/persistence/preferences-schema.puml`, `uml/persistence/preferences-sequence.puml`. Requirements: FR-210 to FR-218 in `software_requirements.md`.
 
 ## What is configurable today
 

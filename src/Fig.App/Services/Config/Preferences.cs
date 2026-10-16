@@ -33,10 +33,7 @@ namespace Fig.App.Services
             General.AutosaveSeconds = Math.Clamp(General.AutosaveSeconds, 0.2, 30);
             Editing.SnapReachPx = Math.Clamp(Editing.SnapReachPx, 2, 40);
             Editing.UndoSteps = Math.Clamp(Editing.UndoSteps, 10, 1000);
-            Export.Width = Math.Clamp(Export.Width, 16, 8192);
-            Export.Height = Math.Clamp(Export.Height, 16, 8192);
-            Export.Fps = Math.Clamp(Export.Fps, 1, 240);
-            Export.Crf = Math.Clamp(Export.Crf, 0, 51);
+            Export.Quality = Math.Clamp(Export.Quality, 0, 51);
         }
     }
 
@@ -48,9 +45,11 @@ namespace Fig.App.Services
 
     public sealed class EditingPreferences
     {
+        /// <summary>Clips snap to edges, markers and the playhead (the Snap toggle).</summary>
+        public bool Snap { get; set; } = true;
         public double SnapReachPx { get; set; } = 9;
-        public bool SnapByDefault { get; set; } = true;
-        public bool LinkByDefault { get; set; } = true;
+        /// <summary>Selecting a clip selects its linked audio or video too (the Link toggle).</summary>
+        public bool LinkedSelection { get; set; } = true;
         public int UndoSteps { get; set; } = 100;
     }
 
@@ -62,10 +61,9 @@ namespace Fig.App.Services
 
     public sealed class ExportPreferences
     {
-        public int Width { get; set; } = 1920;
-        public int Height { get; set; } = 1080;
-        public int Fps { get; set; } = 30;
-        public int Crf { get; set; } = 23;
+        /// <summary>H.264 CRF the export dialog starts at (lower is better).</summary>
+        public int Quality { get; set; } = 23;
+        /// <summary>Where exports go; null means the Videos folder.</summary>
         public string? Folder { get; set; }
     }
 }

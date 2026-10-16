@@ -78,6 +78,8 @@
                         <MenuItem Header="Export marked ranges…" Command="{Binding Editor.ExportMarkedRangesCommand}"
                                   CommandParameter="{Binding #TitleRoot.Owner}" IsEnabled="{Binding IsEditing}"/>
                         <Separator/>
+                        <MenuItem Header="Preferences…" Command="{Binding OpenPreferencesCommand}" InputGesture="Ctrl+OemComma"/>
+                        <Separator/>
                         <MenuItem Header="Close project" Command="{Binding CloseProjectCommand}" CommandParameter="{Binding #TitleRoot.Owner}"
                                   InputGesture="Ctrl+W" IsEnabled="{Binding IsEditing}"/>
                         <Separator/>

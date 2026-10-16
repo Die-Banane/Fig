@@ -14,7 +14,8 @@ namespace Fig.App.Views
     public partial class TimelineView
     {
         /// <summary>How close (screen pixels) something must be to snap to it.</summary>
-        private const double SnapReachPx = 9;
+        /// <summary>How close (in pixels) something has to be to snap; a preference.</summary>
+        private double SnapReachPx => _editorVm?.Preferences.Current.Editing.SnapReachPx ?? 9;
 
         private static readonly IBrush SnapGuideBrush = new SolidColorBrush(Color.FromArgb(230, 0xff, 0xd6, 0x0a));
 

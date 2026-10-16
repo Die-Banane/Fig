@@ -315,17 +315,17 @@ Design (draft): `uml/domain/text-image-layers-schema.puml`, `uml/domain/text-ima
 ### 3.20 Preferences
 | ID | Requirement | Priority | Status |
 | --- | --- | --- | --- |
-| FR-210 | Preferences SHALL be one typed class, grouped into sections, whose property initial values are the defaults. | P1 | O |
-| FR-211 | One shared `PreferenceService`, created at startup, SHALL be passed to everything that reads preferences; nothing SHALL read them from a static. | P1 | O |
+| FR-210 | Preferences SHALL be one typed class, grouped into sections, whose property initial values are the defaults. | P1 | X |
+| FR-211 | One shared `PreferenceService`, created at startup, SHALL be passed to everything that reads preferences; nothing SHALL read them from a static. | P1 | X |
 | FR-212 | Preferences SHALL be stored in `~/.fig/preferences.json`. | P1 | X |
 | FR-213 | Saving SHALL be atomic; a damaged file SHALL be kept as `.bad` and defaults used; a failed write SHALL NOT crash the app; keys the build doesn't know SHALL survive a save. | P1 | X |
 | FR-214 | Values SHALL be clamped back into range after loading and before saving. | P1 | X |
-| FR-215 | Preferences SHALL open as an in-window page (File, Preferences; Ctrl+Comma), one page per section, with "Reset to defaults" per page. | P1 | - |
-| FR-216 | Export SHALL default to the user's export preferences. | P1 | - |
+| FR-215 | Preferences SHALL open as an in-window page (File, Preferences; Ctrl+Comma), one page per section, with "Reset to defaults" per page. | P1 | X |
+| FR-216 | The export dialog SHALL start from the user's export quality and folder. | P1 | X |
 | FR-217 | Key bindings SHALL be editable on a Keyboard page backed by `GestureRegistry`, compatible with a hand-edited `gestures.json`. | P2 | - |
 | FR-218 | Remembered state (panel sizes, open tabs, zoom) SHALL stay automatic and SHALL NOT appear as preferences. | P2 | X |
 
-Design: `uml/persistence/preferences-schema.puml`, `uml/persistence/preferences-sequence.puml`; the first set of preferences is in `docs/preferences.md`. FR-210 and FR-211 are partial: the model and service exist, but nothing reads them yet.
+Design: `uml/persistence/preferences-schema.puml`, `uml/persistence/preferences-sequence.puml`; the first set of preferences is in `docs/preferences.md`. The editor's Snap, Link, Loop and Audio scrubbing toggles are preferences: they start from the saved value and flipping one saves it.
 
 ---
 

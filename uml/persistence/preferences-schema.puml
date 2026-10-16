@@ -19,9 +19,9 @@ class GeneralPreferences {
 }
 
 class EditingPreferences {
+  + Snap : bool = true
   + SnapReachPx : double = 9
-  + SnapByDefault : bool = true
-  + LinkByDefault : bool = true
+  + LinkedSelection : bool = true
   + UndoSteps : int = 100
 }
 
@@ -31,10 +31,7 @@ class PlaybackPreferences {
 }
 
 class ExportPreferences {
-  + Width : int = 1920
-  + Height : int = 1080
-  + Fps : int = 30
-  + Crf : int = 23
+  + Quality : int = 23
   + Folder : string?
 }
 
@@ -42,8 +39,55 @@ class PreferenceService {
   - _loader : PreferenceLoader
   + Current : Preferences
   + Changed : event Action
+  + PreferenceService()
   + PreferenceService(loader : PreferenceLoader)
   + Save() : void
+}
+
+class PreferencesViewModel {
+  + Pages : PreferencePageViewModel[]
+  + SelectedPage : PreferencePageViewModel
+  + Close() : void
+}
+
+abstract class PreferencePageViewModel {
+  # Service : PreferenceService
+  + Title : string
+  + Icon : string
+  + ResetToDefaults() : void
+  # Apply(change : Action<Preferences>) : void
+}
+
+class GeneralPageViewModel {
+  + AutosaveSeconds : double
+  + AskBeforeClosingUnsaved : bool
+}
+
+class EditingPageViewModel {
+  + Snap : bool
+  + SnapReachPx : double
+  + LinkedSelection : bool
+  + UndoSteps : int
+}
+
+class PlaybackPageViewModel {
+  + AudioScrub : bool
+  + Loop : bool
+}
+
+class ExportPageViewModel {
+  + Quality : int
+  + Folder : string
+}
+
+class PreferencesView
+class AppViewModel {
+  + Preferences : PreferenceService
+  + PreferencesPage : PreferencesViewModel?
+  + OpenPreferences() : void
+}
+class EditorViewModel {
+  + Preferences : PreferenceService
 }
 
 class PreferenceLoader {
@@ -59,4 +103,14 @@ Preferences *-- PlaybackPreferences
 Preferences *-- ExportPreferences
 PreferenceService *-- Preferences
 PreferenceService --> PreferenceLoader
+PreferencesViewModel *-- PreferencePageViewModel
+PreferencePageViewModel <|-- GeneralPageViewModel
+PreferencePageViewModel <|-- EditingPageViewModel
+PreferencePageViewModel <|-- PlaybackPageViewModel
+PreferencePageViewModel <|-- ExportPageViewModel
+PreferencePageViewModel --> PreferenceService
+PreferencesView ..> PreferencesViewModel : binds
+AppViewModel --> PreferenceService
+AppViewModel --> PreferencesViewModel : opens
+EditorViewModel --> PreferenceService
 @enduml

@@ -6,6 +6,7 @@ using Avalonia.Media;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Fig.App.Services;
 using Fig.Core.Input;
 using Fig.Core.Project;
 
@@ -26,12 +27,26 @@ public partial class AppViewModel : ViewModelBase
     /// <summary>A project is open in the editor (as opposed to the project list or the loading screen).</summary>
     public bool IsEditing => CurrentView is EditorViewModel;
 
-    public AppViewModel(ProjectStore store, GestureRegistry gestures)
+    /// <summary>The user's preferences; one instance shared by everything.</summary>
+    public PreferenceService Preferences { get; }
+
+    /// <summary>The Preferences page while it is open, otherwise null.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsPreferencesOpen))]
+    private PreferencesViewModel? _preferencesPage;
+
+    public bool IsPreferencesOpen => PreferencesPage is not null;
+
+    [RelayCommand]
+    private void OpenPreferences() => PreferencesPage ??= new PreferencesViewModel(Preferences, () => PreferencesPage = null);
+
+    public AppViewModel(ProjectStore store, GestureRegistry gestures, PreferenceService? preferences = null)
     {
         _store = store;
         Gestures = gestures;
+        Preferences = preferences ?? new PreferenceService();
         Home = new HomeViewModel(store);
-        Editor = new EditorViewModel(gestures);
+        Editor = new EditorViewModel(gestures, Preferences);
         Editor.Notify = msg => Toasts.Show(msg);
         Home.Notify = msg => Toasts.Show(msg);
 
@@ -99,7 +114,9 @@ public partial class AppViewModel : ViewModelBase
     public async Task<bool> CloseProjectAsync(Window? owner)
     {
         var editor = CurrentView as EditorViewModel;
-        if (editor is not null && editor.IsDirty)
+        if (editor is not null && editor.IsDirty && !Preferences.Current.General.AskBeforeClosingUnsaved)
+            editor.SaveNow();
+        else if (editor is not null && editor.IsDirty)
         {
             if (owner is null)
                 return false;

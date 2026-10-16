@@ -9,7 +9,13 @@ namespace Fig.App.Services
     /// </summary>
     public sealed class PreferenceService
     {
-        private readonly PreferenceLoader _loader;
+        private readonly PreferenceLoader? _loader;
+
+        /// <summary>Defaults only, kept in memory and never written (for anything that isn't the running app).</summary>
+        public PreferenceService()
+        {
+            Current = new Preferences();
+        }
 
         public PreferenceService(PreferenceLoader loader)
         {
@@ -28,7 +34,7 @@ namespace Fig.App.Services
             Current.Normalize();
             try
             {
-                _loader.Save(Current);
+                _loader?.Save(Current);
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {

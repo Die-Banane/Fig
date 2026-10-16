@@ -24,10 +24,21 @@ Service -> Service : Current.Normalize()
 Caller -> Service : Current.Editing.SnapReachPx
 Service --> Caller : 9
 
-== change ==
-Caller -> Service : Current.Editing.SnapReachPx = 14
-Caller -> Service : Save()
+== change from the Preferences page ==
+actor User
+participant "EditingPageViewModel" as Page
+User -> App : File > Preferences (Ctrl+,)
+App -> Page : new PreferencesViewModel(service)
+User -> Page : SnapReachPx = 14
+Page -> Service : Current.Editing.SnapReachPx = 14
+Page -> Service : Save()
 Service -> Service : Current.Normalize()
 Service -> Loader : Save(Current)
 Service -> Caller : Changed
+Caller -> Service : re-read what it holds (e.g. Snap)
+
+== change from the editor (a toolbar toggle) ==
+Caller -> Service : Current.Editing.Snap = false
+Caller -> Service : Save()
+Service -> Page : Changed (an open page re-reads)
 @enduml

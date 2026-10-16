@@ -36,7 +36,7 @@ public partial class App : Application
             if (!File.Exists(AppPaths.GestureConfigPath))
                 gestures.Save(AppPaths.GestureConfigPath);
 
-            var app = new AppViewModel(store, gestures);
+            var app = new AppViewModel(store, gestures, preferences);
             desktop.MainWindow = new MainWindow { DataContext = app };
 
             // an unexpected error is logged and named in a toast; the app keeps running
