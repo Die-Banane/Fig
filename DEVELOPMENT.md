@@ -151,3 +151,15 @@ layer compositor are fragment shaders (SkSL, through Skia). Export uses the same
 ```bash
 FIG_SHOT_DIR=/tmp/fig-shots dotnet test tests/Fig.App.Tests
 ```
+
+## Releasing a major version
+
+`.github/workflows/release.yml` builds a release when a `vN.0.0` tag is pushed:
+
+```bash
+git tag v2.0.0 && git push origin v2.0.0
+```
+
+It runs both test projects, then publishes a self-contained Fig for `linux-x64` (`.tar.gz`) and `win-x64` (`.zip`) with FFmpeg 8.1 bundled ([BtbN's GPL shared builds](https://github.com/BtbN/FFmpeg-Builds), which include libx264), and attaches them to a GitHub release with generated notes and a `SHA256SUMS`. The tag's version is stamped into the assemblies. To build any other version, run the workflow by hand from the Actions tab and type the version.
+
+FFmpeg is found in this order: `FFMPEG_ROOT`, then an `ffmpeg/` folder beside the app (how the Linux build ships it), then the system's libraries. The Windows build puts the DLLs beside `Fig.App.exe`.

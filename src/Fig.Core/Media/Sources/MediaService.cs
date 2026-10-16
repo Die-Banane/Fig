@@ -13,7 +13,17 @@ namespace Fig.Core.Media
 
         public MediaService()
         {
-            ffmpeg.RootPath = Environment.GetEnvironmentVariable("FFMPEG_ROOT") ?? "";
+            ffmpeg.RootPath = Environment.GetEnvironmentVariable("FFMPEG_ROOT") ?? BundledFFmpeg() ?? "";
+        }
+
+        /// <summary>
+        /// The FFmpeg libraries a Linux release ships in an <c>ffmpeg</c> folder beside the app, or null to use the
+        /// system's (a development build). A Windows release puts the DLLs beside Fig.App.exe, where Windows looks first.
+        /// </summary>
+        private static string? BundledFFmpeg()
+        {
+            var dir = Path.Combine(AppContext.BaseDirectory, "ffmpeg");
+            return Directory.Exists(dir) ? dir : null;
         }
 
         public unsafe MediaAsset Probe(string path)
