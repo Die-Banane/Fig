@@ -810,7 +810,8 @@ namespace Fig.Core.Media
                                     var samples = (short*)outBuf;
                                     for (var n = 0; n < nMax; n++)
                                     {
-                                        var val = Math.Abs(samples[n]) / 32768f;
+                                        // widen first: Math.Abs(short.MinValue) throws, and clipped audio has it
+                                        var val = Math.Abs((int)samples[n]) / 32768f;
                                         if (val > maxs[bucketIndex]) maxs[bucketIndex] = val;
                                         if (val < mins[bucketIndex]) mins[bucketIndex] = val;
 
