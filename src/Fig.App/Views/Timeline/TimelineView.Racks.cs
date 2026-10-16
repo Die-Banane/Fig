@@ -58,9 +58,14 @@ namespace Fig.App.Views
         private static List<double> KeyframeTimes(EffectInstance fx)
             => fx.Keyframes.Values.SelectMany(t => t.Select(k => Math.Round(k.TimeSec, 6))).Distinct().OrderBy(t => t).ToList();
 
-        private sealed record RackDrag(string ClipId, string EffectId, RackPart Part, double OrigStart, double OrigDur, double PressTime);
+        private sealed record RackDrag(string ClipId, string EffectId, RackPart Part, double OrigStart, double OrigDur,
+            double PressTime, string Gesture);
 
         private RackDrag? _rackDrag;
+
+        /// <summary>Set when a plain click lands on a bar inside a multi-selection: a click without a drag narrows to it.</summary>
+        private (string OwnerId, string EffectId)? _collapseToEffect;
+        private bool _rackMoved;
 
         private static List<RackItem> BuildRack(IEffectOwner clip)
         {
@@ -217,7 +222,6 @@ namespace Fig.App.Views
                 return;
 
             var expanded = IsRackExpanded(clip);
-            var selectedEffectId = _editorVm?.Properties.SelectedEffect?.EffectId;
 
             for (var i = 0; i < items.Count; i++)
             {
@@ -225,7 +229,7 @@ namespace Fig.App.Views
                 var rect = RackItemRect(clip, item, i, clipX, clipTop, kind);
                 var alpha = item.Enabled ? (byte)255 : (byte)110;
                 var fill = new SolidColorBrush(Color.FromArgb(alpha, item.Fill.R, item.Fill.G, item.Fill.B));
-                var selected = item.Effect is not null && item.Effect.Id == selectedEffectId;
+                var selected = item.Effect is not null && Editor?.Selection.IsEffectSelected(item.Effect.Id) == true;
                 var outline = selected
                     ? new Pen(Brushes.White, 1.5)
                     : new Pen(new SolidColorBrush(Color.FromArgb(alpha, item.Edge.R, item.Edge.G, item.Edge.B)), 1);
@@ -416,7 +420,22 @@ namespace Fig.App.Views
                 return true;
             }
 
-            _editorVm?.Properties.SelectEffect(hit.Clip.Id, item.Effect.Id);
+            // Shift adds the bar to the selection, or takes it out again; nothing is dragged
+            if (_modifiersAtPress.HasFlag(KeyModifiers.Shift) && hit.Part != RackPart.Keyframe)
+            {
+                Editor.Selection.ToggleEffect(hit.Clip.Id, item.Effect.Id);
+                InvalidateVisual();
+                return true;
+            }
+
+            // a bar that is already one of several keeps the selection, so the whole group can be dragged;
+            // releasing without a drag narrows to this one
+            _collapseToEffect = null;
+            if (hit.Part == RackPart.Body && Editor.Selection.IsEffectSelected(item.Effect.Id)
+                && Editor.Selection.SelectedEffects.Count > 1)
+                _collapseToEffect = (hit.Clip.Id, item.Effect.Id);
+            else
+                _editorVm?.Properties.SelectEffect(hit.Clip.Id, item.Effect.Id);
 
             if (hit.Part == RackPart.Keyframe)
             {
@@ -445,8 +464,9 @@ namespace Fig.App.Views
                 return true;
             }
 
+            _rackMoved = false;
             _rackDrag = new RackDrag(hit.Clip.Id, item.Effect.Id, hit.Part,
-                item.StartSec, item.DurSec, XToTime(pos.X));
+                item.StartSec, item.DurSec, XToTime(pos.X), Guid.NewGuid().ToString("N"));
             InvalidateVisual();
             return true;
         }
@@ -480,7 +500,21 @@ namespace Fig.App.Views
                     break;
                 }
             }
-            Editor.SetEffectRange(drag.ClipId, drag.EffectId, start, dur, moveKeyframes: drag.Part == RackPart.Body);
+            if (drag.Part == RackPart.Body && Editor.Selection.SelectedEffects.Count > 1
+                && Editor.Selection.IsEffectSelected(drag.EffectId))
+            {
+                // every selected bar slides by the same amount, as one undo step
+                var delta = start - drag.OrigStart;
+                if (Math.Abs(delta) > 1e-9)
+                    _rackMoved = true;
+                Editor.MoveEffects(Editor.Selection.SelectedEffects, delta, drag.Gesture);
+            }
+            else
+            {
+                if (Math.Abs(start - drag.OrigStart) > 1e-9 || Math.Abs(dur - drag.OrigDur) > 1e-9)
+                    _rackMoved = true;
+                Editor.SetEffectRange(drag.ClipId, drag.EffectId, start, dur, moveKeyframes: drag.Part == RackPart.Body);
+            }
             InvalidateVisual();
         }
 
@@ -503,8 +537,58 @@ namespace Fig.App.Views
 
         private void EndRackDrag()
         {
+            // a plain click on a bar that belonged to a group (no drag) selects just that bar
+            if (_collapseToEffect is { } only && !_rackMoved && Editor is not null)
+                _editorVm?.Properties.SelectEffect(only.OwnerId, only.EffectId);
+            _collapseToEffect = null;
+            _rackMoved = false;
             _rackDrag = null;
             _keyDrag = null;
+        }
+
+        /// <summary>The effect bars whose drawn rectangle the box touches.</summary>
+        private List<(string OwnerId, string EffectId, Rect Rect)> EffectsInBox(Rect box)
+        {
+            var hit = new List<(string, string, Rect)>();
+            if (Editor is null)
+                return hit;
+            for (var t = 0; t < Editor.Document.Tracks.Count; t++)
+            {
+                var track = Editor.Document.Tracks[t];
+                var clipTop = TrackTop(t) + TimelineGeometry.ClipInset;
+                foreach (var owner in track.Clips.Cast<IEffectOwner>().Append(track))
+                {
+                    var items = BuildRack(owner);
+                    if (items.Count == 0)
+                        continue;
+                    var ownerX = TrackHeaderWidth + Viewport.TimeToX(owner.StartSec + GetRippleOffsetSec(owner.Id));
+                    for (var i = 0; i < items.Count; i++)
+                    {
+                        if (items[i].Effect is not { } fx)
+                            continue;
+                        var rect = RackItemRect(owner, items[i], i, ownerX, clipTop, track.Kind);
+                        if (rect.Intersects(box))
+                            hit.Add((owner.Id, fx.Id, rect));
+                    }
+                }
+            }
+            return hit;
+        }
+
+        /// <summary>True when the point is in the strip under a lane's clips where effect bars live.</summary>
+        private bool InRackZone(Point pos)
+        {
+            if (Editor is null)
+                return false;
+            for (var t = 0; t < Editor.Document.Tracks.Count; t++)
+            {
+                var track = Editor.Document.Tracks[t];
+                var top = TrackTop(t);
+                var rackTop = top + TimelineGeometry.ClipInset + TimelineGeometry.ClipTotal(track.Kind);
+                if (pos.Y >= rackTop && pos.Y < top + TrackHeight(track))
+                    return true;
+            }
+            return false;
         }
 
         private static string EasingName(KeyframeEasing easing) => easing switch

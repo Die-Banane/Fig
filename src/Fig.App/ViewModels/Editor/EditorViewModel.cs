@@ -570,8 +570,11 @@ public partial class EditorViewModel : ViewModelBase
         }
         else if (selection.SelectedEffect is not null)
         {
-            SelectionSummary = "Effect selected";
-            StatusHint = "Ctrl-drag to duplicate · Delete removes the effect";
+            var count = selection.SelectedEffects.Count;
+            SelectionSummary = count == 1 ? "Effect selected" : $"{count} effects selected";
+            StatusHint = count == 1
+                ? "Shift-click adds more · Ctrl-drag duplicates · Delete removes the effect"
+                : "Drag to move them together · Shift-click adds or removes · Delete removes them";
         }
         else if (selection.SelectedMarkerId is not null)
         {

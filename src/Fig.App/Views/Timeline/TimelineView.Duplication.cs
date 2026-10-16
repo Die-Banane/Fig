@@ -65,10 +65,16 @@ public partial class TimelineView
         if (!drag.Active)
         {
             if (drag.Effect is null) ClickSelectClip((Clip)drag.Clip, _modifiersAtPress | KeyModifiers.Control);
-            else
+            else if (drag.Keyframe is { } key)
             {
                 _editorVm?.Properties.SelectEffect(drag.Clip.Id, drag.Effect.Id);
-                if (drag.Keyframe is { } key) _editorVm?.Properties.SelectKeyframe(key);
+                _editorVm?.Properties.SelectKeyframe(key);
+            }
+            else
+            {
+                // Ctrl-click on a bar adds it to the selection, or takes it out
+                Editor.Selection.ToggleEffect(drag.Clip.Id, drag.Effect.Id);
+                InvalidateVisual();
             }
             return true;
         }

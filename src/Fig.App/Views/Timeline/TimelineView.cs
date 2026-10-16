@@ -10,6 +10,7 @@ using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using Fig.App.Services;
 using Fig.App.ViewModels;
 using Fig.Core.Input;
@@ -203,6 +204,7 @@ namespace Fig.App.Views
 
         /// <summary>Top strip of the ruler area: range bars and bookmark flags.</summary>
         private const double MarkerLaneHeight = 20;
+        private const double PlayheadCapHeight = 8;
         private const double TickRulerHeight = 22;
         private const double RulerHeight = MarkerLaneHeight + TickRulerHeight;
         private const double ClipCornerRadius = 2;
@@ -303,12 +305,37 @@ namespace Fig.App.Views
         {
             base.OnAttachedToVisualTree(e);
             BindEditorViewModel(DataContext as EditorViewModel);
+            _scroller = this.GetVisualAncestors().OfType<ScrollViewer>().FirstOrDefault();
+            if (_scroller is not null)
+                _scroller.ScrollChanged += OnScrollerChanged;
+        }
+
+        // The ruler and marker lane are pinned to the top of the pane: the track area scrolls under them.
+        private ScrollViewer? _scroller;
+
+        private void OnScrollerChanged(object? sender, ScrollChangedEventArgs e) => InvalidateVisual();
+
+        /// <summary>How far the pane is scrolled; the ruler is drawn this far down so it stays at the top of the view.</summary>
+        private double StickyOffset
+            => _scroller is null ? 0 : Math.Clamp(_scroller.Offset.Y, 0, Math.Max(0, Bounds.Height - RulerHeight));
+
+        /// <summary>
+        /// A pointer position with the pinned ruler taken into account: over the ruler it is reported in the
+        /// ruler's own coordinates (0 to <see cref="RulerHeight"/>), anywhere else it is unchanged.
+        /// </summary>
+        private Point RulerSpace(Point p)
+        {
+            var offset = StickyOffset;
+            return offset > 0 && p.Y >= offset && p.Y < offset + RulerHeight ? new Point(p.X, p.Y - offset) : p;
         }
 
         protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
         {
             BindEditorViewModel(null);
             ClearRippleSlides();
+            if (_scroller is not null)
+                _scroller.ScrollChanged -= OnScrollerChanged;
+            _scroller = null;
             base.OnDetachedFromVisualTree(e);
         }
 
@@ -480,7 +507,7 @@ namespace Fig.App.Views
                 return;
 
             Focus();
-            var pos = e.GetPosition(this);
+            var pos = RulerSpace(e.GetPosition(this));
 
             // right-click: context menu (add marker / enable-disable / delete marker)
             if (e.GetCurrentPoint(this).Properties.IsRightButtonPressed)
@@ -694,7 +721,11 @@ namespace Fig.App.Views
             if (Editor is null)
                 return;
 
+            // while something is being dragged the pointer keeps its content coordinates; hovering and
+            // scrubbing the playhead use the pinned ruler's
             var pos = e.GetPosition(this);
+            if (_draggingPlayhead || !e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
+                pos = RulerSpace(pos);
 
             if (UpdateCopyDrag(pos)) return;
 
@@ -1267,9 +1298,10 @@ namespace Fig.App.Views
 
             if (e.Key == Key.Delete || e.Key == Key.Back)
             {
-                if (Editor.Selection.SelectedEffect is { } selectedEffect)
+                if (Editor.Selection.SelectedEffects.Count > 0)
                 {
-                    Editor.RemoveEffect(selectedEffect.ClipId, selectedEffect.EffectId);
+                    // every selected bar goes, as one undo step
+                    Editor.RemoveEffects(Editor.Selection.SelectedEffects);
                     Editor.Selection.Clear();
                     InvalidateMeasure();
                     InvalidateVisual();
@@ -1316,9 +1348,6 @@ namespace Fig.App.Views
 
             var px = Viewport.PixelsPerSecond;
             var scroll = Viewport.ScrollTime;
-
-            DrawRuler(context, px, scroll);
-            DrawTimelineMarkers(context);
 
             // clip everything below the ruler + right of the header so clips never
             // draw over the header column when zoomed/scrolled
@@ -1589,6 +1618,14 @@ namespace Fig.App.Views
 
             //DrawMarkerGuides(context);
 
+            // the ruler and marker lane are pinned to the top of the pane and cover the tracks scrolling under them
+            var pinned = StickyOffset;
+            using (context.PushTransform(Matrix.CreateTranslation(0, pinned)))
+            {
+                DrawRuler(context, px, scroll);
+                DrawTimelineMarkers(context);
+            }
+
             // playhead
             DrawEmptyHint(context);
             DrawSnapGuide(context);
@@ -1599,13 +1636,16 @@ namespace Fig.App.Views
             if (playheadX >= TrackHeaderWidth)
             {
                 var playheadPen = new Pen(EditorTheme.PlayheadBrush, 1);
-                context.DrawLine(playheadPen, new Point(playheadX, MarkerLaneHeight), new Point(playheadX, Bounds.Height));
+                // the line starts at the cap's lower tip, not behind it
+                context.DrawLine(playheadPen, new Point(playheadX, pinned + MarkerLaneHeight + PlayheadCapHeight),
+                    new Point(playheadX, Bounds.Height));
                 var cap = new StreamGeometry();
                 using (var gc = cap.Open())
                 {
-                    gc.BeginFigure(new Point(playheadX - 5, MarkerLaneHeight), true);
-                    gc.LineTo(new Point(playheadX + 5, MarkerLaneHeight));
-                    gc.LineTo(new Point(playheadX, MarkerLaneHeight + 8));
+                    // the cap rides with the pinned ruler
+                    gc.BeginFigure(new Point(playheadX - 5, pinned + MarkerLaneHeight), true);
+                    gc.LineTo(new Point(playheadX + 5, pinned + MarkerLaneHeight));
+                    gc.LineTo(new Point(playheadX, pinned + MarkerLaneHeight + PlayheadCapHeight));
                     gc.EndFigure(true);
                 }
                 context.DrawGeometry(EditorTheme.PlayheadBrush, null, cap);

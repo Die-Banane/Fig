@@ -7,9 +7,17 @@ namespace Fig.Core.Timeline
     public class SelectionState
     {
         private readonly HashSet<string> _ids = new();
-        public (string ClipId, string EffectId)? SelectedEffect { get; private set; }
+        private readonly List<(string ClipId, string EffectId)> _effects = new();
 
-        public void SelectEffect(string clipId, string effectId)
+        /// <summary>The effect bars that are selected (on a track or a clip), in the order they were picked.</summary>
+        public IReadOnlyList<(string ClipId, string EffectId)> SelectedEffects => _effects.ToList();
+
+        /// <summary>The primary effect (the last one picked): what the inspector shows.</summary>
+        public (string ClipId, string EffectId)? SelectedEffect => _effects.Count == 0 ? null : _effects[^1];
+
+        public bool IsEffectSelected(string effectId) => _effects.Any(e => e.EffectId == effectId);
+
+        private void ClearNonEffectSelection()
         {
             _ids.Clear();
             _activeTrackId = null;
@@ -17,15 +25,41 @@ namespace Fig.Core.Timeline
             _markerIds.Clear();
             _markerAnchorId = null;
             _transitionKey = null;
-            SelectedEffect = (clipId, effectId);
+        }
+
+        /// <summary>Selects exactly one effect bar.</summary>
+        public void SelectEffect(string clipId, string effectId) => SelectEffects(new[] { (clipId, effectId) });
+
+        /// <summary>Selects exactly these effect bars, or adds them to the current effect selection.</summary>
+        public void SelectEffects(IEnumerable<(string ClipId, string EffectId)> effects, bool additive = false)
+        {
+            ClearNonEffectSelection();
+            if (!additive)
+                _effects.Clear();
+            foreach (var effect in effects)
+                if (!_effects.Any(e => e.EffectId == effect.EffectId))
+                    _effects.Add(effect);
+            Changed?.Invoke();
+        }
+
+        /// <summary>Adds the effect to the selection, or takes it out when it is already in.</summary>
+        public void ToggleEffect(string clipId, string effectId)
+        {
+            ClearNonEffectSelection();
+            var index = _effects.FindIndex(e => e.EffectId == effectId);
+            if (index >= 0)
+                _effects.RemoveAt(index);
+            else
+                _effects.Add((clipId, effectId));
             Changed?.Invoke();
         }
 
         private void NotifyChanged()
         {
-            SelectedEffect = null;
+            _effects.Clear();
             Changed?.Invoke();
         }
+
         private string? _activeTrackId;
         private string? _markerId;
         private readonly HashSet<string> _markerIds = new();
@@ -120,7 +154,7 @@ namespace Fig.Core.Timeline
 
         public void SelectOnly(string clipId)
         {
-            if (_ids.Count == 1 && _ids.Contains(clipId) && _activeTrackId is null && _markerId is null && _transitionKey is null && SelectedEffect is null)
+            if (_ids.Count == 1 && _ids.Contains(clipId) && _activeTrackId is null && _markerId is null && _transitionKey is null && _effects.Count == 0)
                 return;
             _ids.Clear();
             _ids.Add(clipId);
@@ -140,7 +174,7 @@ namespace Fig.Core.Timeline
         public void SelectClips(IEnumerable<string> clipIds)
         {
             var next = new HashSet<string>(clipIds.Where(id => !string.IsNullOrEmpty(id)));
-            if (next.SetEquals(_ids) && _activeTrackId is null && _markerId is null && _transitionKey is null && SelectedEffect is null)
+            if (next.SetEquals(_ids) && _activeTrackId is null && _markerId is null && _transitionKey is null && _effects.Count == 0)
                 return;
             _ids.Clear();
             foreach (var id in next)
@@ -160,7 +194,7 @@ namespace Fig.Core.Timeline
         {
             var next = new HashSet<string>(markerIds.Where(id => !string.IsNullOrEmpty(id)));
             _markerAnchorId = anchorId ?? (next.Contains(_markerAnchorId ?? "") ? _markerAnchorId : next.FirstOrDefault());
-            if (next.SetEquals(_markerIds) && _ids.Count == 0 && _activeTrackId is null && _transitionKey is null && SelectedEffect is null)
+            if (next.SetEquals(_markerIds) && _ids.Count == 0 && _activeTrackId is null && _transitionKey is null && _effects.Count == 0)
                 return;
             _markerIds.Clear();
             foreach (var id in next)
@@ -197,7 +231,7 @@ namespace Fig.Core.Timeline
         /// <summary>Selects a cut transition, clearing any clip/track/marker selection.</summary>
         public void SelectTransition(string key)
         {
-            if (_transitionKey == key && _ids.Count == 0 && _activeTrackId is null && _markerId is null && SelectedEffect is null)
+            if (_transitionKey == key && _ids.Count == 0 && _activeTrackId is null && _markerId is null && _effects.Count == 0)
                 return;
             _transitionKey = key;
             _ids.Clear();
@@ -210,7 +244,7 @@ namespace Fig.Core.Timeline
 
         public void Clear()
         {
-            if (_ids.Count == 0 && _activeTrackId is null && _markerId is null && _transitionKey is null && SelectedEffect is null)
+            if (_ids.Count == 0 && _activeTrackId is null && _markerId is null && _transitionKey is null && _effects.Count == 0)
                 return;
             _ids.Clear();
             _activeTrackId = null;

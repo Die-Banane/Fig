@@ -263,6 +263,14 @@ The primary user is a solo creator (hobbyist to semi-professional) who edits sho
 
 Design: `uml/media/effects-graph-schema.puml`, `uml/media/effects-graph-pipeline.puml`. FR-168 is partial: wiring, pinning, undo and the live preview are covered by tests; the Add menu, right-click menus and quick search have not been exercised by tests yet.
 
+### 3.15 Effect bars on the timeline
+| ID | Requirement | Priority | Status |
+| --- | --- | --- | --- |
+| FR-170 | Effect bars SHALL be selectable one at a time and as a group: Shift-click or Ctrl-click adds or removes a bar, and a box dragged from empty space in the effect strip selects the bars it touches (clips are not selected by such a box). | P0 | X |
+| FR-171 | Dragging one bar of a group SHALL move every selected bar by the same amount, keyframes included and spacing preserved, as one undo step. | P0 | X |
+| FR-172 | Delete SHALL remove every selected effect bar as one undo step. | P0 | X |
+
+
 ---
 
 ## 4. Non-functional requirements

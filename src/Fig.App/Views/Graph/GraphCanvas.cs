@@ -401,6 +401,8 @@ public sealed class GraphCanvas : Control
 
     private static double DistanceToCurve(Point p, Point a, Point b)
     {
+
+        // optimization algorithm to find shortest distance between pointA and pointB with cubic bezier
         var dx = Math.Max(40, Math.Abs(b.X - a.X) * 0.5);
         var c1 = new Point(a.X + dx, a.Y);
         var c2 = new Point(b.X - dx, b.Y);

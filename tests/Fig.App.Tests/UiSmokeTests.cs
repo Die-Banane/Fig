@@ -389,6 +389,178 @@ public sealed class UiSmokeTests : IDisposable
     }
 
     [AvaloniaFact]
+    public void Timeline_RulerStaysPinnedWhileTheTracksScrollUnderIt()
+    {
+        var vm = OpenSampleEditor(out var window);
+        try
+        {
+            for (var i = 0; i < 8; i++)
+                vm.Editor.AddTrack(Fig.Core.Timeline.TrackKind.Video);
+            window.UpdateLayout();
+            var timeline = window.GetVisualDescendants().OfType<TimelineView>().First();
+            var scroller = window.GetVisualDescendants().OfType<ScrollViewer>().First(s => s.Name == "TimelineScroller");
+            Assert.True(scroller.Extent.Height > scroller.Viewport.Height, "the tracks should overflow the pane");
+
+            scroller.Offset = new Avalonia.Vector(0, 120);
+            window.UpdateLayout();
+            Assert.True(scroller.Offset.Y > 60);
+            Shot(window, "timeline-pinned-ruler");
+
+            // a click at the very top of the pane is still on the ruler: it moves the playhead, it does not hit a track
+            vm.PlayheadTimeSec = 0;
+            var x = 118 + timeline.Viewport.TimeToX(6);
+            var point = scroller.TranslatePoint(new Avalonia.Point(x, 10), window)!.Value;
+            window.MouseDown(point, Avalonia.Input.MouseButton.Left);
+            window.MouseUp(point, Avalonia.Input.MouseButton.Left);
+            Assert.InRange(vm.PlayheadTimeSec, 5.5, 6.5);
+            Assert.Empty(vm.Editor.Selection.SelectedClipIds);
+        }
+        finally { window.Close(); vm.DisposePlayback(); }
+    }
+
+    [AvaloniaFact]
+    public void Timeline_EveryVisibleEffectBarCanBeSelected_OnACutUpTrack()
+    {
+        var vm = OpenSampleEditor(out var window);
+        try
+        {
+            var track = vm.Editor.Document.Tracks.First(t => t.Kind == Fig.Core.Timeline.TrackKind.Video);
+            // cut the picture up the way beat cutting does
+            foreach (var at in Enumerable.Range(1, 22).Select(i => i * 0.5 + 0.13))
+            {
+                var clip = track.Clips.FirstOrDefault(c => c.StartSec < at && at < c.StartSec + c.DurSec);
+                if (clip is not null) vm.Editor.Cut(clip.Id, at);
+            }
+            var presets = Fig.Core.Media.BuiltInEffectPresets.All.ToArray();
+            var effects = new List<Fig.Core.Timeline.EffectInstance>();
+            for (var i = 0; i < 14; i++)
+            {
+                var preset = presets[i % presets.Length];
+                var start = 0.4 + i * 0.55;
+                var fx = Fig.Core.Media.EffectPresetInstantiator.Create(preset, preset.DefaultDurationSec + start, start);
+                vm.Editor.AddEffect(track.Id, fx);
+                effects.Add(fx);
+            }
+            window.UpdateLayout();
+            var timeline = window.GetVisualDescendants().OfType<TimelineView>().First();
+
+            var failures = new List<string>();
+            var tried = 0;
+            foreach (var fx in effects)
+            {
+                var lane = timeline.RackPointFor(track.Id, fx.Id)!.Value;
+                var p = timeline.TranslatePoint(new Avalonia.Point(lane.X, lane.Y - 12), window)!.Value;
+                if (p.X < 0 || p.X > window.Width || p.Y < 0 || p.Y > window.Height - 40)
+                    continue; // scrolled out of the pane
+                tried++;
+                // start from the state in which it was reported: every clip selected and the track active
+                vm.Editor.Selection.SelectClips(track.Clips.Select(c => c.Id));
+                vm.Editor.Selection.ActiveTrackId = track.Id;
+                vm.Properties.Refresh();
+                window.MouseMove(p);
+                window.MouseDown(p, Avalonia.Input.MouseButton.Left);
+                // a real hand wobbles by a pixel or two between press and release
+                window.MouseMove(new Avalonia.Point(p.X + 1, p.Y));
+                window.MouseMove(new Avalonia.Point(p.X + 2, p.Y + 1));
+                window.MouseUp(new Avalonia.Point(p.X + 2, p.Y + 1), Avalonia.Input.MouseButton.Left);
+                if (vm.Properties.SelectedEffect?.EffectId != fx.Id || vm.Editor.Selection.SelectedEffect?.EffectId != fx.Id)
+                    failures.Add($"{fx.TypeId} {fx.StartSec:0.00}+{fx.DurSec:0.00} at ({p.X:0},{p.Y:0}): got {vm.Editor.Selection.SelectedEffect?.EffectId?[..6] ?? "none"}; clips={vm.Editor.Selection.SelectedClipIds.Count}");
+            }
+            Assert.True(tried >= 6, $"only {tried} bars were on screen");
+            Assert.True(failures.Count == 0, string.Join("; ", failures));
+        }
+        finally { window.Close(); vm.DisposePlayback(); }
+    }
+
+    [AvaloniaFact]
+    public void Timeline_EffectBars_MultiSelect_WithModifiersAndABox_ThenMoveAndDeleteTogether()
+    {
+        var vm = OpenSampleEditor(out var window);
+        try
+        {
+            var track = vm.Editor.Document.Tracks.First(t => t.Kind == Fig.Core.Timeline.TrackKind.Video);
+            var bars = new List<Fig.Core.Timeline.EffectInstance>();
+            foreach (var (start, dur) in new[] { (1.0, 0.8), (2.2, 0.8), (3.4, 0.8), (6.0, 0.8) })
+            {
+                var fx = Fig.Core.Media.EffectCatalog.Find("camera-shake")!.CreateInstance();
+                fx.StartSec = start;
+                fx.DurSec = dur;
+                vm.Editor.AddEffect(track.Id, fx);
+                bars.Add(fx);
+            }
+            window.UpdateLayout();
+            var timeline = window.GetVisualDescendants().OfType<TimelineView>().First();
+            var selection = vm.Editor.Selection;
+
+            Avalonia.Point Label(Fig.Core.Timeline.EffectInstance fx)
+            {
+                var lane = timeline.RackPointFor(track.Id, fx.Id)!.Value;
+                return timeline.TranslatePoint(new Avalonia.Point(lane.X, lane.Y - 12), window)!.Value;
+            }
+            void Click(Avalonia.Point p, Avalonia.Input.RawInputModifiers mods = Avalonia.Input.RawInputModifiers.None)
+            {
+                window.MouseDown(p, Avalonia.Input.MouseButton.Left, mods);
+                window.MouseUp(p, Avalonia.Input.MouseButton.Left, mods);
+            }
+
+            // a plain click selects one; Shift-click adds, and Shift-click again takes a bar out
+            Click(Label(bars[0]));
+            Assert.Equal(new[] { bars[0].Id }, selection.SelectedEffects.Select(e => e.EffectId));
+            Click(Label(bars[1]), Avalonia.Input.RawInputModifiers.Shift);
+            Click(Label(bars[2]), Avalonia.Input.RawInputModifiers.Shift);
+            Assert.Equal(3, selection.SelectedEffects.Count);
+            Click(Label(bars[1]), Avalonia.Input.RawInputModifiers.Shift);
+            Assert.Equal(new[] { bars[0].Id, bars[2].Id }, selection.SelectedEffects.Select(e => e.EffectId));
+            Assert.Empty(selection.SelectedClipIds);
+
+            // Ctrl-click toggles too
+            Click(Label(bars[3]), Avalonia.Input.RawInputModifiers.Control);
+            Assert.Equal(3, selection.SelectedEffects.Count);
+            Click(Label(bars[3]), Avalonia.Input.RawInputModifiers.Control);
+            Assert.Equal(2, selection.SelectedEffects.Count);
+
+            // a box dragged from empty space in the effect strip picks the bars it touches (and no clips)
+            selection.Clear();
+            var first = Label(bars[0]);
+            var third = Label(bars[2]);
+            var from = new Avalonia.Point(first.X - 70, first.Y);
+            var to = new Avalonia.Point(third.X + 15, first.Y + 12);
+            window.MouseDown(from, Avalonia.Input.MouseButton.Left);
+            window.MouseMove(new Avalonia.Point((from.X + to.X) / 2, to.Y));
+            window.MouseMove(to);
+            window.MouseUp(to, Avalonia.Input.MouseButton.Left);
+            Assert.Equal(new[] { bars[0].Id, bars[1].Id, bars[2].Id }, selection.SelectedEffects.Select(e => e.EffectId).OrderBy(i => bars.FindIndex(b => b.Id == i)));
+            Assert.Empty(selection.SelectedClipIds);
+
+            // dragging one of them moves all three by the same amount, in one undo step
+            var starts = bars.Take(3).Select(b => b.StartSec!.Value).ToArray();
+            var grab = Label(bars[1]);
+            window.MouseDown(grab, Avalonia.Input.MouseButton.Left);
+            window.MouseMove(new Avalonia.Point(grab.X + 20, grab.Y));
+            window.MouseMove(new Avalonia.Point(grab.X + 60, grab.Y));
+            window.MouseUp(new Avalonia.Point(grab.X + 60, grab.Y), Avalonia.Input.MouseButton.Left);
+            var shift = bars[0].StartSec!.Value - starts[0];
+            Assert.True(shift > 0.2, $"the group should have moved, moved {shift}");
+            Assert.Equal(starts[1] + shift, bars[1].StartSec!.Value, 3);
+            Assert.Equal(starts[2] + shift, bars[2].StartSec!.Value, 3);
+            Assert.Equal(3, selection.SelectedEffects.Count);
+            Assert.Equal(6.0, bars[3].StartSec!.Value, 3);   // the unselected bar stayed
+            vm.Editor.Undo();
+            Assert.Equal(starts, bars.Take(3).Select(b => b.StartSec!.Value).ToArray());
+
+            // Delete removes every selected bar at once
+            Click(Label(bars[0]));
+            Click(Label(bars[1]), Avalonia.Input.RawInputModifiers.Shift);
+            window.KeyPress(Avalonia.Input.Key.Delete, Avalonia.Input.RawInputModifiers.None, Avalonia.Input.PhysicalKey.Delete, null);
+            window.KeyRelease(Avalonia.Input.Key.Delete, Avalonia.Input.RawInputModifiers.None, Avalonia.Input.PhysicalKey.Delete, null);
+            Assert.Equal(new[] { bars[2].Id, bars[3].Id }, track.Effects.Select(e => e.Id));
+            vm.Editor.Undo();
+            Assert.Equal(4, track.Effects.Count);
+        }
+        finally { window.Close(); vm.DisposePlayback(); }
+    }
+
+    [AvaloniaFact]
     public void Beats_WithoutAnAudioClipSelected_ExplainsAndLeavesTheTimelineAlone()
     {
         var vm = OpenSampleEditor(out var window);

@@ -22,6 +22,7 @@ namespace Fig.App.Views
         private bool _marqueeArmed;
         private bool _marqueeActive;
         private bool _marqueeAdditive;
+        private bool _marqueeEffects;      // a box that started in the effect strip picks effect bars, not clips
         private Clip? _marqueeClickClip;   // region select started on this clip: a plain click still selects it
         private Point _marqueeFrom;
         private Point _marqueeTo;
@@ -98,6 +99,7 @@ namespace Fig.App.Views
             _marqueeFrom = at;
             _marqueeTo = at;
             _marqueeAdditive = modifiers.HasFlag(KeyModifiers.Shift) || modifiers.HasFlag(KeyModifiers.Control);
+            _marqueeEffects = InRackZone(at);
         }
 
         /// <summary>Returns true while a box selection is in progress and consumed the move.</summary>
@@ -139,6 +141,14 @@ namespace Fig.App.Views
                     Editor.Selection.Clear();
                     _selectedTrackId = null;
                 }
+                InvalidateVisual();
+                return;
+            }
+
+            if (_marqueeEffects)
+            {
+                var bars = EffectsInBox(MarqueeBox()).Select(b => (b.OwnerId, b.EffectId));
+                Editor.Selection.SelectEffects(bars, _marqueeAdditive);
                 InvalidateVisual();
                 return;
             }
@@ -187,6 +197,13 @@ namespace Fig.App.Views
                 return;
             var box = MarqueeBox();
             var outline = new Pen(new SolidColorBrush(Color.FromArgb(235, 0x5f, 0x9c, 0xf8)), 2);
+            if (_marqueeEffects)
+            {
+                foreach (var bar in EffectsInBox(box))
+                    context.DrawRectangle(null, outline, bar.Rect);
+                context.DrawRectangle(MarqueeFill, MarqueePen, box);
+                return;
+            }
             foreach (var clip in ClipsInBox(box))
             {
                 var index = Editor.Document.Tracks.FindIndex(t => t.Clips.Contains(clip));
