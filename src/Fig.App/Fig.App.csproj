@@ -14,6 +14,29 @@
     <AvaloniaResource Include="Assets\**" />
   </ItemGroup>
 
+  <!--
+    A release is one file: the app, .NET, the native libraries and FFmpeg, unpacked by .NET on first launch.
+      dotnet publish src/Fig.App/Fig.App.csproj -c Release -r linux-x64 -p:FfmpegDir=path/to/ffmpeg-libs
+    FfmpegDir holds just the FFmpeg libraries to ship (see .github/workflows/release.yml); they land in ffmpeg/,
+    where MediaService looks.
+  -->
+  <PropertyGroup Condition="'$(RuntimeIdentifier)' != ''">
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeAllContentForSelfExtract>true</IncludeAllContentForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <DebugType>none</DebugType>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(FfmpegDir)' != ''">
+    <None Include="$(FfmpegDir)\*" Link="ffmpeg\%(Filename)%(Extension)" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <!-- what a Linux release writes to put itself in the app menu (Services/DesktopIntegration.cs) -->
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\packaging\linux\share\applications\io.github.skynse.Fig.desktop" LogicalName="linux-launcher" />
+    <EmbeddedResource Include="..\..\packaging\linux\share\icons\hicolor\**\io.github.skynse.Fig.png" LogicalName="linux-icon:%(RecursiveDir)" />
+  </ItemGroup>
+
   <ItemGroup>
     <InternalsVisibleTo Include="Fig.App.Tests" />
   </ItemGroup>

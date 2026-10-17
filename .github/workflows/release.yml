@@ -1,5 +1,8 @@
-# Builds a major version: tests, then a self-contained Fig for Linux and Windows with FFmpeg bundled,
-# published as a GitHub release.
+# Builds a major version: tests, then Fig as one file per platform (the app, .NET and FFmpeg inside), published
+# as a GitHub release:
+#   Fig-<v>-linux-x64              run it; it adds itself to the app menu (Fig --uninstall takes it out)
+#   Fig-<v>-win-x64-setup.exe      installer: Start menu, uninstaller, no admin needed
+#   Fig-<v>-win-x64.exe            the same Fig.exe, portable
 #
 #   git tag v2.0.0 && git push origin v2.0.0
 #
@@ -55,9 +58,7 @@ jobs:
         run: |
           curl -fsSL "$FFMPEG_URL/$FFMPEG_NAME-linux64-$FFMPEG_SUFFIX.tar.xz" | tar xJ
           echo "FFMPEG_ROOT=$PWD/$FFMPEG_NAME-linux64-$FFMPEG_SUFFIX/lib" >> "$GITHUB_ENV"
-      # the projects one by one: fig.slnx lists tools/Fig.Bench, which isn't in the repo
-      - run: dotnet test tests/Fig.Core.Tests/Fig.Core.Tests.csproj -c Release
-      - run: dotnet test tests/Fig.App.Tests/Fig.App.Tests.csproj -c Release
+      - run: dotnet test -c Release
 
   build:
     needs: [version, test]
@@ -82,36 +83,48 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
-      - name: Publish
-        run: >
-          dotnet publish src/Fig.App/Fig.App.csproj -c Release -r ${{ matrix.rid }} --self-contained
-          -p:Version=$VERSION -p:DebugType=none -o "$OUT"
-      - name: Bundle FFmpeg
+      # only the libraries Fig calls (no avfilter / avdevice), as real files: the release carries them inside
+      - name: FFmpeg
         run: |
           base="$FFMPEG_NAME-${{ matrix.ffmpeg }}-$FFMPEG_SUFFIX"
+          mkdir ffmpeg-libs
           if [ "${{ matrix.ffmpeg }}" = win64 ]; then
             curl -fsSL -o ff.zip "$FFMPEG_URL/$base.zip"
             unzip -q ff.zip
-            cp "$base"/bin/*.dll "$OUT"/                # beside Fig.App.exe
+            for lib in avutil avcodec avformat swscale swresample; do cp "$base"/bin/$lib-*.dll ffmpeg-libs/; done
           else
             curl -fsSL "$FFMPEG_URL/$base.tar.xz" | tar xJ
-            mkdir -p "$OUT/ffmpeg"
-            cp -P "$base"/lib/*.so.* "$OUT/ffmpeg"/     # MediaService looks in ffmpeg/
-            cp -r packaging/linux/install.sh packaging/linux/share "$OUT"/   # ./install.sh adds Fig to the app menu
+            for lib in avutil avcodec avformat swscale swresample; do
+              cp -L "$(ls "$base"/lib/lib$lib.so.* | grep -E "lib$lib\.so\.[0-9]+$")" ffmpeg-libs/
+            done
           fi
-          cp LICENSE "$OUT"/
-          cp "$base"/LICENSE.txt "$OUT"/FFMPEG-LICENSE.txt
+          cp "$base"/LICENSE.txt FFMPEG-LICENSE.txt
+          ls -l ffmpeg-libs
+      # pwd -W: a Windows path for the Windows tools (Git Bash's own /d/a/... means nothing to them)
+      - name: Publish
+        run: |
+          here=$(pwd -W 2>/dev/null || pwd)
+          dotnet publish src/Fig.App/Fig.App.csproj -c Release -r ${{ matrix.rid }} \
+            -p:Version=$VERSION -p:DebugType=none -p:FfmpegDir="$here/ffmpeg-libs" -o publish
       - name: Package
         run: |
+          mkdir dist
           if [ "${{ matrix.ffmpeg }}" = win64 ]; then
-            7z a -tzip "$OUT.zip" "$OUT" > /dev/null
+            cp publish/Fig.App.exe "dist/$OUT.exe"
+            cp FFMPEG-LICENSE.txt packaging/windows/
+            iscc="/c/Program Files (x86)/Inno Setup 6/ISCC.exe"
+            [ -f "$iscc" ] || { choco install innosetup -y --no-progress > /dev/null; }
+            here=$(pwd -W)
+            "$iscc" //Q //DVersion=$VERSION //DSource="$here/publish/Fig.App.exe" //DOutput="$here/dist" packaging/windows/Fig.iss
           else
-            tar czf "$OUT.tar.gz" "$OUT"
+            cp publish/Fig.App "dist/$OUT"
+            chmod +x "dist/$OUT"
           fi
+          ls -l dist
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ env.OUT }}
-          path: ${{ env.OUT }}.*
+          path: dist/*
           if-no-files-found: error
 
   release:

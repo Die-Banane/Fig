@@ -1,5 +1,6 @@
 ﻿using Avalonia;
 using System;
+using Fig.App.Services;
 
 namespace Fig.App;
 
@@ -12,8 +13,16 @@ sealed class Program
     public const string AppId = "io.github.skynse.Fig";
 
     [STAThread]
-    public static void Main(string[] args) => BuildAvaloniaApp()
-        .StartWithClassicDesktopLifetime(args);
+    public static void Main(string[] args)
+    {
+        if (args is ["--uninstall"])
+        {
+            DesktopIntegration.RemoveFromAppMenu();
+            return;
+        }
+        DesktopIntegration.OnStartup();
+        BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
+    }
 
     public static AppBuilder BuildAvaloniaApp()
     {

@@ -1,54 +1,40 @@
-## Creating a new Effect
+## Architecture
 
-Register the effect string in EffectCatalog.cs
+- `Fig.Core` has no UI dependency. How the timeline behaves, how media is decoded and how audio is mixed all live there, covered by unit tests; `Fig.App` is the Avalonia UI on top.
+- Playback treats the audio device as the clock. The preview and the playhead follow it, which keeps picture and sound in sync.
+- Media artifacts (thumbnails, filmstrips, waveforms) are generated once, cached on disk per project, and repaired when a project is opened.
 
-Create the metadata and params 
+## Creating a new effect
 
-for Example
+Write one class. Declare the effect and each parameter (its default and range are written only here), derive from `EffectProcessor`, and read parameters from the `ParamSet` you are given. A value the clip doesn't have yet reads as the declared default, and numbers are held to their range.
 
 ```cs
-[Effect(EffectCatalog.CropWithPadding, "Crop with Padding", Icon = "crop",
-        Description = "Crop the edges and pad the freed space with a solid color.")]
-    [EffectParam("left", "Crop left", Default = 0, Min = 0, Max = 0.5)]
-    [EffectParam("right", "Crop right", Default = 0, Min = 0, Max = 0.5)]
-    [EffectParam("top", "Crop top", Default = 0, Min = 0, Max = 0.5)]
-    [EffectParam("bottom", "Crop bottom", Default = 0, Min = 0, Max = 0.5)]
-    [EffectParam("color", "Padding color", Kind = ParamKind.Color, Default = 0xFF000000)]
-
-    internal sealed class CropWithPadding : IEffectProcessor
+[Effect("crop-with-padding", "Crop with Padding", Icon = "crop",
+    Description = "Crop the edges and pad the freed space with a solid color.")]
+[EffectParam("left", "Crop left", Default = 0, Min = 0, Max = 0.5)]
+[EffectParam("color", "Padding color", Kind = ParamKind.Color, Default = 0xFF000000)]
+internal sealed class CropWithPaddingEffect : EffectProcessor
+{
+    protected override DecodedFrame Render(DecodedFrame frame, ParamSet p, double localT)
     {
-        ...
+        var left = p.Number("left");
+        var color = p.Color("color");
+        // ... return a new frame (FramePool.Rent(w * h * 4)), or `frame` itself when there is nothing to do
     }
+}
 ```
 
-Get the width and height of the current frame in the Apply() override
-
-```cs
-var w = frame.Width; // ...
-var h = frame.Height; // ...
-```
-
-Then fetch your parameters with `parameters.TryGetValue("")`
-
-obtain a frame using `FramePool.Rent(w*h*4)`
-
-Then apply whatever pixelOps you want.
-
-Then port it to a shader (see [GPU rendering](#gpu-rendering)): the CPU processor is the reference, the preview and export draw the shader. A test fails until the effect has one.
-
+The catalog finds it on its own. `PixelOps` has the common shapes: `MapColor` for a per-pixel colour change, `Remap` for moving pixels around (flip, mosaic), `Rows` for parallel scanlines. Then port it to a shader (see [GPU rendering](#gpu-rendering)): the CPU class is the reference, and the preview and export draw the shader. In `GpuEffects`, read the parameters the same way, with `EffectCatalog.ParamsOf(typeId, values)`.
 
 ## Transitions
 
-Creating transitions is a bit different, because the function signature differs, though the semantics are the same.
+The same, deriving from `TransitionBlender` and declaring `[Transition]` / `[TransitionParam]`:
 
-` public DecodedFrame Blend(DecodedFrame outgoing, DecodedFrame incoming, double t01, IReadOnlyDictionary<string, ParamValue> parameters)`
+```cs
+protected override DecodedFrame Render(DecodedFrame outgoing, DecodedFrame incoming, double t, ParamSet p)
+```
 
-Here, you have the incoming decoded frame, and a param t01
-
-The effect of the transition is applied depending on the value of t01. t01 changes depending on the progress/length of the transition from 0.0 to 1.0
-
-This can be used for cool effects between frames. A transition needs its shader too (see [GPU rendering](#gpu-rendering)).
-
+`t` runs from 0 (all outgoing) to 1 (all incoming) across the transition, and the two frames are always the same size (the base class handles a mismatch). A transition needs its shader too.
 
 ## Effects, keyframes and easing
 
@@ -144,14 +130,6 @@ layer compositor are fragment shaders (SkSL, through Skia). Export uses the same
 
 **Transitions** (`Media/Transitions/Blenders`) are CPU pixel kernels, kept as the reference and the no-GPU fallback; the preview and export draw them with the shaders in `GpuEffects`. To keep a CPU transition cheap: use `PixelOps.LerpBytes` (SIMD blend of a byte range), `PixelOps.ColumnBlend` (same weights on every row: wipe, curtains), and plain `Buffer.BlockCopy` for the parts of a row that are entirely one picture or the other. Only compute per pixel where the picture really changes (the soft band of a wipe, the inside of a swirl).
 
-## UI smoke tests and screenshots
-
-`tests/Fig.App.Tests/UiSmokeTests.cs` loads each view in a headless Avalonia window, so XAML and binding mistakes fail `dotnet test` instead of crashing the app. Set `FIG_SHOT_DIR` to also write a PNG of each screen, which is handy for comparing against the Penpot designs:
-
-```bash
-FIG_SHOT_DIR=/tmp/fig-shots dotnet test tests/Fig.App.Tests
-```
-
 ## Releasing a major version
 
 `.github/workflows/release.yml` builds a release when a `vN.0.0` tag is pushed:
@@ -160,12 +138,20 @@ FIG_SHOT_DIR=/tmp/fig-shots dotnet test tests/Fig.App.Tests
 git tag v2.0.0 && git push origin v2.0.0
 ```
 
-It runs both test projects, then publishes a self-contained Fig for `linux-x64` (`.tar.gz`) and `win-x64` (`.zip`) with FFmpeg 8.1 bundled ([BtbN's GPL shared builds](https://github.com/BtbN/FFmpeg-Builds), which include libx264), and attaches them to a GitHub release with generated notes and a `SHA256SUMS`. The tag's version is stamped into the assemblies. To build any other version, run the workflow by hand from the Actions tab and type the version.
+It runs the tests, then publishes Fig as one file per platform and attaches them to a GitHub release with generated notes and a `SHA256SUMS`:
 
-The Linux build also carries `install.sh` and `share/` (from `packaging/linux`): running `./install.sh` in the unpacked folder adds Fig to the app menu with its icon, for the current user, and `./install.sh --uninstall` removes it. To get the launcher for a build from source, pass its path: `packaging/linux/install.sh src/Fig.App/bin/Release/net10.0/Fig.App`. The launcher, icon and X11 window class all use the id `io.github.skynse.Fig` (`Program.AppId`), which is how the taskbar matches the window to its icon. The icons are exported from `assets/icon/fig-mono.svg`; re-export them after editing it:
+| File | What it is |
+|---|---|
+| `Fig-<v>-linux-x64` | The whole app in one executable. On first run it adds itself to the app menu with its icon (for the current user), and rewrites the launcher if the file is moved. `Fig --uninstall` takes it out of the menu. |
+| `Fig-<v>-win-x64-setup.exe` | Installer ([Inno Setup](https://jrsoftware.org/isinfo.php), `packaging/windows/Fig.iss`): installs `Fig.exe` for the current user without admin (an admin can pick all users), with a Start menu entry, an optional desktop icon and an uninstaller. |
+| `Fig-<v>-win-x64.exe` | The same `Fig.exe`, to run without installing. |
+
+Each file holds the app, the .NET runtime, the native libraries and FFmpeg 8.1 ([BtbN's GPL shared builds](https://github.com/BtbN/FFmpeg-Builds), which include libx264; only avutil, avcodec, avformat, swscale and swresample, which is all Fig calls). The single-file settings are in `src/Fig.App/Fig.App.csproj` and apply to any `dotnet publish` with a runtime: the FFmpeg libraries to bundle are passed as a folder, `-p:FfmpegDir=...`. On first launch .NET unpacks the file (to `~/.net/<name>/` on Linux, `%TEMP%\.net\<name>\` on Windows); Fig deletes older versions' unpacked folders when it starts, and the Windows uninstaller removes its own. The tag's version is stamped into the assemblies. To build any other version, run the workflow by hand from the Actions tab and type the version.
+
+To get a launcher for a build from source, run `packaging/linux/install.sh src/Fig.App/bin/Release/net10.0/Fig.App` (`--uninstall` removes it). The launcher, icon and X11 window class all use the id `io.github.skynse.Fig` (`Program.AppId`), which is how the taskbar matches the window to its icon. The release binary writes the same launcher and icons, embedded from `packaging/linux/share`. The icons are exported from `assets/icon/fig-mono.svg`; re-export them after editing it:
 
 ```bash
 for s in 16 24 32 48 64 128 256 512; do rsvg-convert -w $s -h $s assets/icon/fig-mono.svg -o packaging/linux/share/icons/hicolor/${s}x${s}/apps/io.github.skynse.Fig.png; done
 ```
 
-FFmpeg is found in this order: `FFMPEG_ROOT`, then an `ffmpeg/` folder beside the app (how the Linux build ships it), then the system's libraries. The Windows build puts the DLLs beside `Fig.App.exe`.
+FFmpeg is found in this order: `FFMPEG_ROOT`, then an `ffmpeg/` folder beside the app (where a release unpacks its own), then the system's libraries.

@@ -17,8 +17,8 @@ namespace Fig.Core.Media
         }
 
         /// <summary>
-        /// The FFmpeg libraries a Linux release ships in an <c>ffmpeg</c> folder beside the app, or null to use the
-        /// system's (a development build). A Windows release puts the DLLs beside Fig.App.exe, where Windows looks first.
+        /// The FFmpeg libraries a release ships in an <c>ffmpeg</c> folder beside the app (unpacked there with it),
+        /// or null to use the system's (a development build).
         /// </summary>
         private static string? BundledFFmpeg()
         {
