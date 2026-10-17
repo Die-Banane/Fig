@@ -151,6 +151,20 @@ public class AudioMixerTests
         Assert.True(midMax > endMax * 2, $"fade-out should quiet the tail (mid={midMax}, end={endMax})");
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void Mix_PlaysAVideoClipsOwnSound_UntilItIsDetached(bool playsAudio)
+    {
+        var track = new Track { Kind = TrackKind.Video };
+        track.Clips.Add(new VideoClip { SourceId = "a1", StartSec = 0, DurSec = 1, SrcOutSec = 1, PlaysAudio = playsAudio });
+        var timeline = new TimelineModel { Rate = FrameRate.Common(30), Tracks = { track } };
+
+        var peak = new AudioMixer(new ConstantToneMedia(), _ => Asset()).Mix(timeline, 0, 0.5).Max(Math.Abs);
+
+        Assert.Equal(playsAudio, peak > 0.1f);
+    }
+
     private static float Peak(float[] interleaved, double startSec, double durSec)
     {
         var start = (int)(startSec * AudioMixer.SampleRate) * 2;

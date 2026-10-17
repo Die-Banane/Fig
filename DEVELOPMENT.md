@@ -162,4 +162,10 @@ git tag v2.0.0 && git push origin v2.0.0
 
 It runs both test projects, then publishes a self-contained Fig for `linux-x64` (`.tar.gz`) and `win-x64` (`.zip`) with FFmpeg 8.1 bundled ([BtbN's GPL shared builds](https://github.com/BtbN/FFmpeg-Builds), which include libx264), and attaches them to a GitHub release with generated notes and a `SHA256SUMS`. The tag's version is stamped into the assemblies. To build any other version, run the workflow by hand from the Actions tab and type the version.
 
+The Linux build also carries `install.sh` and `share/` (from `packaging/linux`): running `./install.sh` in the unpacked folder adds Fig to the app menu with its icon, for the current user, and `./install.sh --uninstall` removes it. To get the launcher for a build from source, pass its path: `packaging/linux/install.sh src/Fig.App/bin/Release/net10.0/Fig.App`. The launcher, icon and X11 window class all use the id `io.github.skynse.Fig` (`Program.AppId`), which is how the taskbar matches the window to its icon. The icons are exported from `assets/icon/fig-mono.svg`; re-export them after editing it:
+
+```bash
+for s in 16 24 32 48 64 128 256 512; do rsvg-convert -w $s -h $s assets/icon/fig-mono.svg -o packaging/linux/share/icons/hicolor/${s}x${s}/apps/io.github.skynse.Fig.png; done
+```
+
 FFmpeg is found in this order: `FFMPEG_ROOT`, then an `ffmpeg/` folder beside the app (how the Linux build ships it), then the system's libraries. The Windows build puts the DLLs beside `Fig.App.exe`.

@@ -187,10 +187,23 @@ namespace Fig.Core.Timeline
         [JsonIgnore]
         public override string? MediaId => SourceId;
         [JsonIgnore]
-        public override Facet Facets => Facet.Picture | Facet.Crop | Facet.Sound | Facet.Fades | Facet.Retime | Facet.Effects | Facet.Source;
+        public override Facet Facets => Facet.Picture | Facet.Crop | (PlaysAudio ? Facet.Sound : 0)
+            | Facet.Fades | Facet.Retime | Facet.Effects | Facet.Source;
         public string SourceId { get; set; } = "";
         public double SrcInSec { get; set; }
         public double SrcOutSec { get; set; }
+
+        /// <summary>
+        /// True when the clip plays its file's sound, drawn as a strip under the picture. False when the file is
+        /// silent, or its sound was detached to an audio clip of its own.
+        /// </summary>
+        public bool PlaysAudio { get; set; }
+
+        /// <summary>Seconds the sound fades in from the clip start, apart from the picture's fade (0 = none).</summary>
+        public double AudioFadeInSec { get; set; }
+
+        /// <summary>Seconds the sound fades out to the clip end, apart from the picture's fade (0 = none).</summary>
+        public double AudioFadeOutSec { get; set; }
 
         [JsonIgnore]
         public override bool HasSourceRange => true;

@@ -91,6 +91,10 @@ namespace Fig.App.Views
                     items.Add(new RackItem("fade-out", "Fade out", ZoomFill, ZoomEdge, null,
                         Math.Max(0, audio.DurSec - audio.FadeOutSec), audio.FadeOutSec, true, false, Facet.Fades));
             }
+            // a video's own sound: its level (its fades already show on the clip)
+            else if (clip is VideoClip { PlaysAudio: true } video
+                && (Math.Abs(video.Volume - 1) > 0.01 || video.Keyframes.ContainsKey(AutomationKeys.Volume)))
+                items.Add(new RackItem("level", "Level", LevelFill, LevelEdge, null, 0, video.DurSec, true, false, Facet.Sound));
             return AssignRows(items, pack: clip is Track);
         }
 

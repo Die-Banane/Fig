@@ -12,6 +12,15 @@ namespace Fig.Core.Project
         public string Id { get; set; } = Guid.NewGuid().ToString();
         public string Name { get; set; } = "";
         public string AppVersion { get; set; } = "1.0";
+
+        /// <summary>
+        /// What shape the saved timeline has, so a project from an earlier version is upgraded when it opens.
+        /// 0: a video's sound is a linked audio clip. 1: it is part of the video clip (<see cref="EmbeddedAudioMigration"/>).
+        /// A file without the field is 0.
+        /// </summary>
+        public int FormatVersion { get; set; }
+
+        public const int CurrentFormatVersion = EmbeddedAudioMigration.Version;
         public DateTime CreatedAt { get; set; } = DateTime.Now;
         public DateTime UpdatedAt { get; set; } = DateTime.Now;
 
@@ -28,7 +37,7 @@ namespace Fig.Core.Project
         /// <summary>Source-format provenance preserved across imports.</summary>
         public Dictionary<string, JsonElement> Metadata { get; set; } = new();
 
-        public static Project Create(string name) => new() { Name = name };
+        public static Project Create(string name) => new() { Name = name, FormatVersion = CurrentFormatVersion };
 
         public bool RelinkMedia(string oldPath, string newPath)
         {

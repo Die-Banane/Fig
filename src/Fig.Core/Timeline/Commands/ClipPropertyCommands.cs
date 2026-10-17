@@ -96,15 +96,17 @@ namespace Fig.Core.Timeline
         private readonly TimelineEditor _editor;
         private readonly string _clipId;
         private readonly Dictionary<string, double> _old = new();
+        private readonly FadeOf _of;
         private double _newValue;
 
         public string Description => "Set fade in";
 
-        public SetFadeInCommand(TimelineEditor editor, string clipId, double newValue)
+        public SetFadeInCommand(TimelineEditor editor, string clipId, double newValue, FadeOf of = FadeOf.Picture)
         {
             _editor = editor;
             _clipId = clipId;
             _newValue = Math.Max(0, newValue);
+            _of = of;
         }
 
         public void Execute()
@@ -112,8 +114,8 @@ namespace Fig.Core.Timeline
             _old.Clear();
             foreach (var clip in Targets())
             {
-                _old[clip.Id] = clip.FadeInSec;
-                ClipFade.ApplyFadeIn(clip, _newValue);
+                _old[clip.Id] = ClipFade.Get(clip, _of).In;
+                ClipFade.ApplyFadeIn(clip, _newValue, _of);
             }
             if (_old.Count == 0)
                 throw new InvalidOperationException($"Clip '{_clipId}' not found");
@@ -125,14 +127,17 @@ namespace Fig.Core.Timeline
             {
                 var clip = _editor.FindClip(id);
                 if (clip is not null)
-                    clip.FadeInSec = value;
+                {
+                    var (fadeIn, fadeOut) = ClipFade.Get(clip, _of);
+                    ClipFade.Set(clip, _of, value, fadeOut);
+                }
             }
         }
 
         public void Redo() => ApplyNew();
 
         public bool CanCoalesceWith(IEditCommand other)
-            => other is SetFadeInCommand o && o._clipId == _clipId;
+            => other is SetFadeInCommand o && o._clipId == _clipId && o._of == _of;
 
         public void CoalesceFrom(IEditCommand other)
         {
@@ -149,7 +154,7 @@ namespace Fig.Core.Timeline
             {
                 var clip = _editor.FindClip(id);
                 if (clip is not null)
-                    ClipFade.ApplyFadeIn(clip, _newValue);
+                    ClipFade.ApplyFadeIn(clip, _newValue, _of);
             }
         }
 
@@ -163,15 +168,17 @@ namespace Fig.Core.Timeline
         private readonly TimelineEditor _editor;
         private readonly string _clipId;
         private readonly Dictionary<string, double> _old = new();
+        private readonly FadeOf _of;
         private double _newValue;
 
         public string Description => "Set fade out";
 
-        public SetFadeOutCommand(TimelineEditor editor, string clipId, double newValue)
+        public SetFadeOutCommand(TimelineEditor editor, string clipId, double newValue, FadeOf of = FadeOf.Picture)
         {
             _editor = editor;
             _clipId = clipId;
             _newValue = Math.Max(0, newValue);
+            _of = of;
         }
 
         public void Execute()
@@ -179,8 +186,8 @@ namespace Fig.Core.Timeline
             _old.Clear();
             foreach (var clip in Targets())
             {
-                _old[clip.Id] = clip.FadeOutSec;
-                ClipFade.ApplyFadeOut(clip, _newValue);
+                _old[clip.Id] = ClipFade.Get(clip, _of).Out;
+                ClipFade.ApplyFadeOut(clip, _newValue, _of);
             }
             if (_old.Count == 0)
                 throw new InvalidOperationException($"Clip '{_clipId}' not found");
@@ -192,14 +199,17 @@ namespace Fig.Core.Timeline
             {
                 var clip = _editor.FindClip(id);
                 if (clip is not null)
-                    clip.FadeOutSec = value;
+                {
+                    var (fadeIn, fadeOut) = ClipFade.Get(clip, _of);
+                    ClipFade.Set(clip, _of, fadeIn, value);
+                }
             }
         }
 
         public void Redo() => ApplyNew();
 
         public bool CanCoalesceWith(IEditCommand other)
-            => other is SetFadeOutCommand o && o._clipId == _clipId;
+            => other is SetFadeOutCommand o && o._clipId == _clipId && o._of == _of;
 
         public void CoalesceFrom(IEditCommand other)
         {
@@ -216,7 +226,7 @@ namespace Fig.Core.Timeline
             {
                 var clip = _editor.FindClip(id);
                 if (clip is not null)
-                    ClipFade.ApplyFadeOut(clip, _newValue);
+                    ClipFade.ApplyFadeOut(clip, _newValue, _of);
             }
         }
 

@@ -53,6 +53,28 @@ namespace Fig.App.Views
         /// Draws each clip marker as a pennant on top of the clip with a pole running down through
         /// the picture, so it is easy to see and to click.
         /// </summary>
+        /// <summary>
+        /// Track and clip markers, drawn after every track and clip so nothing covers them: not the clip after the
+        /// one a marker is on, not a sound strip, fade or effect bar.
+        /// </summary>
+        private void DrawMarkersOverTracks(DrawingContext context, Rect clipArea, double px)
+        {
+            using var _ = context.PushClip(clipArea);
+            for (var i = 0; i < Editor!.Document.Tracks.Count; i++)
+            {
+                var track = Editor.Document.Tracks[i];
+                var top = TrackTop(i);
+                DrawTrackMarkers(context, track, top, TrackHeight(track));
+                foreach (var clip in track.Clips)
+                {
+                    var x = TrackHeaderWidth + Viewport.TimeToX(clip.StartSec + GetRippleOffsetSec(clip.Id));
+                    if (x + clip.DurSec * px < TrackHeaderWidth || x > Bounds.Width)
+                        continue;
+                    DrawClipMarkers(context, x, top + TimelineGeometry.ClipInset, clip, track);
+                }
+            }
+        }
+
         private void DrawClipMarkers(DrawingContext context, double clipX, double clipTop, Clip clip, Track track)
         {
             var preview = Editor?.BeatPreview is { } p && ReferenceEquals(p.Clip, clip) ? p : null;
@@ -74,7 +96,7 @@ namespace Fig.App.Views
                 var selected = Editor?.Selection.IsMarkerSelected(marker.Id) == true;
                 var hot = IsMarkerHot(marker);
 
-                context.DrawLine(new Pen(brush, selected ? 3 : 2), new Point(mx, clipTop + 8), new Point(mx, bodyBottom));
+
 
                 var head = new StreamGeometry();
                 var y = clipTop - 5;

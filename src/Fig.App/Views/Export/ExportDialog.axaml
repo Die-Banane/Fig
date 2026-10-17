@@ -4,6 +4,7 @@
         xmlns:vm="using:Fig.App.ViewModels"
         x:Class="Fig.App.Views.ExportDialog"
         x:DataType="vm:ExportDialogViewModel"
+        Icon="/Assets/fig.ico"
         Title="Export"
         Width="560" MinHeight="420"
         SizeToContent="Height"

@@ -8,7 +8,7 @@
         mc:Ignorable="d" d:DesignWidth="1200" d:DesignHeight="700"
         x:Class="Fig.App.Views.MainWindow"
         x:DataType="vm:AppViewModel"
-        Icon="/Assets/avalonia-logo.ico"
+        Icon="/Assets/fig.ico"
         MinWidth="1100" MinHeight="700"
         WindowDecorations="None"
         ExtendClientAreaToDecorationsHint="True"

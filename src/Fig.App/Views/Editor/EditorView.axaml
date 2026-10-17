@@ -634,6 +634,26 @@
                                             </Grid>
                                         </StackPanel>
                                     </Border>
+                                    <Border Classes="inspector-group" IsVisible="{Binding HasOwnSoundFades}">
+                                        <StackPanel Spacing="8">
+                                            <TextBlock Classes="inspector-section" Text="Sound fades"/>
+                                            <Grid ColumnDefinitions="58,*,56" ColumnSpacing="7">
+                                                <TextBlock Text="Fade in" Classes="field-label" VerticalAlignment="Center"/>
+                                                <ctrls:FigSlider Grid.Column="1" Minimum="0" Maximum="5" Value="{Binding SoundFadeInValue}"/>
+                                                <Border Grid.Column="2" Classes="inspector-value">
+                                                    <TextBlock Text="{Binding SoundFadeInValue, StringFormat={}{0:0.00}s}" Classes="field-value" FontSize="10" HorizontalAlignment="Right"/>
+                                                </Border>
+                                            </Grid>
+                                            <Grid ColumnDefinitions="58,*,56" ColumnSpacing="7">
+                                                <TextBlock Text="Fade out" Classes="field-label" VerticalAlignment="Center"/>
+                                                <ctrls:FigSlider Grid.Column="1" Minimum="0" Maximum="5" Value="{Binding SoundFadeOutValue}"/>
+                                                <Border Grid.Column="2" Classes="inspector-value">
+                                                    <TextBlock Text="{Binding SoundFadeOutValue, StringFormat={}{0:0.00}s}" Classes="field-value" FontSize="10" HorizontalAlignment="Right"/>
+                                                </Border>
+                                            </Grid>
+                                            <TextBlock Classes="field-label" TextWrapping="Wrap" Text="Apart from the picture's fades. Also from the corners of the sound strip."/>
+                                        </StackPanel>
+                                    </Border>
                                     <Border Classes="inspector-group">
                                         <StackPanel Spacing="10">
                                             <TextBlock Classes="inspector-section" Text="Volume keyframes"/>

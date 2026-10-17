@@ -7,7 +7,8 @@ using TimelineModel = Fig.Core.Timeline.Timeline;
 namespace Fig.Core.Audio
 {
     /// <summary>
-    /// Resolves which audio clips are audible at a given timeline position and mixes
+    /// Resolves which clips are audible at a given timeline position (audio clips, and video clips that play
+    /// their file's sound) and mixes
     /// their decoded samples into an interleaved stereo float buffer. Pure logic,
     /// no device dependency — the playback engine feeds this and hands the result to
     /// the audio device.
@@ -54,7 +55,7 @@ namespace Fig.Core.Audio
 
             foreach (var track in timeline.Tracks)
             {
-                if (track.Kind != TrackKind.Audio || track.Muted)
+                if (track.Muted)
                     continue;
 
                 foreach (var clip in track.Clips)
@@ -67,14 +68,20 @@ namespace Fig.Core.Audio
                     if (clipEnd <= timelineStart || clipStart >= end)
                         continue;
 
-                    if (clip is not AudioClip ac)
+                    var sourceId = clip switch
+                    {
+                        AudioClip audio when track.Kind == TrackKind.Audio => audio.SourceId,
+                        VideoClip { PlaysAudio: true } video => video.SourceId,
+                        _ => null,
+                    };
+                    if (sourceId is null)
                         continue;
 
-                    var asset = _findAsset(ac.SourceId);
-                    if (asset is null || string.IsNullOrEmpty(asset.Url) || asset.Offline)
+                    var asset = _findAsset(sourceId);
+                    if (asset is null || string.IsNullOrEmpty(asset.Url) || asset.Offline || (clip is VideoClip && !asset.HasAudio))
                         continue;
 
-                    MixClip(mixed, timelineStart, frames, clipStart, clipEnd, ac, asset, timeline.Rate.Fps);
+                    MixClip(mixed, timelineStart, frames, clipStart, clipEnd, clip, asset, timeline.Rate.Fps);
                 }
             }
 
@@ -82,7 +89,7 @@ namespace Fig.Core.Audio
         }
 
         private void MixClip(float[] mixed, double winStart, int winFrames, double clipStart, double clipEnd,
-            AudioClip clip, MediaAsset asset, double timelineRateFps)
+            Clip clip, MediaAsset asset, double timelineRateFps)
         {
             var speed = clip.Speed <= 0 ? 1.0 : clip.Speed;
             // conform: source time advances by speed × (source rate / timeline rate)
@@ -94,7 +101,7 @@ namespace Fig.Core.Audio
             if (overlapEnd <= overlapStart)
                 return;
 
-            var srcIn = clip.SrcInSec + (overlapStart - clipStart) * playRate;
+            var srcIn = clip.SourceIn + (overlapStart - clipStart) * playRate;
             var srcDur = (overlapEnd - overlapStart) * playRate;
 
             float[] decoded;

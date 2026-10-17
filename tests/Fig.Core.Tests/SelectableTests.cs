@@ -10,7 +10,7 @@ public class SelectableTests
     private static (TimelineEditor Editor, VideoClip Video, AudioClip Audio, Track Track) Setup()
     {
         var track = new Track { Id = "v", Kind = TrackKind.Video };
-        var video = new VideoClip { Id = "vc", StartSec = 0, DurSec = 5, SrcOutSec = 5 };
+        var video = new VideoClip { Id = "vc", StartSec = 0, DurSec = 5, SrcOutSec = 5, PlaysAudio = true };
         var audio = new AudioClip { Id = "ac", StartSec = 0, DurSec = 5, SrcOutSec = 5 };
         track.Clips.Add(video);
         var aTrack = new Track { Id = "a", Kind = TrackKind.Audio };
@@ -25,6 +25,7 @@ public class SelectableTests
         var (_, video, audio, _) = Setup();
         Assert.True(video.Facets.HasFlag(Facet.Picture | Facet.Sound | Facet.Effects | Facet.Source));
         Assert.False(audio.Facets.HasFlag(Facet.Picture));
+        Assert.False(new VideoClip { PlaysAudio = false }.Facets.HasFlag(Facet.Sound));   // silent, or its sound detached
         Assert.True(new TextClip().Facets.HasFlag(Facet.Text));
         Assert.False(new TextClip().Facets.HasFlag(Facet.Source));
     }

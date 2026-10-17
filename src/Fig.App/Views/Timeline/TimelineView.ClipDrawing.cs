@@ -105,16 +105,16 @@ namespace Fig.App.Views
             context.DrawRectangle(handleBrush, null, new Rect(x - width / 2, y + 3, width, height - 6));
         }
 
-        /// <summary>Draws diagonal opacity-ramp overlays for fade-in / fade-out durations.</summary>
-        private void DrawFadeRamps(DrawingContext context, Rect rect, Clip clip)
+        /// <summary>Draws diagonal ramp overlays for fade-in / fade-out durations across <paramref name="rect"/>.</summary>
+        private void DrawFadeRamps(DrawingContext context, Rect rect, double fadeInSec, double fadeOutSec)
         {
             var px = Viewport.PixelsPerSecond;
             var shade = new SolidColorBrush(Color.FromArgb(70, 0, 0, 0));
             var line = new Pen(new SolidColorBrush(Color.FromArgb(200, 0xff, 0xff, 0xff)), 1);
 
-            if (clip.FadeInSec > 1e-6)
+            if (fadeInSec > 1e-6)
             {
-                var w = Math.Min(clip.FadeInSec * px, rect.Width);
+                var w = Math.Min(fadeInSec * px, rect.Width);
                 if (w > 0.5)
                 {
                     var geo = new StreamGeometry();
@@ -130,9 +130,9 @@ namespace Fig.App.Views
                 }
             }
 
-            if (clip.FadeOutSec > 1e-6)
+            if (fadeOutSec > 1e-6)
             {
-                var w = Math.Min(clip.FadeOutSec * px, rect.Width);
+                var w = Math.Min(fadeOutSec * px, rect.Width);
                 if (w > 0.5)
                 {
                     var geo = new StreamGeometry();
@@ -221,7 +221,7 @@ namespace Fig.App.Views
         /// sample in the slice of source audio it covers, so zooming out never skips peaks and
         /// zooming in just spreads the same samples wider.
         /// </summary>
-        private void DrawAudioWaveform(DrawingContext context, Rect rect, AudioClip clip, MediaAsset asset)
+        private void DrawAudioWaveform(DrawingContext context, Rect rect, Clip clip, MediaAsset asset)
         {
             context.DrawRectangle(AudioBodyBrush, null, rect);
             var centerY = rect.Center.Y;
@@ -232,8 +232,8 @@ namespace Fig.App.Views
                 return;
 
             var halfH = rect.Height / 2 - 3;
-            var srcIn = Math.Max(0, clip.SrcInSec);
-            var srcSpan = Math.Max(0.0001, clip.SrcOutSec - srcIn);
+            var srcIn = Math.Max(0, clip.SourceIn);
+            var srcSpan = Math.Max(0.0001, clip.SourceOut - srcIn);
             var samplesPerSec = peaks.Length / asset.DurationSec;
 
             var (visLeft, visRight) = VisibleXRange(rect);

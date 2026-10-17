@@ -185,7 +185,9 @@ public class TrackMoveTests
 
         var asset = new MediaAsset { Id = "a", Kind = MediaKind.Video, DurationSec = 10, HasAudio = true };
         var video = editor.AddMediaLinked(asset, v1.Id, 0)!;
-        var audio = a1.Clips.Single();
+        var audio = editor.DetachAudio([video.Id]).Single();
+        editor.LinkClips([video.Id, audio.Id]);
+        Assert.Contains(audio, a1.Clips);
 
         var ok = editor.MoveClipToTrack(video.Id, v2.Id);
 

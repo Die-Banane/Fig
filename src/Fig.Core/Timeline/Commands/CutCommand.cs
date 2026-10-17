@@ -25,6 +25,8 @@ namespace Fig.Core.Timeline
 
         private double _snapStart, _snapDur, _snapSrcIn, _snapSrcOut;
         private double _snapFadeIn, _snapFadeOut;
+        // a video clip's own sound fades apart from its picture (the same as above for any other clip)
+        private double _snapSoundIn, _snapSoundOut;
         private double _sourceAdvance;
         private TransitionRef? _snapTransitionIn, _snapTransitionOut;
         private List<Marker> _snapMarkers = new();
@@ -57,6 +59,7 @@ namespace Fig.Core.Timeline
             _snapSrcOut = _first.SourceOut;
             _snapFadeIn = _first.FadeInSec;
             _snapFadeOut = _first.FadeOutSec;
+            (_snapSoundIn, _snapSoundOut) = ClipFade.Get(_first, FadeOf.Sound);
             _snapTransitionIn = _first.TransitionIn?.Clone();
             _snapTransitionOut = _first.TransitionOut?.Clone();
             _snapMarkers = _first.Markers.Select(CopyMarker).ToList();
@@ -83,6 +86,8 @@ namespace Fig.Core.Timeline
             SetSourceRange(_first, _snapSrcIn, _snapSrcOut);
             _first.FadeInSec = _snapFadeIn;
             _first.FadeOutSec = _snapFadeOut;
+            if (_first is VideoClip)
+                ClipFade.Set(_first, FadeOf.Sound, _snapSoundIn, _snapSoundOut);
             _first.TransitionIn = _snapTransitionIn?.Clone();
             _first.TransitionOut = _snapTransitionOut?.Clone();
             _first.Markers = _snapMarkers.Select(CopyMarker).ToList();
@@ -111,6 +116,8 @@ namespace Fig.Core.Timeline
             clip.DurSec = offset;
             SetSourceRange(clip, _snapSrcIn, _snapSrcIn + offset * _sourceAdvance);
             clip.FadeInSec = _snapFadeIn;
+            if (clip is VideoClip)
+                ClipFade.Set(clip, FadeOf.Sound, _snapSoundIn, _snapSoundOut);
             ClipFade.ApplySplitLeft(clip);
             // left keeps transition-in; clears transition-out (cut breaks the out edge)
             clip.TransitionIn = _snapTransitionIn?.Clone();
@@ -127,6 +134,8 @@ namespace Fig.Core.Timeline
             result.DurSec = _snapDur - offset;
             result.FadeInSec = 0;
             result.FadeOutSec = _snapFadeOut;
+            if (result is VideoClip)
+                ClipFade.Set(result, FadeOf.Sound, 0, _snapSoundOut);
             ClipFactory.SetSourceRange(result, _snapSrcIn + offset * _sourceAdvance, _snapSrcOut);
             ClipFade.ApplySplitRight(result);
             // right keeps transition-out; clears transition-in

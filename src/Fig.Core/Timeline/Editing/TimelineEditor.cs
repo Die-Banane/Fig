@@ -151,12 +151,10 @@ namespace Fig.Core.Timeline
         }
 
         /// <summary>
-        /// Adds a media asset to the timeline as a clip. If the asset has audio, a linked
-        /// audio clip is created on a free audio track (created if needed) and grouped with the
-        /// video clip so they move/resize/cut/delete together.
+        /// Adds a media asset to the timeline as a clip. A video's sound is part of its clip (see
+        /// <see cref="VideoClip.PlaysAudio"/>) until it is detached.
         /// Returns null only when the drop would overlap an existing clip on the targeted
-        /// track of the matching kind. Linked audio never silently fails: if the first audio
-        /// track is busy, another free one is used (or created).
+        /// track of the matching kind.
         /// </summary>
         public Clip? AddMediaLinked(MediaAsset asset, string targetTrackId, double startSec)
         {
@@ -185,36 +183,14 @@ namespace Fig.Core.Timeline
                 placeTrack = FindFreeTrack(desiredKind, clip, current: null)!;
             }
 
-            if (asset.HasAudio && asset.Kind == MediaKind.Video)
-            {
-                var groupId = Guid.NewGuid().ToString("N");
-                clip.LinkGroupId = groupId;
-
-                var audioClip = new AudioClip
-                {
-                    SourceId = asset.Id,
-                    StartSec = clip.StartSec,
-                    DurSec = clip.DurSec,
-                    SrcInSec = 0,
-                    SrcOutSec = asset.DurationSec,
-                    LinkGroupId = groupId,
-                    SourceRate = asset.SourceRate,
-                };
-                // never reject just because A1 is busy — reuse a free audio lane or make one.
-                // this is what broke re-drops onto empty V2/A2 after deleting a second clip.
-                var audioTrack = FindFreeTrack(TrackKind.Audio, audioClip, current: null)!;
-                InsertClip(audioTrack, audioClip);
-            }
-
             InsertClip(placeTrack, clip);
             RaiseChanged();
             return clip;
         }
 
         /// <summary>
-        /// Adds a media asset to a brand-new video track (and a brand-new audio track with a
-        /// linked audio clip, when the asset has audio). Used when dropping into empty space so
-        /// the new clips get their own track pair instead of sharing the track above.
+        /// Adds a media asset to a brand-new track of its kind. Used when dropping into empty space so
+        /// the new clip gets its own track instead of sharing the one above.
         /// </summary>
         public Clip AddMediaNewTracks(MediaAsset asset, double startSec)
         {
@@ -232,25 +208,6 @@ namespace Fig.Core.Timeline
             }
 
             var videoTrack = AddTrack(TrackKind.Video);
-
-            if (asset.HasAudio)
-            {
-                var groupId = Guid.NewGuid().ToString("N");
-                clip.LinkGroupId = groupId;
-
-                var audioTrack = AddTrack(TrackKind.Audio);
-                var audioClip = new AudioClip
-                {
-                    SourceId = asset.Id,
-                    StartSec = clip.StartSec,
-                    DurSec = clip.DurSec,
-                    SrcInSec = 0,
-                    SrcOutSec = asset.DurationSec,
-                    LinkGroupId = groupId,
-                    SourceRate = asset.SourceRate,
-                };
-                InsertClip(audioTrack, audioClip);
-            }
 
             InsertClip(videoTrack, clip);
             RaiseChanged();
@@ -282,7 +239,7 @@ namespace Fig.Core.Timeline
                 MediaKind.Audio => new AudioClip { SourceId = asset.Id, DurSec = asset.DurationSec, SourceRate = asset.SourceRate },
                 // a still lasts the default length; an animated one (a GIF) at least one whole loop
                 MediaKind.Image => new ImageClip { SourceId = asset.Id, DurSec = Math.Max(ImageClip.DefaultDurationSec, asset.DurationSec) },
-                _ => new VideoClip { SourceId = asset.Id, DurSec = asset.DurationSec, SourceRate = asset.SourceRate },
+                _ => new VideoClip { SourceId = asset.Id, DurSec = asset.DurationSec, SourceRate = asset.SourceRate, PlaysAudio = asset.HasAudio },
             };
         }
 
@@ -779,31 +736,33 @@ namespace Fig.Core.Timeline
             RaiseChanged();
         }
 
-        public void SetFadeIn(string clipId, double fadeInSec)
+        /// <summary>Sets the fade-in of the clip's picture, or of a video clip's own sound (and its link group's).</summary>
+        public void SetFadeIn(string clipId, double fadeInSec, FadeOf of = FadeOf.Picture)
         {
             fadeInSec = Math.Max(0, fadeInSec);
             var clip = FindClip(clipId);
             if (clip is null)
                 return;
-            var max = Math.Max(0, clip.DurSec - Math.Max(0, clip.FadeOutSec));
-            var clamped = Math.Min(fadeInSec, max);
-            if (Math.Abs(clip.FadeInSec - clamped) < 1e-6)
+            var (current, fadeOut) = ClipFade.Get(clip, of);
+            var clamped = Math.Min(fadeInSec, Math.Max(0, clip.DurSec - Math.Max(0, fadeOut)));
+            if (Math.Abs(current - clamped) < 1e-6)
                 return;
-            History.ExecuteCoalescing(new SetFadeInCommand(this, clipId, fadeInSec));
+            History.ExecuteCoalescing(new SetFadeInCommand(this, clipId, fadeInSec, of));
             RaiseChanged();
         }
 
-        public void SetFadeOut(string clipId, double fadeOutSec)
+        /// <summary>Sets the fade-out of the clip's picture, or of a video clip's own sound (and its link group's).</summary>
+        public void SetFadeOut(string clipId, double fadeOutSec, FadeOf of = FadeOf.Picture)
         {
             fadeOutSec = Math.Max(0, fadeOutSec);
             var clip = FindClip(clipId);
             if (clip is null)
                 return;
-            var max = Math.Max(0, clip.DurSec - Math.Max(0, clip.FadeInSec));
-            var clamped = Math.Min(fadeOutSec, max);
-            if (Math.Abs(clip.FadeOutSec - clamped) < 1e-6)
+            var (fadeIn, current) = ClipFade.Get(clip, of);
+            var clamped = Math.Min(fadeOutSec, Math.Max(0, clip.DurSec - Math.Max(0, fadeIn)));
+            if (Math.Abs(current - clamped) < 1e-6)
                 return;
-            History.ExecuteCoalescing(new SetFadeOutCommand(this, clipId, fadeOutSec));
+            History.ExecuteCoalescing(new SetFadeOutCommand(this, clipId, fadeOutSec, of));
             RaiseChanged();
         }
 
@@ -1605,7 +1564,7 @@ namespace Fig.Core.Timeline
         }
 
         /// <summary>Adds clip-local beat times as one undoable operation.</summary>
-        public IReadOnlyList<Marker> AddBeatMarkers(AudioClip clip, IReadOnlyList<double> times)
+        public IReadOnlyList<Marker> AddBeatMarkers(Clip clip, IReadOnlyList<double> times)
         {
             var command = new GenerateMarkersFromBeats(this, clip, times);
             if (!command.HasChanges)

@@ -3,6 +3,7 @@
         xmlns:vm="using:Fig.App.ViewModels"
         x:Class="Fig.App.Views.ExportJobsWindow"
         x:DataType="vm:EditorViewModel"
+        Icon="/Assets/fig.ico"
         Title="Export jobs"
         Width="560" MinHeight="220" MaxHeight="620" SizeToContent="Height" CanResize="False"
         WindowStartupLocation="CenterOwner" Background="#1D1E20">

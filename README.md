@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/icon/fig.svg" width="128" height="128" alt="Fig icon">
+</p>
+
 # The Fig Project
 
 Fig is an open-source non-linear video editor built with C# and Avalonia. It is designed around the single goal of simple basic video editing, much like capcut. Fig isn't trying to be Premiere or Davinci, but rather a simple tool for editing clips, be it long or short, and without hassle.
@@ -13,7 +17,7 @@ Actively developed. Expect rough edges, incomplete features, and frequent change
 ## Features
 
 - **Timeline editing**: drag, move, and resize clips; trim from either edge; split at the playhead; ripple delete with a fully undoable command history.
-- **Linked audio**: dropping a video that contains audio automatically creates a linked audio clip on an audio track. Video and its audio move, trim, cut, and ripple together.
+- **Video with its sound**: a video's audio is part of its clip, shown as a waveform strip under the picture, so they move, trim, cut, and ripple together. Picture and sound fade independently, and right-click → Detach audio moves the sound to an audio clip of its own.
 - **Media previews**: aspect-correct filmstrips tiled across video clips and sample-accurate waveforms rendered in real time from decoded audio peaks.
 - **Synchronous playback**: audio is the master clock. A background producer decodes and mixes the audible clips into a ring buffer while the device drains it, so the timeline position and video preview follow the audio in real time.
 - **Keyboard-first controls**: a data-driven gesture system that maps input combinations to timeline actions. Mappings are stored as editable configuration, not hardcoded.

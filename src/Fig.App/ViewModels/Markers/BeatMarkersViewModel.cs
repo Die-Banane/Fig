@@ -18,7 +18,7 @@ public sealed partial class BeatMarkersViewModel : ViewModelBase
     private readonly EditorViewModel _host;
 
     // Everything the analysis depended on; if any of it changes the preview no longer matches the audio.
-    private sealed record AnalyzedClip(TimelineEditor Editor, AudioClip Clip, string SourceId, double SrcIn,
+    private sealed record AnalyzedClip(TimelineEditor Editor, Clip Clip, string SourceId, double SrcIn,
         double SrcOut, double Dur, double Speed, FrameRate? SourceRate, FrameRate TimelineRate, double PlayRate);
 
     private AnalyzedClip? _session;
@@ -66,14 +66,15 @@ public sealed partial class BeatMarkersViewModel : ViewModelBase
     {
         var editor = _host.Editor;
         var selected = editor.Selection.SelectedClipIds;
-        var clip = editor.Document.Tracks.SelectMany(track => track.Clips).OfType<AudioClip>()
-            .FirstOrDefault(c => selected.Contains(c.Id));
+        // an audio clip, or a video clip playing its own sound
+        var clip = editor.Document.Tracks.SelectMany(track => track.Clips)
+            .FirstOrDefault(c => c is AudioClip or VideoClip { PlaysAudio: true } && selected.Contains(c.Id));
         if (clip is null)
         {
-            Fail("Select an audio clip first.");
+            Fail("Select a clip with sound first.");
             return;
         }
-        var asset = _host.FindAsset(clip.SourceId);
+        var asset = _host.FindAsset(clip.MediaId!);
         if (asset is null || asset.Offline)
         {
             Fail("The source audio is unavailable.");
@@ -86,14 +87,14 @@ public sealed partial class BeatMarkersViewModel : ViewModelBase
         double playRate = (speed <= 0 ? 1 : speed)
             * (clip.SourceRate is { } rate ? rate.Fps / timelineRate.Fps : 1);
         double sourceDuration = Math.Min(clip.DurSec * playRate,
-            Math.Min(clip.SrcOutSec, asset.DurationSec) - clip.SrcInSec);
+            Math.Min(clip.SourceOut, asset.DurationSec) - clip.SourceIn);
         if (!double.IsFinite(playRate) || playRate <= 0 || sourceDuration <= 0)
         {
             Fail("The clip has no audio range to analyze.");
             return;
         }
 
-        var session = new AnalyzedClip(editor, clip, clip.SourceId, clip.SrcInSec, clip.SrcOutSec, clip.DurSec,
+        var session = new AnalyzedClip(editor, clip, clip.MediaId!, clip.SourceIn, clip.SourceOut, clip.DurSec,
             speed, clip.SourceRate, timelineRate, playRate);
         Discard();
         int generation = ++_generation;
@@ -187,7 +188,8 @@ public sealed partial class BeatMarkersViewModel : ViewModelBase
     private bool IsCurrent(AnalyzedClip s)
         => ReferenceEquals(_host.Editor, s.Editor)
             && s.Editor.Document.Tracks.SelectMany(track => track.Clips).Contains(s.Clip)
-            && s.Clip.SourceId == s.SourceId && s.Clip.SrcInSec == s.SrcIn && s.Clip.SrcOutSec == s.SrcOut
+            && s.Clip.MediaId == s.SourceId && s.Clip is AudioClip or VideoClip { PlaysAudio: true }
+            && s.Clip.SourceIn == s.SrcIn && s.Clip.SourceOut == s.SrcOut
             && s.Clip.DurSec == s.Dur && s.Clip.Speed == s.Speed
             && Nullable.Equals(s.Clip.SourceRate, s.SourceRate) && s.Editor.Document.Rate.Equals(s.TimelineRate);
 

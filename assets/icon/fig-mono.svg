@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Fig app icon, flat monochrome. 1024 × 1024, the same shapes as fig.svg in two colours:
+
+    primary  #7a3596  the tile, and the cut-outs in the fig (the play triangle, the leaf vein)
+    mark     #ffffff  the fig: stem, leaf and fruit
+
+  To recolour, change the two values in <style>: every shape takes its colour from a class.
+
+  Drawn back to front:
+    background   the rounded tile
+    fig
+      stem       the short stalk on top
+      leaf       the leaf off the stalk, and its vein (cut out)
+      fruit      the body
+      play       the play triangle (cut out of the fruit)
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <title>Fig</title>
+
+  <defs>
+    <style>
+      .primary { fill: #7a3596; }
+      .primary-stroke { stroke: #7a3596; }
+      .mark { fill: #ffffff; }
+    </style>
+  </defs>
+
+  <g id="background">
+    <rect id="background-tile" class="primary" x="0" y="0" width="1024" height="1024" rx="232" ry="232"/>
+  </g>
+
+  <g id="fig">
+    <g id="stem">
+      <path id="stem-shape" class="mark"
+            d="M 494 262 C 492 228 486 196 474 168 C 470 158 478 150 488 152 C 506 156 520 196 528 262 Z"/>
+    </g>
+
+    <g id="leaf">
+      <path id="leaf-blade" class="mark"
+            d="m 520,230 c 40,-70 120,-102 204,-90 -16,82 -84,136 -176,128 -36,-1.98494 -45.5207,-6 -28,-38 z"/>
+      <path id="leaf-vein" class="primary-stroke" fill="none" stroke-width="12" stroke-linecap="round"
+            d="M 534 250 C 590 222 640 192 694 158"/>
+    </g>
+
+    <g id="fruit">
+      <!-- the body: a narrow neck under the stem, swelling to a round base -->
+      <path id="fruit-body" class="mark"
+            d="M 512 248
+               C 560 248 576 300 612 340
+               C 724 420 800 520 800 650
+               C 800 808 672 890 512 890
+               C 352 890 224 808 224 650
+               C 224 520 300 420 412 340
+               C 448 300 464 248 512 248 Z"/>
+    </g>
+
+    <g id="play">
+      <!-- in the tile colour, so it reads as cut out of the fruit; the matching stroke rounds its corners -->
+      <path id="play-triangle" class="primary primary-stroke" stroke-width="44" stroke-linejoin="round"
+            d="M 466 566 L 466 742 L 616 654 Z"/>
+    </g>
+  </g>
+</svg>

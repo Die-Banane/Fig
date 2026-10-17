@@ -223,11 +223,11 @@ namespace Fig.Core.Timeline
     /// <summary>Adds a batch of clip-local beat markers as one undoable edit.</summary>
     public sealed class GenerateMarkersFromBeats : IEditCommand
     {
-        private readonly AudioClip _clip;
+        private readonly Clip _clip;
         private readonly List<Marker> _markers;
         private readonly List<(Marker Marker, int Index)> _replaced;
 
-        public GenerateMarkersFromBeats(TimelineEditor editor, AudioClip clip, IReadOnlyList<double> times)
+        public GenerateMarkersFromBeats(TimelineEditor editor, Clip clip, IReadOnlyList<double> times)
         {
             _clip = clip;
             _replaced = clip.Markers.Select((marker, index) => (Marker: marker, Index: index))

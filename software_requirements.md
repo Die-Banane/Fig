@@ -28,7 +28,8 @@ Out of scope for the current build: collaborative editing, cloud storage, mobile
 | --- | --- |
 | **Clip** | A segment of a media asset placed on a track (video, audio, or text). |
 | **Track** | A named lane on the timeline holding clips of one kind (video or audio). |
-| **Linked clip** | A video clip and its companion audio clip sharing a link group; they move/trim/cut/delete together. |
+| **Linked clip** | Clips sharing a link group (linked by the user); they move/trim/cut/delete together. |
+| **Embedded audio** | A video's own sound, played and edited as part of its video clip and drawn as a strip under the picture, until it is detached to an audio clip of its own. |
 | **Timeline** | The ordered set of tracks and clips that constitute an edit. |
 | **Playhead** | The current position on the timeline. |
 | **Frame rate (FPS)** | The playback rate expressed as a rational number (e.g., 24000/1001). |
@@ -129,7 +130,9 @@ The primary user is a solo creator (hobbyist to semi-professional) who edits sho
 | ID | Requirement | Priority | Status |
 | --- | --- | --- | --- |
 | FR-030 | The timeline SHALL support multiple video and audio tracks with add/remove/select. | P0 | X |
-| FR-031 | Dropping a video with audio SHALL create a linked audio clip on an audio track. | P0 | X |
+| FR-031 | Dropping a video with audio SHALL create one video clip that plays its sound (embedded audio), drawn as a waveform strip under the picture. | P0 | X |
+| FR-031a | "Detach audio" on a video clip SHALL move its sound to an unlinked audio clip on a free audio track (same range, speed, level, sound fades and volume keyframes) and silence the video clip, as one undo step. | P0 | X |
+| FR-031b | Opening a project saved before embedded audio SHALL fold each video's linked audio clip with the same source and timing into the video clip; other pairs SHALL keep playing as before. | P0 | X |
 | FR-032 | Clips SHALL be draggable, including across tracks, with overlap rejection. | P0 | X |
 | FR-033 | Clips SHALL be resizable/trimmable from either edge. | P0 | X |
 | FR-034 | The application SHALL split a clip at the playhead. | P0 | X |
@@ -149,6 +152,7 @@ The primary user is a solo creator (hobbyist to semi-professional) who edits sho
 | FR-050 | Video clips SHALL render aspect-correct filmstrip thumbnails tiled across the clip. | P0 | X |
 | FR-051 | Audio clips SHALL render waveforms from decoded peaks in real time. | P0 | X |
 | FR-052 | Fade ramps SHALL be rendered on clips and be draggable. | P0 | X |
+| FR-052a | A video clip's picture and its embedded audio SHALL fade independently: the picture's fades on the picture, the sound's on its strip and on the Audio tab. | P0 | X |
 | FR-053 | Timeline and track markers SHALL be rendered (ruler blocks, lane diamonds). | P0 | X |
 | FR-054 | Cut transitions SHALL be rendered as a badge and an overlap span on both clips. | P0 | X |
 | FR-055 | Disabled clips SHALL be visually dimmed. | P0 | X |
@@ -169,7 +173,7 @@ The primary user is a solo creator (hobbyist to semi-professional) who edits sho
 ### 3.6 Audio
 | ID | Requirement | Priority | Status |
 | --- | --- | --- | --- |
-| FR-070 | The mixer SHALL sum audible clips into interleaved stereo at 48 kHz, honoring track mute, clip volume, and fade envelopes. | P0 | X |
+| FR-070 | The mixer SHALL sum audible clips (audio clips and video clips playing embedded audio) into interleaved stereo at 48 kHz, honoring track mute, clip volume, and fade envelopes. | P0 | X |
 | FR-071 | Clip speed ≠ 1 SHALL resample the decoded audio so pitch and duration match the timeline (no truncation). | P0 | X |
 | FR-072 | Per-clip speed editing SHALL be exposed in the UI. | P1 | X |
 
@@ -198,7 +202,7 @@ The primary user is a solo creator (hobbyist to semi-professional) who edits sho
 | FR-095 | Markers SHALL render on clips, tracks, and the timeline ruler. | P0 | X |
 | FR-096 | Markers SHALL be multi-selectable (Ctrl/Cmd toggles, Shift selects a range, Ctrl/Cmd+A selects all visible); deleting a selection SHALL be one undo step, and Delete/Escape in the Markers panel SHALL act on markers only while markers are selected. | P0 | X |
 | FR-097 | Range markers (a start and a duration) SHALL be creatable at the playhead or between two bookmarks, drawn as bars on the ruler, editable by dragging, and undoable. | P1 | X |
-| FR-098 | Video SHALL be splittable at the selected markers (a range marker contributes its start) as one undo step, with linked audio following. | P1 | X |
+| FR-098 | Video SHALL be splittable at the selected markers (a range marker contributes its start) as one undo step, with embedded and linked audio following. | P1 | X |
 | FR-099 | The Markers panel SHALL list sequence and clip markers with search, selection, rename, delete, and per-clip clearing of generated markers. | P1 | X |
 
 ### 3.9 Interoperability

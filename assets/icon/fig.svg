@@ -1,0 +1,238 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!--
+  Fig app icon. 1024 × 1024, drawn back to front:
+
+    background   the rounded tile
+    fig
+      stem       the short stalk on top
+      leaf       the leaf off the stalk, and its vein
+      fruit      the body, a soft shadow on its lower side, and a highlight
+      play       the play triangle on the fruit
+
+  Colours live in <defs> as named gradients: change a gradient's stops to recolour every shape that uses it.
+  Shapes are plain paths, so they can be reshaped node by node in Inkscape, Figma or Penpot.
+-->
+
+<svg
+   width="1024"
+   height="1024"
+   viewBox="0 0 1024 1024"
+   version="1.1"
+   id="svg15"
+   sodipodi:docname="fig.svg"
+   inkscape:version="1.4.4 (dcaf3e7d9e, 2026-05-05)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <sodipodi:namedview
+     id="namedview15"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:zoom="0.77832031"
+     inkscape:cx="463.81932"
+     inkscape:cy="523.56336"
+     inkscape:window-width="1920"
+     inkscape:window-height="1008"
+     inkscape:window-x="0"
+     inkscape:window-y="0"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="fig" />
+  <title
+     id="title1">Fig</title>
+  <defs
+     id="defs15">
+    <!-- tile: the app's dark panel colours, a little lighter at the top -->
+    <linearGradient
+       id="background-fill"
+       x1="0"
+       y1="0"
+       x2="0"
+       y2="1">
+      <stop
+         offset="0"
+         stop-color="#26282e"
+         id="stop1" />
+      <stop
+         offset="1"
+         stop-color="#131417"
+         id="stop2" />
+    </linearGradient>
+    <!-- fruit: ripe fig purple, lighter towards the upper left -->
+    <linearGradient
+       id="fruit-fill"
+       x1="0.2"
+       y1="0.1"
+       x2="0.8"
+       y2="1">
+      <stop
+         offset="0"
+         stop-color="#a45cc4"
+         id="stop3" />
+      <stop
+         offset="0.55"
+         stop-color="#7a3596"
+         id="stop4" />
+      <stop
+         offset="1"
+         stop-color="#4e1d66"
+         id="stop5" />
+    </linearGradient>
+    <!-- shadow along the lower right of the fruit -->
+    <linearGradient
+       id="fruit-shadow-fill"
+       x1="0"
+       y1="0"
+       x2="1"
+       y2="1">
+      <stop
+         offset="0"
+         stop-color="#2a0b3a"
+         stop-opacity="0"
+         id="stop6" />
+      <stop
+         offset="1"
+         stop-color="#2a0b3a"
+         stop-opacity="0.55"
+         id="stop7" />
+    </linearGradient>
+    <!-- highlight on the upper left of the fruit -->
+    <radialGradient
+       id="fruit-shine-fill"
+       cx="0.5"
+       cy="0.5"
+       r="0.5">
+      <stop
+         offset="0"
+         stop-color="#ffffff"
+         stop-opacity="0.45"
+         id="stop8" />
+      <stop
+         offset="1"
+         stop-color="#ffffff"
+         stop-opacity="0"
+         id="stop9" />
+    </radialGradient>
+    <!-- stem and leaf greens -->
+    <linearGradient
+       id="stem-fill"
+       x1="0"
+       y1="0"
+       x2="0"
+       y2="1">
+      <stop
+         offset="0"
+         stop-color="#5c8a3a"
+         id="stop10" />
+      <stop
+         offset="1"
+         stop-color="#3f6a28"
+         id="stop11" />
+    </linearGradient>
+    <linearGradient
+       id="leaf-fill"
+       x1="0"
+       y1="0"
+       x2="1"
+       y2="1">
+      <stop
+         offset="0"
+         stop-color="#8fd16a"
+         id="stop12" />
+      <stop
+         offset="1"
+         stop-color="#4f9a3a"
+         id="stop13" />
+    </linearGradient>
+    <!-- play triangle: white, cooling to a pale tint of the app's accent blue -->
+    <linearGradient
+       id="play-fill"
+       x1="0"
+       y1="0"
+       x2="1"
+       y2="1">
+      <stop
+         offset="0"
+         stop-color="#ffffff"
+         id="stop14" />
+      <stop
+         offset="1"
+         stop-color="#cfe0ff"
+         id="stop15" />
+    </linearGradient>
+  </defs>
+  <g
+     id="background">
+    <rect
+       id="background-tile"
+       x="0"
+       y="0"
+       width="1024"
+       height="1024"
+       rx="232"
+       ry="232"
+       fill="url(#background-fill)" />
+  </g>
+  <g
+     id="fig">
+    <g
+       id="stem">
+      <path
+         id="stem-shape"
+         fill="url(#stem-fill)"
+         d="M 494 262 C 492 228 486 196 474 168 C 470 158 478 150 488 152 C 506 156 520 196 528 262 Z" />
+    </g>
+    <g
+       id="leaf">
+      <path
+         id="leaf-blade"
+         fill="url(#leaf-fill)"
+         d="m 520,230 c 40,-70 120,-102 204,-90 -16,82 -84,136 -176,128 -36,-1.98494 -45.5207,-6 -28,-38 z"
+         sodipodi:nodetypes="cccc" />
+      <path
+         id="leaf-vein"
+         fill="none"
+         stroke="#3f7a2c"
+         stroke-width="10"
+         stroke-linecap="round"
+         d="M 534 250 C 590 222 640 192 694 158" />
+    </g>
+    <g
+       id="fruit">
+      <!-- the body: a narrow neck under the stem, swelling to a round base -->
+      <path
+         id="fruit-body"
+         fill="url(#fruit-fill)"
+         d="M 512 248                C 560 248 576 300 612 340                C 724 420 800 520 800 650                C 800 808 672 890 512 890                C 352 890 224 808 224 650                C 224 520 300 420 412 340                C 448 300 464 248 512 248 Z" />
+      <!-- the same outline as the body, filled with a gradient that only darkens the lower right; keep it in step with fruit-body -->
+      <path
+         id="fruit-shadow"
+         fill="url(#fruit-shadow-fill)"
+         d="M 512 248                C 560 248 576 300 612 340                C 724 420 800 520 800 650                C 800 808 672 890 512 890                C 352 890 224 808 224 650                C 224 520 300 420 412 340                C 448 300 464 248 512 248 Z" />
+      <ellipse
+         id="fruit-shine"
+         cx="390"
+         cy="520"
+         rx="96"
+         ry="150"
+         transform="rotate(28 390 520)"
+         fill="url(#fruit-shine-fill)" />
+    </g>
+    <g
+       id="play">
+      <!-- rounded corners come from the matching stroke and round joins -->
+      <path
+         id="play-triangle"
+         fill="url(#play-fill)"
+         stroke="url(#play-fill)"
+         stroke-width="44"
+         stroke-linejoin="round"
+         d="M 466 566 L 466 742 L 616 654 Z" />
+    </g>
+  </g>
+</svg>

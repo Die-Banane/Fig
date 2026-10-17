@@ -156,7 +156,8 @@ public sealed class UiSmokeTests : IDisposable
         {
             var clips = vm.Editor.Document.Tracks.SelectMany(t => t.Clips).ToList();
             var video = clips.OfType<Fig.Core.Timeline.VideoClip>().First();
-            var audio = clips.OfType<Fig.Core.Timeline.AudioClip>().First();
+            // the second video's sound, detached to an audio clip of its own
+            var audio = vm.Editor.DetachAudio([clips.OfType<Fig.Core.Timeline.VideoClip>().Last().Id]).Single();
             string[] Tabs() => vm.Properties.Sections.Select(s => s.Title).ToArray();
 
             Assert.Empty(vm.Properties.Sections);
@@ -295,7 +296,8 @@ public sealed class UiSmokeTests : IDisposable
             window.MouseDown(point, Avalonia.Input.MouseButton.Left);
             window.MouseUp(point, Avalonia.Input.MouseButton.Left);
             Assert.Equal(videosBefore + 2, vm.Editor.Document.Tracks.SelectMany(track => track.Clips).OfType<Fig.Core.Timeline.VideoClip>().Count());
-            Assert.Equal(audioBefore + 2, vm.Editor.Document.Tracks.SelectMany(track => track.Clips).OfType<Fig.Core.Timeline.AudioClip>().Count());
+            // the sound is part of the video clip, so it is cut with it
+            Assert.Equal(audioBefore, vm.Editor.Document.Tracks.SelectMany(track => track.Clips).OfType<Fig.Core.Timeline.AudioClip>().Count());
             vm.Editor.Undo();
             Assert.Equal(videosBefore, vm.Editor.Document.Tracks.SelectMany(track => track.Clips).OfType<Fig.Core.Timeline.VideoClip>().Count());
             Assert.Equal(audioBefore, vm.Editor.Document.Tracks.SelectMany(track => track.Clips).OfType<Fig.Core.Timeline.AudioClip>().Count());
@@ -694,7 +696,7 @@ public sealed class UiSmokeTests : IDisposable
             vm.Beats.AnalyzeCommand.Execute(null);
 
             Assert.False(vm.Beats.HasPreview);
-            Assert.Equal("Select an audio clip first.", vm.Beats.Status);
+            Assert.Equal("Select a clip with sound first.", vm.Beats.Status);
             Assert.Equal(vm.Beats.Status, toast);
             Assert.Equal("Beats", vm.Beats.ButtonLabel);
             Assert.Null(vm.Editor.BeatPreview);
@@ -1108,9 +1110,9 @@ public sealed class UiSmokeTests : IDisposable
         window.MouseMove(target, RawInputModifiers.Control);
         Assert.Equal(before, vm.Editor.Document.Tracks.Sum(t => t.Clips.Count));
         window.MouseUp(target, Avalonia.Input.MouseButton.Left, RawInputModifiers.Control);
-        Assert.Equal(before + 2, vm.Editor.Document.Tracks.Sum(t => t.Clips.Count));
+        Assert.Equal(before + 1, vm.Editor.Document.Tracks.Sum(t => t.Clips.Count));   // the video, its sound inside it
         Assert.Equal(0, clip.StartSec);
-        Assert.Equal(2, vm.Editor.Selection.SelectedClipIds.Count);
+        Assert.Single(vm.Editor.Selection.SelectedClipIds);
         vm.Editor.Undo();
         Assert.Equal(before, vm.Editor.Document.Tracks.Sum(t => t.Clips.Count));
         window.Close();

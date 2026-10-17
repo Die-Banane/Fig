@@ -210,6 +210,8 @@ namespace Fig.App.Views
         private const double TickRulerHeight = 22;
         private const double RulerHeight = MarkerLaneHeight + TickRulerHeight;
         private const double ClipCornerRadius = 6;
+        /// <summary>Gap each side of a cut between clips that butt together, so both keep their rounded ends.</summary>
+        private const double SplitGap = 1;
         private const double TrackHeaderWidth = 118;
         private const double ZoomFactor = 1.25;
         private const double HeaderButtonSize = 22;
@@ -484,6 +486,9 @@ namespace Fig.App.Views
         private DragMode _dragMode = DragMode.None;
         private enum EdgeKind { None, Left, Right, FadeIn, FadeOut }
         private EdgeKind _hoverEdge;
+        // whether the fade under the pointer, or being dragged, is the picture's or a video's own sound's
+        private FadeOf _hoverFadeOf;
+        private FadeOf _dragFadeOf;
 
         private const double TrimEdgePx = 6;
         private const double FadeZonePx = 14;
@@ -861,14 +866,14 @@ namespace Fig.App.Views
                     case DragMode.FadeIn:
                     {
                         var fade = Math.Max(0, pointerTime - _dragClip.StartSec);
-                        Editor.SetFadeIn(_dragClip.Id, fade);
+                        Editor.SetFadeIn(_dragClip.Id, fade, _dragFadeOf);
                         break;
                     }
                     case DragMode.FadeOut:
                     {
                         var end = _dragClip.StartSec + _dragClip.DurSec;
                         var fade = Math.Max(0, end - pointerTime);
-                        Editor.SetFadeOut(_dragClip.Id, fade);
+                        Editor.SetFadeOut(_dragClip.Id, fade, _dragFadeOf);
                         break;
                     }
                 }
@@ -904,15 +909,16 @@ namespace Fig.App.Views
             }
 
             // idle: reflect resize / fade affordance when hovering a clip edge
-            var overEdge = HoverClipEdge(pos);
+            var overEdge = HoverClipEdge(pos, out var overFadeOf);
             Cursor = overEdge switch
             {
                 EdgeKind.Left or EdgeKind.Right or EdgeKind.FadeIn or EdgeKind.FadeOut
                     => new Cursor(StandardCursorType.SizeWestEast),
                 _ => Cursor.Default,
             };
-            var hoverChanged = _hoverEdge != overEdge;
+            var hoverChanged = _hoverEdge != overEdge || _hoverFadeOf != overFadeOf;
             _hoverEdge = overEdge;
+            _hoverFadeOf = overFadeOf;
 
             // header button hover (for delete/toggle affordance)
             var newHeaderHover = HoverHeaderButton(pos);
@@ -1080,7 +1086,7 @@ namespace Fig.App.Views
             _dragSrcOutSec = clip.SourceOut;
             _dragPointerTime = Viewport.XToTime(pointerX - TrackHeaderWidth);
 
-            var edge = EdgeAt(clip, track, pos);
+            var edge = EdgeAt(clip, track, pos, out _dragFadeOf);
             _dragMode = edge switch
             {
                 EdgeKind.Left => DragMode.ResizeStart,
@@ -1123,11 +1129,14 @@ namespace Fig.App.Views
 
         /// <summary>
         /// What a press at <paramref name="pos"/> on <paramref name="clip"/> grabs. The outer TrimEdgePx of each end
-        /// trims, at any height. Fades live in the top half only (the next FadeZonePx inward, or an existing fade's
-        /// tip), so the lower half of an edge always trims and a trim never catches a fade by accident.
+        /// trims, at any height. A picture's fades live in its top half only (the next FadeZonePx inward, or an
+        /// existing fade's tip), so the lower half of an edge always trims and a trim never catches a fade by
+        /// accident. A video's sound strip has fades of its own (<paramref name="of"/> is then Sound), grabbed the
+        /// same way anywhere on the strip.
         /// </summary>
-        private EdgeKind EdgeAt(Clip clip, Track track, Point pos)
+        private EdgeKind EdgeAt(Clip clip, Track track, Point pos, out FadeOf of)
         {
+            of = FadeOf.Picture;
             var px = Viewport.PixelsPerSecond;
             var leftX = TrackHeaderWidth + Viewport.TimeToX(clip.StartSec);
             var rightX = leftX + clip.DurSec * px;
@@ -1137,13 +1146,17 @@ namespace Fig.App.Views
                 return EdgeKind.Right;
 
             var top = TrackTop(Editor!.Document.Tracks.IndexOf(track)) + TimelineGeometry.ClipInset;
-            if (pos.Y > top + TimelineGeometry.ClipTotal(track) / 2)
+            var bottom = top + TimelineGeometry.ClipTotal(track);
+            if (clip is VideoClip { PlaysAudio: true } && pos.Y >= bottom - TimelineGeometry.AudioStripHeight)
+                of = FadeOf.Sound;
+            else if (pos.Y > top + (TimelineGeometry.ClipTotal(track) - SoundStripHeight(clip)) / 2)
                 return EdgeKind.None;
+            var (fadeIn, fadeOut) = ClipFade.Get(clip, of);
 
             // an existing fade's tip, wherever it is
-            if (clip.FadeInSec > 1e-6 && Math.Abs(pos.X - (leftX + clip.FadeInSec * px)) <= FadeZonePx * 0.5)
+            if (fadeIn > 1e-6 && Math.Abs(pos.X - (leftX + fadeIn * px)) <= FadeZonePx * 0.5)
                 return EdgeKind.FadeIn;
-            if (clip.FadeOutSec > 1e-6 && Math.Abs(pos.X - (rightX - clip.FadeOutSec * px)) <= FadeZonePx * 0.5)
+            if (fadeOut > 1e-6 && Math.Abs(pos.X - (rightX - fadeOut * px)) <= FadeZonePx * 0.5)
                 return EdgeKind.FadeOut;
 
             // too narrow for fade zones: trim only
@@ -1155,6 +1168,10 @@ namespace Fig.App.Views
                 return EdgeKind.FadeOut;
             return EdgeKind.None;
         }
+
+        /// <summary>Height of the sound strip at the bottom of a clip (0 when it has none).</summary>
+        private static double SoundStripHeight(Clip clip)
+            => clip is VideoClip { PlaysAudio: true } ? TimelineGeometry.AudioStripHeight : 0;
 
         private Track? HitTestTrack(double y)
         {
@@ -1213,8 +1230,11 @@ namespace Fig.App.Views
         }
 
         /// <summary>Returns whether the pointer is over a clip's trim or fade edge.</summary>
-        private EdgeKind HoverClipEdge(Point pos)
-            => ClipAt(pos, out var track) is { } clip && track is not null ? EdgeAt(clip, track, pos) : EdgeKind.None;
+        private EdgeKind HoverClipEdge(Point pos, out FadeOf of)
+        {
+            of = FadeOf.Picture;
+            return ClipAt(pos, out var track) is { } clip && track is not null ? EdgeAt(clip, track, pos, out of) : EdgeKind.None;
+        }
 
         protected override void OnKeyDown(KeyEventArgs e)
         {
@@ -1333,7 +1353,6 @@ namespace Fig.App.Views
                 // clip area, offset by header + viewport scroll
                 using (context.PushClip(clipArea))
                 {
-                    DrawTrackMarkers(context, track, top, height);
                     var trackTransitions = Editor.EnumerateTransitions(track).ToList();
 
                     foreach (var clip in track.Clips)
@@ -1360,32 +1379,31 @@ namespace Fig.App.Views
                         var labelHeight = clip is TextClip ? 0 : TimelineGeometry.LabelHeight(track);
                         var bodyHeight = totalHeight - labelHeight;
 
-                        // square the corners on edges shared with an adjacent clip so split
-                        // halves butt cleanly instead of showing overlapping rounded corners
+                        // every clip is rounded; clips that butt together (split halves) leave a hairline
+                        // between them so each reads as its own rounded bar
                         var (hasPrev, hasNext) = HasAdjacent(track, clip);
-                        var topLeft = hasPrev ? 0 : ClipCornerRadius;
-                        var topRight = hasNext ? 0 : ClipCornerRadius;
-                        var bottomLeft = hasPrev ? 0 : ClipCornerRadius;
-                        var bottomRight = hasNext ? 0 : ClipCornerRadius;
-                        var corner = new CornerRadius(topLeft, topRight, bottomRight, bottomLeft);
+                        if (hasPrev)
+                        {
+                            x += SplitGap;
+                            w -= SplitGap;
+                        }
+                        if (hasNext)
+                            w -= SplitGap;
+                        w = Math.Max(1, w);
+                        var radius = Math.Min(ClipCornerRadius, w / 2);
+                        var (topLeft, topRight, bottomLeft, bottomRight) = (radius, radius, radius, radius);
+                        var corner = new CornerRadius(radius);
 
                         var widgetRect = new Rect(x, clipTop, w, totalHeight);
 
-                        // only the first clip of a contiguous run casts a shadow, so split
-                        // halves don't stack shadows and read as overlapping
-                        if (!hasPrev)
-                        {
-                            var shadowRect = new RoundedRect(widgetRect.Translate(new Vector(0, 1)), corner);
-                            context.DrawRectangle(ClipShadow, null, shadowRect);
-                        }
+                        context.DrawRectangle(ClipShadow, null, new RoundedRect(widgetRect.Translate(new Vector(0, 1)), corner));
 
                         var isClipSelected = _selectedClipId is not null
                             && Editor.Selection.IsSelected(clip.Id);
                         var isEffectDropTarget = _dropEffectClipId == clip.Id;
-                        var outline = isEffectDropTarget
-                            ? SelectionBrush
-                            : isClipSelected ? ClipSelectionBrush : border;
-                        var outlineWidth = isEffectDropTarget ? 3 : (isClipSelected ? 2 : 1);
+                        // the body's own edge; a selected clip gets one outline round all of it, drawn last
+                        var outline = isEffectDropTarget ? SelectionBrush : border;
+                        var outlineWidth = isEffectDropTarget ? 3 : 1;
 
                         // --- name strip above the clip body ---
                         if (labelHeight > 0)
@@ -1419,13 +1437,16 @@ namespace Fig.App.Views
                             ? new CornerRadius(0, 0, bottomRight, bottomLeft)
                             : corner);
 
+                        // a video playing its own sound shows it as a strip under the picture
+                        var soundHeight = clip is VideoClip { PlaysAudio: true } ? TimelineGeometry.AudioStripHeight : 0;
+
                         // draw filmstrip as video clip background
                         if (clip is VideoClip vc && MediaById is not null
                             && MediaById.TryGetValue(vc.SourceId, out var asset)
                             && asset?.Filmstrip is string stripPath
                             && GetBitmap(stripPath) is Bitmap strip)
                         {
-                            DrawFilmstrip(context, rect, vc, asset, strip);
+                            DrawFilmstrip(context, new Rect(rect.X, rect.Y, rect.Width, rect.Height - soundHeight), vc, asset, strip);
                             context.DrawRectangle(Brushes.Transparent, new Pen(outline, outlineWidth), bodyRounded);
                         }
                         // draw waveform as audio clip background
@@ -1460,6 +1481,15 @@ namespace Fig.App.Views
                         if (clip is TextClip textClip)
                             DrawTextClipWords(context, rect, textClip);
 
+                        if (soundHeight > 0 && clip is VideoClip sounding && MediaById is not null
+                            && MediaById.TryGetValue(sounding.SourceId, out var soundAsset))
+                        {
+                            var soundRect = new Rect(rect.X, rect.Bottom - soundHeight, rect.Width, soundHeight);
+                            using (context.PushClip(bodyRounded))
+                                DrawAudioWaveform(context, soundRect, sounding, soundAsset);
+                            context.DrawRectangle(Brushes.Transparent, new Pen(outline, outlineWidth), bodyRounded);
+                        }
+
                         if (isEffectDropTarget)
                         {
                             context.DrawRectangle(
@@ -1467,7 +1497,12 @@ namespace Fig.App.Views
                                 null, new RoundedRect(widgetRect, corner));
                         }
 
-                        DrawFadeRamps(context, rect, clip);
+                        // the picture's fades over the picture, a video's own sound's over its strip
+                        var pictureRect = new Rect(rect.X, rect.Y, rect.Width, rect.Height - soundHeight);
+                        var soundStripRect = new Rect(rect.X, rect.Bottom - soundHeight, rect.Width, soundHeight);
+                        DrawFadeRamps(context, pictureRect, clip.FadeInSec, clip.FadeOutSec);
+                        if (clip is VideoClip { PlaysAudio: true } faded)
+                            DrawFadeRamps(context, soundStripRect, faded.AudioFadeInSec, faded.AudioFadeOutSec);
 
                         foreach (var t in trackTransitions)
                         {
@@ -1480,7 +1515,7 @@ namespace Fig.App.Views
                             }
                         }
 
-                        DrawClipMarkers(context, x, clipTop, clip, track);
+
                         DrawKeyframeDiamonds(context, clip, rect, px);
                         DrawRack(context, clip, x, w, clipTop, track);
 
@@ -1491,6 +1526,11 @@ namespace Fig.App.Views
                                 null, new RoundedRect(widgetRect, corner));
                         }
 
+                        // selected: the whole clip, name strip and all, inside its rounded edge
+                        if (isClipSelected)
+                            context.DrawRectangle(null, new Pen(ClipSelectionBrush, 2),
+                                new RoundedRect(widgetRect.Deflate(1), new CornerRadius(Math.Max(0, radius - 1))));
+
                         // resize-handle indicator on the edge under the cursor (or both edges when selected)
                         var hoverLeft = _hoverEdge == EdgeKind.Left;
                         var hoverRight = _hoverEdge == EdgeKind.Right;
@@ -1500,15 +1540,23 @@ namespace Fig.App.Views
                             DrawResizeHandle(context, x, rect.Y, rect.Height);
                         if (isClipSelected || hoverRight)
                             DrawResizeHandle(context, x + w, rect.Y, rect.Height);
-                        if (hoverFadeIn || (isClipSelected && clip.FadeInSec > 1e-6))
-                            DrawResizeHandle(context, x + Math.Min(clip.FadeInSec, clip.DurSec) * px, rect.Y, rect.Height);
-                        if (hoverFadeOut || (isClipSelected && clip.FadeOutSec > 1e-6))
-                            DrawResizeHandle(context, x + w - Math.Min(clip.FadeOutSec, clip.DurSec) * px, rect.Y, rect.Height);
+                        foreach (var of in soundHeight > 0 ? new[] { FadeOf.Picture, FadeOf.Sound } : new[] { FadeOf.Picture })
+                        {
+                            var (fadeIn, fadeOut) = ClipFade.Get(clip, of);
+                            var band = of == FadeOf.Sound ? soundStripRect : pictureRect;
+                            var hovered = _hoverFadeOf == of;
+                            if ((hoverFadeIn && hovered) || (isClipSelected && fadeIn > 1e-6))
+                                DrawResizeHandle(context, x + Math.Min(fadeIn, clip.DurSec) * px, band.Y, band.Height);
+                            if ((hoverFadeOut && hovered) || (isClipSelected && fadeOut > 1e-6))
+                                DrawResizeHandle(context, x + w - Math.Min(fadeOut, clip.DurSec) * px, band.Y, band.Height);
+                        }
                     }   // foreach clip
                     DrawRack(context, track, TrackHeaderWidth + Viewport.TimeToX(0),
                         track.DurSec * Viewport.PixelsPerSecond, top + TimelineGeometry.ClipInset, track);
                 }   // PushClip(clipArea)
             }   // for tracks
+
+            DrawMarkersOverTracks(context, clipArea, px);
 
             // add-track button at bottom of header column
             if (Editor.Document.Tracks.Count > 0)

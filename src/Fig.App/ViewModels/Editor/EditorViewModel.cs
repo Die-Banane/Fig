@@ -928,6 +928,7 @@ public partial class EditorViewModel : ViewModelBase
         _store = store;
         EffectMigration.Migrate(project);
         EffectMigration.MoveClipEffectsToTracks(project);
+        EmbeddedAudioMigration.Migrate(project);
         Project = project;
         GraphEditor = null;
         EffectGraphs.Attach(project.EffectGraphs);

@@ -106,6 +106,10 @@ namespace Fig.App.Views
 
             menu.Items.Add(Item(clip.Enabled ? "Disable clip" : "Enable clip", () => vm.ToggleClipEnabledSelectedCommand.Execute(null)));
 
+            if (ed.CanDetachAudio(selected))
+                menu.Items.Add(Item("Detach audio", () => { ed.DetachAudio(selected); InvalidateVisual(); },
+                    hint: "Move the sound to its own audio clip, which then moves and trims on its own"));
+
             if (hasPartners)
                 menu.Items.Add(Item("Unlink from its audio / video", () => { ed.UnlinkClips(selected); InvalidateVisual(); },
                     hint: "Then it moves and cuts on its own"));

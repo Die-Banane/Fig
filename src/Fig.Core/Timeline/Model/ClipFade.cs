@@ -2,12 +2,37 @@ using System;
 
 namespace Fig.Core.Timeline
 {
+    /// <summary>Which of a clip's fades: its picture's, or its sound's. They differ only on a video clip playing its own sound.</summary>
+    public enum FadeOf { Picture, Sound }
+
     /// <summary>
     /// Shared linear fade-in / fade-out envelope for any clip kind.
-    /// Video uses it as an opacity multiplier; audio uses it as a volume multiplier.
+    /// Video uses it as an opacity multiplier; audio uses it as a volume multiplier. A video clip's own sound
+    /// has fades of its own (<see cref="VideoClip.AudioFadeInSec"/>), so picture and sound fade independently.
     /// </summary>
     public static class ClipFade
     {
+        /// <summary>The fade-in and fade-out of the clip's picture or sound.</summary>
+        public static (double In, double Out) Get(Clip clip, FadeOf of) =>
+            of == FadeOf.Sound && clip is VideoClip video
+                ? (video.AudioFadeInSec, video.AudioFadeOutSec)
+                : (clip.FadeInSec, clip.FadeOutSec);
+
+        /// <summary>Writes the fade-in and fade-out of the clip's picture or sound, as given.</summary>
+        public static void Set(Clip clip, FadeOf of, double fadeIn, double fadeOut)
+        {
+            if (of == FadeOf.Sound && clip is VideoClip video)
+            {
+                video.AudioFadeInSec = fadeIn;
+                video.AudioFadeOutSec = fadeOut;
+            }
+            else
+            {
+                clip.FadeInSec = fadeIn;
+                clip.FadeOutSec = fadeOut;
+            }
+        }
+
         /// <summary>
         /// Clamps fade durations so both are &gt;= 0 and fadeIn + fadeOut &lt;= durSec.
         /// When the sum exceeds duration, both are scaled proportionally.
@@ -50,11 +75,12 @@ namespace Fig.Core.Timeline
             return Math.Clamp(opacity, 0, 1) * Envelope(clip, localT);
         }
 
-        /// <summary>Volume × fade envelope (audio mixing). Volume may be keyframed.</summary>
+        /// <summary>Volume × the sound's fade envelope (audio mixing). Volume may be keyframed.</summary>
         public static double EffectiveVolume(Clip clip, double localT)
         {
             var volume = ClipAutomation.Evaluate(clip, AutomationKeys.Volume, localT, clip.Volume);
-            return Math.Clamp(volume, 0, 1) * Envelope(clip, localT);
+            var (fadeIn, fadeOut) = Get(clip, FadeOf.Sound);
+            return Math.Clamp(volume, 0, 1) * Envelope(localT, clip.DurSec, fadeIn, fadeOut);
         }
 
         /// <summary>Writes clamped fade durations onto the clip.</summary>
@@ -66,28 +92,35 @@ namespace Fig.Core.Timeline
         }
 
         /// <summary>Sets fade-in without shrinking an existing fade-out (caps against remaining room).</summary>
-        public static void ApplyFadeIn(Clip clip, double fadeInSec)
+        public static void ApplyFadeIn(Clip clip, double fadeInSec, FadeOf of = FadeOf.Picture)
         {
-            fadeInSec = Math.Max(0, fadeInSec);
-            var max = Math.Max(0, clip.DurSec - Math.Max(0, clip.FadeOutSec));
-            clip.FadeInSec = Math.Min(fadeInSec, max);
+            var (_, fadeOut) = Get(clip, of);
+            var max = Math.Max(0, clip.DurSec - Math.Max(0, fadeOut));
+            Set(clip, of, Math.Min(Math.Max(0, fadeInSec), max), fadeOut);
         }
 
         /// <summary>Sets fade-out without shrinking an existing fade-in (caps against remaining room).</summary>
-        public static void ApplyFadeOut(Clip clip, double fadeOutSec)
+        public static void ApplyFadeOut(Clip clip, double fadeOutSec, FadeOf of = FadeOf.Picture)
         {
-            fadeOutSec = Math.Max(0, fadeOutSec);
-            var max = Math.Max(0, clip.DurSec - Math.Max(0, clip.FadeInSec));
-            clip.FadeOutSec = Math.Min(fadeOutSec, max);
+            var (fadeIn, _) = Get(clip, of);
+            var max = Math.Max(0, clip.DurSec - Math.Max(0, fadeIn));
+            Set(clip, of, fadeIn, Math.Min(Math.Max(0, fadeOutSec), max));
         }
+
+        /// <summary>The fades a clip has: a video clip's picture and sound, or one set for any other clip.</summary>
+        public static FadeOf[] Channels(Clip clip) => clip is VideoClip ? [FadeOf.Picture, FadeOf.Sound] : [FadeOf.Picture];
 
         /// <summary>
         /// After a split, the left half keeps fade-in and clears fade-out (then clamps).
         /// </summary>
         public static void ApplySplitLeft(Clip left)
         {
-            left.FadeOutSec = 0;
-            ApplyFadeIn(left, left.FadeInSec);
+            foreach (var of in Channels(left))
+            {
+                var (fadeIn, _) = Get(left, of);
+                Set(left, of, fadeIn, 0);
+                ApplyFadeIn(left, fadeIn, of);
+            }
         }
 
         /// <summary>
@@ -95,8 +128,12 @@ namespace Fig.Core.Timeline
         /// </summary>
         public static void ApplySplitRight(Clip right)
         {
-            right.FadeInSec = 0;
-            ApplyFadeOut(right, right.FadeOutSec);
+            foreach (var of in Channels(right))
+            {
+                var (_, fadeOut) = Get(right, of);
+                Set(right, of, 0, fadeOut);
+                ApplyFadeOut(right, fadeOut, of);
+            }
         }
     }
 }

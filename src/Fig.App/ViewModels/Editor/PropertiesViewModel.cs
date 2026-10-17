@@ -196,6 +196,10 @@ public partial class PropertiesViewModel : ViewModelBase
     [ObservableProperty] private double _opacityValue = 1;
     [ObservableProperty] private double _fadeInValue;
     [ObservableProperty] private double _fadeOutValue;
+    /// <summary>A video clip's own sound fades apart from its picture: shown on the Audio tab.</summary>
+    [ObservableProperty] private bool _hasOwnSoundFades;
+    [ObservableProperty] private double _soundFadeInValue;
+    [ObservableProperty] private double _soundFadeOutValue;
     [ObservableProperty] private double _volumeValue = 1;
     [ObservableProperty] private double _speedValue = 1;
     [ObservableProperty] private double _cropLeft;
@@ -407,6 +411,8 @@ public partial class PropertiesViewModel : ViewModelBase
             OpacityValue = clip.Opacity;
             FadeInValue = clip.FadeInSec;
             FadeOutValue = clip.FadeOutSec;
+            HasOwnSoundFades = clip is VideoClip;
+            (SoundFadeInValue, SoundFadeOutValue) = ClipFade.Get(clip, FadeOf.Sound);
             VolumeValue = clip.Volume;
             SpeedValue = clip.Speed;
             (CropLeft, CropTop, CropRight, CropBottom) = clip is ICroppable crop
@@ -1250,7 +1256,7 @@ public partial class PropertiesViewModel : ViewModelBase
     partial void OnFadeInValueChanged(double value)
     {
         // each clip clamps the fade to the room it has
-        SetOnSelection(Facet.Fades, "fade in", c => c.FadeInSec, ClipFade.ApplyFadeIn, Math.Max(0, value));
+        SetOnSelection(Facet.Fades, "fade in", c => c.FadeInSec, (c, v) => ClipFade.ApplyFadeIn(c, v), Math.Max(0, value));
         // Reflect clamp back into the slider without re-entering Apply
         var clip = _clipId is null ? null : FindClip(_clipId);
         if (clip is not null && Math.Abs(clip.FadeInSec - value) > 1e-6)
@@ -1264,7 +1270,7 @@ public partial class PropertiesViewModel : ViewModelBase
 
     partial void OnFadeOutValueChanged(double value)
     {
-        SetOnSelection(Facet.Fades, "fade out", c => c.FadeOutSec, ClipFade.ApplyFadeOut, Math.Max(0, value));
+        SetOnSelection(Facet.Fades, "fade out", c => c.FadeOutSec, (c, v) => ClipFade.ApplyFadeOut(c, v), Math.Max(0, value));
         var clip = _clipId is null ? null : FindClip(_clipId);
         if (clip is not null && Math.Abs(clip.FadeOutSec - value) > 1e-6)
         {
@@ -1273,6 +1279,30 @@ public partial class PropertiesViewModel : ViewModelBase
             _suppressApply = false;
         }
         _editor.Preview.RefreshFrame();
+    }
+
+    partial void OnSoundFadeInValueChanged(double value)
+    {
+        SetOnSelection(Facet.Sound, "sound fade in", c => ClipFade.Get(c, FadeOf.Sound).In,
+            (c, v) => ClipFade.ApplyFadeIn(c, v, FadeOf.Sound), Math.Max(0, value));
+        if ((_clipId is null ? null : FindClip(_clipId)) is { } clip && Math.Abs(ClipFade.Get(clip, FadeOf.Sound).In - value) > 1e-6)
+        {
+            _suppressApply = true;
+            SoundFadeInValue = ClipFade.Get(clip, FadeOf.Sound).In;
+            _suppressApply = false;
+        }
+    }
+
+    partial void OnSoundFadeOutValueChanged(double value)
+    {
+        SetOnSelection(Facet.Sound, "sound fade out", c => ClipFade.Get(c, FadeOf.Sound).Out,
+            (c, v) => ClipFade.ApplyFadeOut(c, v, FadeOf.Sound), Math.Max(0, value));
+        if ((_clipId is null ? null : FindClip(_clipId)) is { } clip && Math.Abs(ClipFade.Get(clip, FadeOf.Sound).Out - value) > 1e-6)
+        {
+            _suppressApply = true;
+            SoundFadeOutValue = ClipFade.Get(clip, FadeOf.Sound).Out;
+            _suppressApply = false;
+        }
     }
 
     partial void OnVolumeValueChanged(double value)

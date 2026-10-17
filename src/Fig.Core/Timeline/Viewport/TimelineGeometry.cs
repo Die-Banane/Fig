@@ -28,6 +28,9 @@ namespace Fig.Core.Timeline
         /// <summary>Height of an audio lane.</summary>
         public const double AudioTrackHeight = ClipInset + ClipLabelHeight + AudioClipHeight + LaneBottomPadding;
 
+        /// <summary>Height of the sound strip under the picture of a video clip that plays its file's audio.</summary>
+        public const double AudioStripHeight = 22.0;
+
         /// <summary>Height of a text clip: a title has no picture or name strip, just its words, so its bar is thin.</summary>
         public const double TextClipHeight = 26.0;
 
@@ -41,9 +44,12 @@ namespace Fig.Core.Timeline
         /// <summary>Height of the name strip above the clips' bodies in a track (none on a text-only track).</summary>
         public static double LabelHeight(Track track) => IsTextOnly(track) ? 0 : ClipLabelHeight;
 
+        /// <summary>True when a video clip in the track plays its own sound, so the lane has room for the strip.</summary>
+        public static bool HasAudioStrip(Track track) => track.Clips.Any(c => c is VideoClip { PlaysAudio: true });
+
         public static double BodyHeight(Track track) => track.Kind == TrackKind.Audio ? AudioClipHeight
             : IsTextOnly(track) ? TextClipHeight
-            : ClipHeight;
+            : ClipHeight + (HasAudioStrip(track) ? AudioStripHeight : 0);
 
         public static double ClipTotal(Track track) => LabelHeight(track) + BodyHeight(track);
 

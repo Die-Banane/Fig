@@ -5,6 +5,32 @@ namespace Fig.Core.Tests;
 
 public class ClipFadeTests
 {
+    [Fact]
+    public void A_videos_picture_and_own_sound_fade_independently_and_split_apart()
+    {
+        var track = new Track { Kind = TrackKind.Video };
+        var video = new VideoClip { Id = "v", DurSec = 10, SrcOutSec = 10, PlaysAudio = true };
+        track.Clips.Add(video);
+        var editor = new TimelineEditor(new TimelineModel { Tracks = { track } });
+
+        editor.SetFadeIn("v", 2, FadeOf.Sound);
+        editor.SetFadeOut("v", 3);
+
+        Assert.Equal((0.0, 3.0), (video.FadeInSec, video.FadeOutSec));
+        Assert.Equal((2.0, 0.0), (video.AudioFadeInSec, video.AudioFadeOutSec));
+        Assert.Equal(1, ClipFade.EffectiveOpacity(video, 0), 6);   // the picture has no fade-in
+        Assert.Equal(0, ClipFade.EffectiveVolume(video, 0), 6);    // the sound does
+        Assert.Equal(1, ClipFade.EffectiveVolume(video, 9.9), 6);  // and no fade-out
+
+        editor.Cut("v", 5);
+        var right = (VideoClip)track.Clips[1];
+        Assert.Equal((2.0, 0.0), (video.AudioFadeInSec, video.AudioFadeOutSec));
+        Assert.Equal((0.0, 3.0), (right.FadeInSec, right.FadeOutSec));
+        Assert.Equal((0.0, 0.0), (right.AudioFadeInSec, right.AudioFadeOutSec));
+        editor.History.Undo();
+        Assert.Equal((2.0, 0.0, 3.0), (video.AudioFadeInSec, video.FadeInSec, video.FadeOutSec));
+    }
+
     [Theory]
     [InlineData(0, 0, 5, 0, 0)]
     [InlineData(1, 1, 5, 1, 1)]

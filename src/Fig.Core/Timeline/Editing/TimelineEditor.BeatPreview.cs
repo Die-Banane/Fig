@@ -5,7 +5,7 @@ using System.Linq;
 namespace Fig.Core.Timeline
 {
     /// <summary>Beat markers shown on a clip before they are committed. Not part of the document.</summary>
-    public sealed record BeatMarkerPreview(AudioClip Clip, IReadOnlyList<double> LocalTimes);
+    public sealed record BeatMarkerPreview(Clip Clip, IReadOnlyList<double> LocalTimes);
 
     public partial class TimelineEditor
     {
@@ -18,7 +18,7 @@ namespace Fig.Core.Timeline
         public event Action? BeatPreviewChanged;
 
         /// <summary>Shows clip-local beat times on the clip. Replaces any earlier preview.</summary>
-        public void SetBeatPreview(AudioClip clip, IReadOnlyList<double> localTimes)
+        public void SetBeatPreview(Clip clip, IReadOnlyList<double> localTimes)
         {
             BeatPreview = new BeatMarkerPreview(clip, GenerateMarkersFromBeats.CleanTimes(localTimes, clip.DurSec));
             BeatPreviewChanged?.Invoke();

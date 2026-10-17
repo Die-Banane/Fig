@@ -97,6 +97,7 @@ jobs:
             curl -fsSL "$FFMPEG_URL/$base.tar.xz" | tar xJ
             mkdir -p "$OUT/ffmpeg"
             cp -P "$base"/lib/*.so.* "$OUT/ffmpeg"/     # MediaService looks in ffmpeg/
+            cp -r packaging/linux/install.sh packaging/linux/share "$OUT"/   # ./install.sh adds Fig to the app menu
           fi
           cp LICENSE "$OUT"/
           cp "$base"/LICENSE.txt "$OUT"/FFMPEG-LICENSE.txt

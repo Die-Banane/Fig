@@ -1,4 +1,6 @@
 using Fig.Core.Project;
+using Fig.Core.Timeline;
+using FigProject = Fig.Core.Project.Project;
 
 namespace Fig.Core.Tests;
 
@@ -101,5 +103,31 @@ public class ProjectStoreTests
             if (Directory.Exists(root))
                 Directory.Delete(root, true);
         }
+    }
+
+    [Fact]
+    public void An_older_project_folds_each_videos_linked_sound_into_the_video_clip()
+    {
+        Clip Video(string id, string group, double start) => new VideoClip { Id = id, SourceId = "m", LinkGroupId = group, StartSec = start, DurSec = 4, SrcOutSec = 4 };
+        Clip Audio(string id, string group, double start) => new AudioClip { Id = id, SourceId = "m", LinkGroupId = group, StartSec = start, DurSec = 4, SrcOutSec = 4, Volume = 0.5 };
+        var v1 = new Track { Kind = TrackKind.Video, Clips = { Video("together", "g1", 0), Video("apart", "g2", 10) } };
+        var a1 = new Track { Kind = TrackKind.Audio, Clips = { Audio("together-sound", "g1", 0) } };
+        var a2 = new Track { Kind = TrackKind.Audio, Clips = { Audio("moved-sound", "g2", 11) } };
+        var project = new FigProject { Timelines = { new Fig.Core.Timeline.Timeline { Tracks = { v1, a1, a2 } } } };
+
+        Assert.Equal(1, EmbeddedAudioMigration.Migrate(project));
+
+        var tracks = project.Timelines[0].Tracks;
+        var together = (VideoClip)v1.Clips[0];
+        var apart = (VideoClip)v1.Clips[1];
+        Assert.True(together.PlaysAudio);
+        Assert.Equal(0.5, together.Volume);
+        Assert.Null(together.LinkGroupId);
+        Assert.False(apart.PlaysAudio);                    // its sound was moved: the audio clip keeps playing it
+        Assert.Equal("g2", apart.LinkGroupId);
+        Assert.DoesNotContain(a1, tracks);                 // only held the merged sound
+        Assert.Contains(a2, tracks);
+        Assert.Equal(FigProject.CurrentFormatVersion, project.FormatVersion);
+        Assert.Equal(0, EmbeddedAudioMigration.Migrate(project));
     }
 }
