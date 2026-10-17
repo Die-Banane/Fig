@@ -53,14 +53,14 @@ namespace Fig.App.Views
         /// Draws each clip marker as a pennant on top of the clip with a pole running down through
         /// the picture, so it is easy to see and to click.
         /// </summary>
-        private void DrawClipMarkers(DrawingContext context, double clipX, double clipTop, Clip clip)
+        private void DrawClipMarkers(DrawingContext context, double clipX, double clipTop, Clip clip, Track track)
         {
             var preview = Editor?.BeatPreview is { } p && ReferenceEquals(p.Clip, clip) ? p : null;
             if (clip.Markers.Count == 0 && preview is null)
                 return;
 
             var px = Viewport.PixelsPerSecond;
-            var bodyBottom = clipTop + TimelineGeometry.ClipTotal(clip.Kind == ClipKind.Audio ? TrackKind.Audio : TrackKind.Video);
+            var bodyBottom = clipTop + TimelineGeometry.ClipTotal(track);
             foreach (var marker in clip.Markers)
             {
                 if (marker.StartSec < 0 || marker.StartSec > clip.DurSec)
@@ -275,7 +275,7 @@ namespace Fig.App.Views
                 var clipTop = top + TimelineGeometry.ClipInset;
 
                 // clip markers: a generous head target plus a thin pole, so the clip body stays clickable
-                var clipTotal = TimelineGeometry.ClipTotal(track.Kind);
+                var clipTotal = TimelineGeometry.ClipTotal(track);
                 if (pos.Y >= clipTop - 7 && pos.Y <= clipTop + clipTotal)
                 {
                     foreach (var candidate in track.Clips)

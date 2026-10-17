@@ -275,6 +275,35 @@ namespace Fig.App.Views
                 context.DrawGeometry(AudioWaveFill, null, wave);
         }
 
+        /// <summary>
+        /// A text clip's words, written inside the bar from its start (after a T, so it reads as text at a glance),
+        /// cut short with an ellipsis where the bar ends.
+        /// </summary>
+        private void DrawTextClipWords(DrawingContext context, Rect rect, TextClip clip)
+        {
+            const double iconSize = 12;
+            const double pad = 7;
+            if (rect.Width < pad + iconSize)
+                return;
+            var centerY = rect.Y + rect.Height / 2;
+            using (context.PushClip(rect))
+            {
+                IconService.DrawStroked(context, "type", new Rect(rect.X + pad, centerY - iconSize / 2, iconSize, iconSize), Brushes.White, 1.6);
+                var textX = rect.X + pad + iconSize + 5;
+                var room = rect.Right - pad - textX;
+                if (room < 8)
+                    return;
+                var words = new FormattedText(ClipName(clip) ?? "Text", System.Globalization.CultureInfo.CurrentCulture,
+                    FlowDirection.LeftToRight, Typeface.Default, 11, Brushes.White)
+                {
+                    MaxTextWidth = room,
+                    MaxLineCount = 1,
+                    Trimming = TextTrimming.CharacterEllipsis,
+                };
+                context.DrawText(words, new Point(textX, centerY - words.Height / 2));
+            }
+        }
+
         /// <summary>Horizontal span of <paramref name="rect"/> that is actually on screen, in viewport coordinates.</summary>
         private (double Left, double Right) VisibleXRange(Rect rect)
         {

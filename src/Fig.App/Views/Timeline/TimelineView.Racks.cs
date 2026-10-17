@@ -184,7 +184,7 @@ namespace Fig.App.Views
                 if (index < 0)
                     return null;
                 var clipX = TrackHeaderWidth + Viewport.TimeToX(clip.StartSec);
-                var rect = RackItemRect(clip, items[index], index, clipX, TrackTop(t) + TimelineGeometry.ClipInset, track.Kind);
+                var rect = RackItemRect(clip, items[index], index, clipX, TrackTop(t) + TimelineGeometry.ClipInset, track);
                 var y = rect.Y + RackLabelRow + (RackBarFull - RackLabelRow) / 2.0;
                 var x = keyframeSec is { } k ? clipX + Viewport.TimeToX(k) - Viewport.TimeToX(0) : rect.Center.X;
                 return new Point(keyframeSec is null ? rect.Center.X : TrackHeaderWidth + Viewport.TimeToX(clip.StartSec + keyframeSec.Value), y);
@@ -208,14 +208,14 @@ namespace Fig.App.Views
 
         private double TrackRackHeight(Track track) => RackHeight(track) + track.Clips.Select(c => RackHeight(c)).DefaultIfEmpty(0).Max();
 
-        private Rect RackItemRect(IEffectOwner clip, RackItem item, int index, double clipX, double clipTop, TrackKind kind)
+        private Rect RackItemRect(IEffectOwner clip, RackItem item, int index, double clipX, double clipTop, Track track)
         {
             var px = Viewport.PixelsPerSecond;
-            var top = clipTop + TimelineGeometry.ClipTotal(kind) + (clip is Track ? TrackOf(clip)!.Clips.Select(c => RackHeight(c)).DefaultIfEmpty(0).Max() : 0) + RackPad + item.Row * (RackBar(clip) + RackGap(clip));
+            var top = clipTop + TimelineGeometry.ClipTotal(track) + (clip is Track ? TrackOf(clip)!.Clips.Select(c => RackHeight(c)).DefaultIfEmpty(0).Max() : 0) + RackPad + item.Row * (RackBar(clip) + RackGap(clip));
             return new Rect(clipX + item.StartSec * px, top, Math.Max(MinRackBarWidth, item.DurSec * px), RackBar(clip));
         }
 
-        private void DrawRack(DrawingContext context, IEffectOwner clip, double clipX, double clipW, double clipTop, TrackKind kind)
+        private void DrawRack(DrawingContext context, IEffectOwner clip, double clipX, double clipW, double clipTop, Track track)
         {
             var items = BuildRack(clip);
             if (items.Count == 0)
@@ -226,7 +226,7 @@ namespace Fig.App.Views
             for (var i = 0; i < items.Count; i++)
             {
                 var item = items[i];
-                var rect = RackItemRect(clip, item, i, clipX, clipTop, kind);
+                var rect = RackItemRect(clip, item, i, clipX, clipTop, track);
                 var alpha = item.Enabled ? (byte)255 : (byte)110;
                 var fill = new SolidColorBrush(Color.FromArgb(alpha, item.Fill.R, item.Fill.G, item.Fill.B));
                 var selected = item.Effect is not null && Editor?.Selection.IsEffectSelected(item.Effect.Id) == true;
@@ -343,7 +343,7 @@ namespace Fig.App.Views
 
                     for (var i = 0; i < items.Count; i++)
                     {
-                        var rect = RackItemRect(clip, items[i], i, clipX, clipTop, track.Kind);
+                        var rect = RackItemRect(clip, items[i], i, clipX, clipTop, track);
                         // thin bars get a taller grab area, and the ends get a resize zone
                         var grab = rect.Inflate(new Thickness(4, 2));
                         if (!grab.Contains(pos))
@@ -572,7 +572,7 @@ namespace Fig.App.Views
                     {
                         if (items[i].Effect is not { } fx)
                             continue;
-                        var rect = RackItemRect(owner, items[i], i, ownerX, clipTop, track.Kind);
+                        var rect = RackItemRect(owner, items[i], i, ownerX, clipTop, track);
                         if (rect.Intersects(box))
                             hit.Add((owner.Id, fx.Id, rect));
                     }
@@ -590,7 +590,7 @@ namespace Fig.App.Views
             {
                 var track = Editor.Document.Tracks[t];
                 var top = TrackTop(t);
-                var rackTop = top + TimelineGeometry.ClipInset + TimelineGeometry.ClipTotal(track.Kind);
+                var rackTop = top + TimelineGeometry.ClipInset + TimelineGeometry.ClipTotal(track);
                 if (pos.Y >= rackTop && pos.Y < top + TrackHeight(track))
                     return true;
             }

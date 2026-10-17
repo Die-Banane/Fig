@@ -182,7 +182,7 @@ namespace Fig.App.Views
         private static readonly IBrush DeleteHoverBrush = new SolidColorBrush(Color.Parse("#5a1f1f"));
 
         // Clip fills
-        private static readonly IBrush VideoBrush = new SolidColorBrush(Color.Parse("#2f7484"));
+        private static readonly IBrush VideoBrush = new SolidColorBrush(Color.Parse("#1679db"));
         private static readonly IBrush AudioBrush = new SolidColorBrush(Color.Parse("#2d674a"));
         private static readonly IBrush AudioWaveformBrush = new SolidColorBrush(Color.Parse("#8bc9a3"));
         private static readonly IBrush TextClipBrush = new SolidColorBrush(Color.Parse("#a84f7d"));
@@ -209,7 +209,7 @@ namespace Fig.App.Views
         private const double PlayheadCapHeight = 8;
         private const double TickRulerHeight = 22;
         private const double RulerHeight = MarkerLaneHeight + TickRulerHeight;
-        private const double ClipCornerRadius = 2;
+        private const double ClipCornerRadius = 6;
         private const double TrackHeaderWidth = 118;
         private const double ZoomFactor = 1.25;
         private const double HeaderButtonSize = 22;
@@ -276,7 +276,7 @@ namespace Fig.App.Views
         private double TrackHeight(Track track) =>
             track.Clips.Count == 0 && track.Markers.Count == 0 && track.Effects.Count == 0
                 ? EmptyTrackHeight
-                : TimelineGeometry.LaneHeight(track.Kind) + TrackRackHeight(track);
+                : TimelineGeometry.LaneHeight(track) + TrackRackHeight(track);
 
         private double TrackTop(int index)
         {
@@ -436,7 +436,7 @@ namespace Fig.App.Views
                 if (pos.Y < top || pos.Y >= TrackBottom(i))
                     continue;
                 // clip automation diamonds render along the top edge of the body (effect keyframes live on the effect bars)
-                var bodyTop = top + TimelineGeometry.ClipInset + TimelineGeometry.ClipLabelHeight;
+                var bodyTop = top + TimelineGeometry.ClipInset + TimelineGeometry.LabelHeight(track);
                 var inTopBand = pos.Y >= bodyTop - 2 && pos.Y <= bodyTop + 14;
                 foreach (var clip in track.Clips)
                 {
@@ -466,7 +466,7 @@ namespace Fig.App.Views
                     continue;
                 // the badge sits at the clip body's vertical center; only grab within that band so
                 // markers / keyframes near the cut stay clickable
-                var centerY = top + TimelineGeometry.ClipInset + TimelineGeometry.ClipLabelHeight + TimelineGeometry.BodyHeight(track.Kind) / 2;
+                var centerY = top + TimelineGeometry.ClipInset + TimelineGeometry.LabelHeight(track) + TimelineGeometry.BodyHeight(track) / 2;
                 if (pos.Y < centerY - 16 || pos.Y > centerY + 16)
                     continue;
                 foreach (var t in Editor.EnumerateTransitions(track))
@@ -1137,7 +1137,7 @@ namespace Fig.App.Views
                 return EdgeKind.Right;
 
             var top = TrackTop(Editor!.Document.Tracks.IndexOf(track)) + TimelineGeometry.ClipInset;
-            if (pos.Y > top + TimelineGeometry.ClipTotal(track.Kind) / 2)
+            if (pos.Y > top + TimelineGeometry.ClipTotal(track) / 2)
                 return EdgeKind.None;
 
             // an existing fade's tip, wherever it is
@@ -1189,7 +1189,7 @@ namespace Fig.App.Views
             if (clip is null)
                 return null;
             var top = TrackTop(Editor.Document.Tracks.IndexOf(track)) + TimelineGeometry.ClipInset;
-            return pos.Y >= top && pos.Y <= top + TimelineGeometry.ClipTotal(track.Kind) ? clip : null;
+            return pos.Y >= top && pos.Y <= top + TimelineGeometry.ClipTotal(track) ? clip : null;
         }
 
         private enum RangeGrab { None, Start, End, Body }
@@ -1355,9 +1355,10 @@ namespace Fig.App.Views
                         // clip widget = label strip (name) on top + body (filmstrip/waveform).
                         // top inset leaves room for marker tabs inside the lane.
                         var clipTop = top + TimelineGeometry.ClipInset;
-                        var totalHeight = TimelineGeometry.ClipTotal(track.Kind);
-                        var labelHeight = TimelineGeometry.ClipLabelHeight;
-                        var bodyHeight = TimelineGeometry.BodyHeight(track.Kind);
+                        var totalHeight = TimelineGeometry.ClipTotal(track);
+                        // a text clip has no name strip: its words are written inside the bar instead
+                        var labelHeight = clip is TextClip ? 0 : TimelineGeometry.LabelHeight(track);
+                        var bodyHeight = totalHeight - labelHeight;
 
                         // square the corners on edges shared with an adjacent clip so split
                         // halves butt cleanly instead of showing overlapping rounded corners
@@ -1387,37 +1388,36 @@ namespace Fig.App.Views
                         var outlineWidth = isEffectDropTarget ? 3 : (isClipSelected ? 2 : 1);
 
                         // --- name strip above the clip body ---
-                        var labelRect = new Rect(x, clipTop, w, labelHeight);
-                        var labelBrush = fill;
-                        context.DrawRectangle(labelBrush, null, new RoundedRect(labelRect, new CornerRadius(topLeft, topRight, 0, 0)));
-
-                        using (context.PushClip(labelRect))
+                        if (labelHeight > 0)
                         {
-                            var clipName = ClipName(clip);
-                            // text bars carry a T so they read as text at a glance
-                            var nameIndent = 0.0;
-                            if (clip is TextClip && w >= 30)
+                            var labelRect = new Rect(x, clipTop, w, labelHeight);
+                            var labelBrush = fill;
+                            context.DrawRectangle(labelBrush, null, new RoundedRect(labelRect, new CornerRadius(topLeft, topRight, 0, 0)));
+
+                            using (context.PushClip(labelRect))
                             {
-                                IconService.DrawStroked(context, "type", new Rect(x + 4, labelRect.Y + (labelHeight - 11) / 2, 11, 11), Brushes.White, 1.6);
-                                nameIndent = 14;
-                            }
-                            if (clipName is not null)
-                            {
-                                var labelText = new FormattedText(
-                                    clipName,
-                                    System.Globalization.CultureInfo.CurrentCulture,
-                                    FlowDirection.LeftToRight,
-                                    Typeface.Default,
-                                    10,
-                                    Brushes.White);
-                                context.DrawText(labelText, new Point(x + 4 + nameIndent + (w >= 54 && BuildRack(clip).Count > 0 ? 26 : 0),
-                                    labelRect.Y + (labelHeight - labelText.Height) / 2));
+                                var clipName = ClipName(clip);
+                                if (clipName is not null)
+                                {
+                                    var labelText = new FormattedText(
+                                        clipName,
+                                        System.Globalization.CultureInfo.CurrentCulture,
+                                        FlowDirection.LeftToRight,
+                                        Typeface.Default,
+                                        10,
+                                        Brushes.White);
+                                    context.DrawText(labelText, new Point(x + 4 + (w >= 54 && BuildRack(clip).Count > 0 ? 26 : 0),
+                                        labelRect.Y + (labelHeight - labelText.Height) / 2));
+                                }
                             }
                         }
 
                         // --- clip body ---
                         var rect = new Rect(x, clipTop + labelHeight, w, bodyHeight);
-                        var bodyRounded = new RoundedRect(rect, new CornerRadius(0, 0, bottomRight, bottomLeft));
+                        // under a name strip the body's top is square, so the two read as one rounded bar
+                        var bodyRounded = new RoundedRect(rect, labelHeight > 0
+                            ? new CornerRadius(0, 0, bottomRight, bottomLeft)
+                            : corner);
 
                         // draw filmstrip as video clip background
                         if (clip is VideoClip vc && MediaById is not null
@@ -1457,6 +1457,9 @@ namespace Fig.App.Views
                             context.DrawRectangle(fill, new Pen(outline, outlineWidth), bodyRounded);
                         }
 
+                        if (clip is TextClip textClip)
+                            DrawTextClipWords(context, rect, textClip);
+
                         if (isEffectDropTarget)
                         {
                             context.DrawRectangle(
@@ -1477,9 +1480,9 @@ namespace Fig.App.Views
                             }
                         }
 
-                        DrawClipMarkers(context, x, clipTop, clip);
+                        DrawClipMarkers(context, x, clipTop, clip, track);
                         DrawKeyframeDiamonds(context, clip, rect, px);
-                        DrawRack(context, clip, x, w, clipTop, track.Kind);
+                        DrawRack(context, clip, x, w, clipTop, track);
 
                         if (!clip.Enabled)
                         {
@@ -1503,7 +1506,7 @@ namespace Fig.App.Views
                             DrawResizeHandle(context, x + w - Math.Min(clip.FadeOutSec, clip.DurSec) * px, rect.Y, rect.Height);
                     }   // foreach clip
                     DrawRack(context, track, TrackHeaderWidth + Viewport.TimeToX(0),
-                        track.DurSec * Viewport.PixelsPerSecond, top + TimelineGeometry.ClipInset, track.Kind);
+                        track.DurSec * Viewport.PixelsPerSecond, top + TimelineGeometry.ClipInset, track);
                 }   // PushClip(clipArea)
             }   // for tracks
 
@@ -1525,7 +1528,7 @@ namespace Fig.App.Views
 
                 var ghostX = TrackHeaderWidth + Viewport.TimeToX(_dropPreviewTime);
                 var ghostW = _dropPreviewAsset.DurationSec * px;
-                var ghostHeight = Math.Min(TimelineGeometry.ClipTotal(_dropPreviewTrack.Kind), trackHeight - 8);
+                var ghostHeight = Math.Min(TimelineGeometry.ClipTotal(_dropPreviewTrack), trackHeight - 8);
                 var ghostRect = new Rect(ghostX, trackTop + TimelineGeometry.ClipInset, ghostW, ghostHeight);
                 context.DrawRectangle(new SolidColorBrush(Color.Parse("#88ffffff")), null,
                     new RoundedRect(ghostRect, ClipCornerRadius));
@@ -1543,8 +1546,8 @@ namespace Fig.App.Views
                 var ghostW = Math.Max(4, _dropEffectDuration * px);
                 var ghost = _dropLayer
                     ? new Rect(ghostX, trackTop + TimelineGeometry.ClipInset, ghostW,
-                        Math.Min(TimelineGeometry.ClipTotal(_dropPreviewTrack.Kind), height - 8))
-                    : new Rect(ghostX, trackTop + TimelineGeometry.ClipInset + TimelineGeometry.ClipTotal(_dropPreviewTrack.Kind) + 4,
+                        Math.Min(TimelineGeometry.ClipTotal(_dropPreviewTrack), height - 8))
+                    : new Rect(ghostX, trackTop + TimelineGeometry.ClipInset + TimelineGeometry.ClipTotal(_dropPreviewTrack) + 4,
                         ghostW, 24);
                 context.DrawRectangle(_dropLayer ? TextClipBrush : new SolidColorBrush(Color.FromArgb(140, 199, 154, 61)),
                     new Pen(Brushes.White, 1), ghost, 3, 3);
@@ -1566,7 +1569,7 @@ namespace Fig.App.Views
                     var trackTop = TrackTop(listIndex);
                     var x = TrackHeaderWidth + Viewport.TimeToX(_dropTransitionCutSec);
                     var marker = new SolidColorBrush(Color.FromArgb(230, 0xea, 0xb3, 0x08));
-                    var cutTotal = TimelineGeometry.ClipTotal(_dropTransitionTrack.Kind);
+                    var cutTotal = TimelineGeometry.ClipTotal(_dropTransitionTrack);
                     context.DrawLine(new Pen(marker, 3), new Point(x, trackTop + TimelineGeometry.ClipInset),
                         new Point(x, trackTop + TimelineGeometry.ClipInset + cutTotal));
                     var midY = trackTop + TimelineGeometry.ClipInset + cutTotal / 2;
