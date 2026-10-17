@@ -7,40 +7,27 @@ namespace Fig.Core.Media
     /// <summary>Inverts (negates) the RGB channels, blendable via "amount".</summary>
     [Effect(EffectCatalog.Invert, "Invert", Category = "Color", Icon = "circle-slash-2", Description = "Invert the image colors.")]
     [EffectParam("amount", "Amount", Default = 1, Min = 0, Max = 1)]
-    internal sealed class InvertEffect : IEffectProcessor
+    internal sealed class InvertEffect : EffectProcessor
     {
-        public string TypeId => EffectCatalog.Invert;
-
-        public DecodedFrame Apply(DecodedFrame frame, IReadOnlyDictionary<string, ParamValue> parameters, double localT)
+        protected override DecodedFrame Render(DecodedFrame frame, ParamSet p, double localT)
         {
-            var amount = parameters.TryGetValue("amount", out var a) ? Math.Clamp(a.AsDouble, 0, 1) : 1;
+            var amount = p.Number("amount");
             if (amount < 1e-6)
                 return frame;
 
-            var src = frame.Pixels;
-            var w = frame.Width;
-            var h = frame.Height;
-            var px = FramePool.Rent(w * h * 4);
-            if (amount >= 0.9999)
-            {
-                PixelOps.InvertRgbFull(px, src);
-                return new DecodedFrame { Width = w, Height = h, Pixels = px };
-            }
+            if (amount < 0.9999)
+                return PixelOps.MapColor(frame, new Invert(amount));
+            // all the way: the SIMD path
+            var px = FramePool.Rent(frame.Width * frame.Height * 4);
+            PixelOps.InvertRgbFull(px, frame.Pixels);
+            return new DecodedFrame { Width = frame.Width, Height = frame.Height, Pixels = px };
+        }
 
-            PixelOps.Rows(h, y =>
-            {
-                var row = y * w * 4;
-                for (var x = 0; x < w; x++)
-                {
-                    var i = row + x * 4;
-                    // lerp(src, 255 - src, amount)
-                    px[i] = (byte)Math.Clamp((int)Math.Round(src[i] + (255 - 2 * src[i]) * amount), 0, 255);
-                    px[i + 1] = (byte)Math.Clamp((int)Math.Round(src[i + 1] + (255 - 2 * src[i + 1]) * amount), 0, 255);
-                    px[i + 2] = (byte)Math.Clamp((int)Math.Round(src[i + 2] + (255 - 2 * src[i + 2]) * amount), 0, 255);
-                    px[i + 3] = src[i + 3];
-                }
-            });
-            return new DecodedFrame { Width = w, Height = h, Pixels = px };
+        private readonly record struct Invert(double Amount) : IColorMap
+        {
+            // lerp(src, 255 - src, amount)
+            public void Map(ref double r, ref double g, ref double b)
+                => (r, g, b) = (r + (255 - 2 * r) * Amount, g + (255 - 2 * g) * Amount, b + (255 - 2 * b) * Amount);
         }
     }
 }

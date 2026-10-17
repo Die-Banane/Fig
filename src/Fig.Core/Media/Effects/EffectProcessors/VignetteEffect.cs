@@ -8,16 +8,14 @@ namespace Fig.Core.Media
     [Effect(EffectCatalog.Vignette, "Vignette", Icon = "focus", Description = "Darken the frame edges.")]
     [EffectParam("strength", "Strength", Default = 0.35, Min = 0, Max = 1)]
     [EffectParam("color", "Color", Kind = ParamKind.Color, Default = 0xFF000000)]
-    internal sealed class VignetteEffect : IEffectProcessor
+    internal sealed class VignetteEffect : EffectProcessor
     {
-        public string TypeId => EffectCatalog.Vignette;
-
-        public DecodedFrame Apply(DecodedFrame frame, IReadOnlyDictionary<string, ParamValue> parameters, double localT)
+        protected override DecodedFrame Render(DecodedFrame frame, ParamSet p, double localT)
         {
-            var strength = parameters.TryGetValue("strength", out var s) ? Math.Clamp(s.AsDouble, 0, 1) : 0.35;
+            var strength = p.Number("strength");
             if (strength < 1e-6)
                 return frame;
-            var color = parameters.TryGetValue("color", out var c) ? c.AsColor : 0xFF000000u;
+            var color = p.Color("color");
             var vr = (byte)(color >> 16);
             var vg = (byte)(color >> 8);
             var vb = (byte)color;

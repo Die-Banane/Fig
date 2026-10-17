@@ -31,13 +31,9 @@ namespace Fig.Core.Media
 
             try
             {
-                var pIn = inCtx;
-                ThrowIfError(ffmpeg.avformat_open_input(&pIn, sourcePath, null, null), "avformat_open_input");
-                inCtx = pIn;
-                ThrowIfError(ffmpeg.avformat_find_stream_info(inCtx, null), "avformat_find_stream_info");
+                inCtx = FfmpegOpen.Input(sourcePath);
 
-                var vIdx = ffmpeg.av_find_best_stream(inCtx, AVMediaType.AVMEDIA_TYPE_VIDEO, -1, -1, null, 0);
-                ThrowIfError(vIdx, "av_find_best_stream");
+                var vIdx = FfmpegOpen.BestStream(inCtx, AVMediaType.AVMEDIA_TYPE_VIDEO);
                 var inStream = inCtx->streams[vIdx];
                 var inCodecPar = inStream->codecpar;
 
@@ -59,13 +55,7 @@ namespace Fig.Core.Media
                 var outW = (int)Math.Round(srcW * (outH / (double)srcH)) & ~1;
                 if (outW < 2) outW = 2;
 
-                var dec = ffmpeg.avcodec_find_decoder(inCodecPar->codec_id);
-                if (dec == null)
-                    throw new InvalidOperationException("No decoder found");
-                decCtx = ffmpeg.avcodec_alloc_context3(dec);
-                ThrowIfError(ffmpeg.avcodec_parameters_to_context(decCtx, inCodecPar), "avcodec_parameters_to_context");
-                decCtx->pkt_timebase = inStream->time_base;
-                ThrowIfError(ffmpeg.avcodec_open2(decCtx, dec, null), "avcodec_open2");
+                decCtx = FfmpegOpen.Decoder(inStream);
 
                 var dir = Path.GetDirectoryName(outputPath);
                 if (!string.IsNullOrEmpty(dir))

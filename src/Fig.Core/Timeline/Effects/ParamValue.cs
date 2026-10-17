@@ -181,6 +181,9 @@ namespace Fig.Core.Timeline
         public double Max { get; init; }
         public IReadOnlyList<string> Choices { get; init; } = Array.Empty<string>();
 
+        /// <summary>How the value reads beside its slider ("{0:P0}" for 50%, "{0:0.0} s" for seconds...).</summary>
+        public string Format { get; init; } = "{0:0.##}";
+
         /// <summary>The schema default as a typed <see cref="ParamValue"/>.</summary>
         public ParamValue DefaultValue() => Kind switch
         {
@@ -189,6 +192,43 @@ namespace Fig.Core.Timeline
             ParamKind.Color => ParamValue.OfColor((uint)Default),
             ParamKind.List => ParamValue.OfChoice((int)Math.Round(Default)),
             _ => ParamValue.OfDouble(Default),
+        };
+    }
+
+    /// <summary>
+    /// One parameter declared on an implementation class (an effect's, a transition's, a graph primitive's). Each
+    /// catalog has its own attribute deriving from this, so it reads its own; they all become a <see cref="ParamDef"/>
+    /// the same way.
+    /// </summary>
+    public abstract class ParamAttribute : Attribute
+    {
+        protected ParamAttribute(string key, string label)
+        {
+            Key = key;
+            Label = label;
+        }
+
+        public string Key { get; }
+        public string Label { get; }
+        public ParamKind Kind { get; set; } = ParamKind.Double;
+        public double Default { get; set; }
+        public double Min { get; set; }
+        public double Max { get; set; }
+        public string[] Choices { get; set; } = Array.Empty<string>();
+
+        /// <summary>How the value reads beside its slider; see <see cref="ParamDef.Format"/>.</summary>
+        public string Format { get; set; } = "{0:0.##}";
+
+        public ParamDef ToDef() => new()
+        {
+            Key = Key,
+            Label = Label,
+            Kind = Kind,
+            Default = Default,
+            Min = Min,
+            Max = Max,
+            Choices = Choices,
+            Format = Format,
         };
     }
 }

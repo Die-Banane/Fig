@@ -59,13 +59,6 @@ namespace Fig.App.Views
                 Math.Max(3, dur * Viewport.PixelsPerSecond), TimelineGeometry.ClipTotal(track));
         }
 
-        /// <summary>Where a clip is drawn, in this control's coordinates.</summary>
-        internal Rect? ClipRectFor(string clipId)
-            => Editor?.Document.Tracks.FirstOrDefault(t => t.Clips.Any(c => c.Id == clipId)) is { } track
-               && track.Clips.First(c => c.Id == clipId) is var clip
-                ? ClipSlot(track.Id, clip.StartSec, clip.DurSec)
-                : null;
-
         /// <summary>Draws the outline where moved clips came from, and the blocked ghost.</summary>
         private void DrawMoveGhost(DrawingContext context)
         {

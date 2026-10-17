@@ -25,208 +25,120 @@ namespace Fig.Core.Timeline
         public Facet Facets => Facet.Transition;
     }
 
-    /// <summary>Removes the transition across an abutting cut (clears both clip edges).</summary>
-    public sealed class RemoveTransitionCommand : IEditCommand
+    /// <summary>
+    /// An edit to the transition across one cut. It lives on two clip edges (the left clip's out, the right clip's in,
+    /// either of which may be missing); this snapshots both, makes the change, and puts the snapshot back on undo, so a
+    /// new kind of transition edit only says what it changes.
+    /// </summary>
+    public abstract class CutTransitionEdit : IEditCommand
     {
         private readonly TimelineEditor _editor;
-        private readonly string _leftClipId;
-        private readonly string _rightClipId;
         private TransitionRef? _oldOut;
         private TransitionRef? _oldIn;
         private bool _done;
 
-        public string Description => "Remove transition";
-
-        public RemoveTransitionCommand(TimelineEditor editor, string leftClipId, string rightClipId)
+        protected CutTransitionEdit(TimelineEditor editor, string leftClipId, string rightClipId)
         {
             _editor = editor;
-            _leftClipId = leftClipId;
-            _rightClipId = rightClipId;
+            LeftClipId = leftClipId;
+            RightClipId = rightClipId;
+        }
+
+        protected string LeftClipId { get; }
+        protected string RightClipId { get; }
+
+        public abstract string Description { get; }
+
+        /// <summary>Makes the change to the cut's two clips (at least one of them has its edge of the transition).</summary>
+        protected abstract void Change(Clip left, Clip right);
+
+        /// <summary>Runs <paramref name="change"/> on each edge of the transition the two clips have.</summary>
+        protected static void EachEdge(Clip left, Clip right, Action<TransitionRef> change)
+        {
+            if (left.TransitionOut is not null)
+                change(left.TransitionOut);
+            if (right.TransitionIn is not null)
+                change(right.TransitionIn);
         }
 
         public void Execute()
         {
-            var left = _editor.FindClip(_leftClipId);
-            var right = _editor.FindClip(_rightClipId);
-            if (left is null || right is null || (left.TransitionOut is null && right.TransitionIn is null))
+            if (Find() is not var (left, right) || (left.TransitionOut is null && right.TransitionIn is null))
                 return;
             _oldOut = left.TransitionOut?.Clone();
             _oldIn = right.TransitionIn?.Clone();
-            left.TransitionOut = null;
-            right.TransitionIn = null;
+            Change(left, right);
             _done = true;
         }
 
         public void Undo()
         {
-            if (!_done)
+            if (!_done || Find() is not var (left, right))
                 return;
-            var left = _editor.FindClip(_leftClipId);
-            var right = _editor.FindClip(_rightClipId);
-            if (left is not null)
-                left.TransitionOut = _oldOut?.Clone();
-            if (right is not null)
-                right.TransitionIn = _oldIn?.Clone();
+            left.TransitionOut = _oldOut?.Clone();
+            right.TransitionIn = _oldIn?.Clone();
         }
 
-        public void Redo() => Execute();
+        public void Redo()
+        {
+            if (_done && Find() is var (left, right))
+                Change(left, right);
+        }
+
+        private (Clip Left, Clip Right)? Find()
+            => _editor.FindClip(LeftClipId) is { } left && _editor.FindClip(RightClipId) is { } right ? (left, right) : null;
+    }
+
+    /// <summary>Removes the transition across an abutting cut (clears both clip edges).</summary>
+    public sealed class RemoveTransitionCommand(TimelineEditor editor, string leftClipId, string rightClipId)
+        : CutTransitionEdit(editor, leftClipId, rightClipId)
+    {
+        public override string Description => "Remove transition";
+
+        protected override void Change(Clip left, Clip right)
+        {
+            left.TransitionOut = null;
+            right.TransitionIn = null;
+        }
     }
 
     /// <summary>Sets a typed parameter on a cut transition (writes both clip edges). Coalesces.</summary>
-    public sealed class SetTransitionParamCommand : ICoalescingEditCommand
+    public sealed class SetTransitionParamCommand(TimelineEditor editor, string leftClipId, string rightClipId, string key, ParamValue value)
+        : CutTransitionEdit(editor, leftClipId, rightClipId), ICoalescingEditCommand
     {
-        private readonly TimelineEditor _editor;
-        private readonly string _leftClipId;
-        private readonly string _rightClipId;
-        private readonly string _key;
-        private ParamValue _newValue;
-        private ParamValue _oldValue;
-        private bool _done;
+        private ParamValue _value = value;
 
-        public string Description => $"Set transition param {_key}";
-        public string CoalesceKey => $"{_leftClipId}|{_rightClipId}|{_key}";
+        public override string Description => $"Set transition param {key}";
+        private string CoalesceKey => $"{LeftClipId}|{RightClipId}|{key}";
 
-        public SetTransitionParamCommand(TimelineEditor editor, string leftClipId, string rightClipId, string key, ParamValue newValue)
-        {
-            _editor = editor;
-            _leftClipId = leftClipId;
-            _rightClipId = rightClipId;
-            _key = key;
-            _newValue = newValue;
-        }
+        protected override void Change(Clip left, Clip right) => EachEdge(left, right, edge => edge.Params[key] = _value);
 
-        public void Execute()
-        {
-            if (Resolve() is not { } pair)
-                return;
-            _oldValue = pair.Any.Params.TryGetValue(_key, out var v) ? v : default;
-            Write(pair, _key, _newValue);
-            _done = true;
-        }
-
-        public void Undo()
-        {
-            if (!_done || Resolve() is not { } pair)
-                return;
-            Write(pair, _key, _oldValue);
-        }
-
-        public void Redo()
-        {
-            if (Resolve() is not { } pair)
-                return;
-            Write(pair, _key, _newValue);
-        }
-
-        public bool CanCoalesceWith(IEditCommand other)
-            => other is SetTransitionParamCommand o && o.CoalesceKey == CoalesceKey;
+        public bool CanCoalesceWith(IEditCommand other) => other is SetTransitionParamCommand o && o.CoalesceKey == CoalesceKey;
 
         public void CoalesceFrom(IEditCommand other)
         {
-            if (other is SetTransitionParamCommand o && o.CoalesceKey == CoalesceKey)
-            {
-                _newValue = o._newValue;
-                Redo();
-            }
-        }
-
-        private (TransitionRef Any, TransitionRef? Left, TransitionRef? Right)? Resolve()
-        {
-            var left = _editor.FindClip(_leftClipId);
-            var right = _editor.FindClip(_rightClipId);
-            if (left is null || right is null)
-                return null;
-            TransitionRef? any = left.TransitionOut ?? right.TransitionIn;
-            return any is null ? null : (any, left.TransitionOut, right.TransitionIn);
-        }
-
-        private static void Write((TransitionRef Any, TransitionRef? Left, TransitionRef? Right) pair, string key, ParamValue value)
-        {
-            if (pair.Left is not null)
-                pair.Left.Params[key] = value;
-            if (pair.Right is not null)
-                pair.Right.Params[key] = value;
+            _value = ((SetTransitionParamCommand)other)._value;
+            Redo();
         }
     }
 
-    /// <summary>Resizes a cut transition by writing the same duration onto both clip edges.</summary>
-    public sealed class SetTransitionDurationCommand : ICoalescingEditCommand
+    /// <summary>Resizes a cut transition by writing the same duration onto both clip edges. Coalesces.</summary>
+    public sealed class SetTransitionDurationCommand(TimelineEditor editor, string leftClipId, string rightClipId, double durationSec)
+        : CutTransitionEdit(editor, leftClipId, rightClipId), ICoalescingEditCommand
     {
-        private readonly TimelineEditor _editor;
-        private readonly string _leftClipId;
-        private readonly string _rightClipId;
-        private double _newValue;
-        private TransitionRef? _oldOut;
-        private TransitionRef? _oldIn;
-        private bool _done;
+        private double _durationSec = Math.Max(0, durationSec);
 
-        public string Description => "Resize transition";
-        public string Key => $"{_leftClipId}|{_rightClipId}";
+        public override string Description => "Resize transition";
+        private string CoalesceKey => $"{LeftClipId}|{RightClipId}";
 
-        public SetTransitionDurationCommand(TimelineEditor editor, string leftClipId, string rightClipId, double durationSec)
-        {
-            _editor = editor;
-            _leftClipId = leftClipId;
-            _rightClipId = rightClipId;
-            _newValue = Math.Max(0, durationSec);
-        }
+        protected override void Change(Clip left, Clip right) => EachEdge(left, right, edge => edge.DurationSec = _durationSec);
 
-        public void Execute()
-        {
-            var left = _editor.FindClip(_leftClipId);
-            var right = _editor.FindClip(_rightClipId);
-            if (left is null || right is null || (left.TransitionOut is null && right.TransitionIn is null))
-                return;
-            _oldOut = left.TransitionOut?.Clone();
-            _oldIn = right.TransitionIn?.Clone();
-            Apply(_newValue);
-            _done = true;
-        }
-
-        public void Undo()
-        {
-            if (!_done)
-                return;
-            var left = _editor.FindClip(_leftClipId);
-            var right = _editor.FindClip(_rightClipId);
-            if (left is not null)
-                left.TransitionOut = _oldOut?.Clone();
-            if (right is not null)
-                right.TransitionIn = _oldIn?.Clone();
-        }
-
-        public void Redo()
-        {
-            if (!_done)
-                return;
-            var left = _editor.FindClip(_leftClipId);
-            var right = _editor.FindClip(_rightClipId);
-            if (left is not null && right is not null)
-                Apply(_newValue);
-        }
-
-        public bool CanCoalesceWith(IEditCommand other)
-            => other is SetTransitionDurationCommand t && t.Key == Key;
+        public bool CanCoalesceWith(IEditCommand other) => other is SetTransitionDurationCommand o && o.CoalesceKey == CoalesceKey;
 
         public void CoalesceFrom(IEditCommand other)
         {
-            if (other is SetTransitionDurationCommand t)
-            {
-                _newValue = t._newValue;
-                Redo();
-            }
-        }
-
-        private void Apply(double durationSec)
-        {
-            var left = _editor.FindClip(_leftClipId);
-            var right = _editor.FindClip(_rightClipId);
-            if (left is null || right is null)
-                return;
-            if (left.TransitionOut is not null)
-                left.TransitionOut.DurationSec = durationSec;
-            if (right.TransitionIn is not null)
-                right.TransitionIn.DurationSec = durationSec;
+            _durationSec = ((SetTransitionDurationCommand)other)._durationSec;
+            Redo();
         }
     }
 }

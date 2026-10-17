@@ -127,7 +127,7 @@ public class AutomationTests
     public void EffectiveOpacity_WithoutKeyframes_UsesBaseValue()
     {
         var editor = EditorWithVideo();
-        editor.SetOpacity("v1", 0.4);
+        editor.SetClipProperty(["v1"], ClipProperties.Opacity, ParamValue.OfDouble(0.4), 0);
         Assert.Equal(0.4, ClipFade.EffectiveOpacity(ClipOf(editor), 2), 3);
     }
 

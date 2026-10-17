@@ -17,7 +17,7 @@ namespace Fig.App.Controls;
 /// centre to the middle of the frame; hold Ctrl to place freely. Only layers and handles take the pointer: a click
 /// anywhere else goes through to the preview.
 /// </summary>
-public sealed class LayerGizmo : Control, ICustomHitTest
+public sealed class LayerGizmo : PreviewOverlay<LayerGizmoViewModel>, ICustomHitTest
 {
     private enum Grab { None, Move, Scale, Rotate }
 
@@ -32,7 +32,6 @@ public sealed class LayerGizmo : Control, ICustomHitTest
     private static readonly Pen HandlePen = new(Accent, 1);
     private static readonly Pen GuidePen = new(new SolidColorBrush(Color.Parse("#e0559a")), 1, new DashStyle(new double[] { 5, 4 }, 0));
 
-    private LayerGizmoViewModel? _vm;
     private Grab _grab;
     private Point _press;
     private Point _center;
@@ -41,47 +40,14 @@ public sealed class LayerGizmo : Control, ICustomHitTest
     // an unselected layer under the pointer, outlined to show a click would pick it
     private GizmoItem? _hover;
 
-    public LayerGizmo()
-    {
-        ClipToBounds = true;
-        Focusable = false;
-        DataContextChanged += (_, _) =>
-        {
-            if (_vm is not null)
-                _vm.PropertyChanged -= OnVmChanged;
-            _vm = DataContext as LayerGizmoViewModel;
-            if (_vm is not null)
-                _vm.PropertyChanged += OnVmChanged;
-            InvalidateVisual();
-        };
-    }
 
-    private void OnVmChanged(object? sender, PropertyChangedEventArgs e) => InvalidateVisual();
 
-    /// <summary>Where the picture sits inside this control (letterboxed to keep its aspect).</summary>
-    private Rect PictureRect()
-    {
-        var aspect = _vm?.FrameAspect > 0 ? _vm.FrameAspect : 16.0 / 9;
-        var w = Bounds.Width;
-        var h = w / aspect;
-        if (h > Bounds.Height)
-        {
-            h = Bounds.Height;
-            w = h * aspect;
-        }
-        return new Rect((Bounds.Width - w) / 2, (Bounds.Height - h) / 2, w, h);
-    }
 
-    private static Point ToScreen(Rect picture, (double X, double Y) p)
-        => new(picture.X + p.X * picture.Width, picture.Y + p.Y * picture.Height);
-
-    private (double X, double Y) ToFrame(Rect picture, Point p)
-        => ((p.X - picture.X) / picture.Width, (p.Y - picture.Y) / picture.Height);
 
     /// <summary>A layer's box on screen, and its turn knob just above the middle of its top edge.</summary>
     private (Point[] Corners, Point Knob) Box(Rect picture, GizmoItem item)
     {
-        var aspect = _vm!.FrameAspect;
+        var aspect = Model!.FrameAspect;
         var corners = LayerGeometry.Corners(item.Layout, item.Size, aspect).Select(c => ToScreen(picture, c)).ToArray();
         var center = ToScreen(picture, (item.Layout.CenterX, item.Layout.CenterY));
         var top = new Point((corners[0].X + corners[1].X) / 2, (corners[0].Y + corners[1].Y) / 2);
@@ -111,7 +77,7 @@ public sealed class LayerGizmo : Control, ICustomHitTest
     /// <summary>What a press at <paramref name="p"/> would grab on the primary layer's handles.</summary>
     private Grab HandleUnder(Point p)
     {
-        if (_vm?.Primary is not { } primary)
+        if (Model?.Primary is not { } primary)
             return Grab.None;
         var (corners, knob) = Box(PictureRect(), primary);
         var dx = p.X - knob.X;
@@ -125,12 +91,12 @@ public sealed class LayerGizmo : Control, ICustomHitTest
     {
         var picture = PictureRect();
         var (x, y) = ToFrame(picture, p);
-        return _vm!.Items.Any(item => LayerGeometry.Contains(item.Layout, item.Size, x, y, _vm.FrameAspect));
+        return Model!.Items.Any(item => LayerGeometry.Contains(item.Layout, item.Size, x, y, Model.FrameAspect));
     }
 
     public bool HitTest(Point point)
     {
-        if (_vm is null || !_vm.ShowOverlay)
+        if (Model is null || !Model.ShowOverlay)
             return false;
         if (_grab != Grab.None || HandleUnder(point) != Grab.None || OverSelected(point))
             return true;
@@ -142,24 +108,24 @@ public sealed class LayerGizmo : Control, ICustomHitTest
     {
         var picture = PictureRect();
         var (x, y) = ToFrame(picture, p);
-        return _vm!.ItemAt(x, y);
+        return Model!.ItemAt(x, y);
     }
 
     public override void Render(DrawingContext context)
     {
-        if (_vm is null || !_vm.ShowOverlay)
+        if (Model is null || !Model.ShowOverlay)
             return;
         var picture = PictureRect();
 
-        if (_vm.SnappedX)
+        if (Model.SnappedX)
             context.DrawLine(GuidePen, new Point(picture.Center.X, picture.Top), new Point(picture.Center.X, picture.Bottom));
-        if (_vm.SnappedY)
+        if (Model.SnappedY)
             context.DrawLine(GuidePen, new Point(picture.Left, picture.Center.Y), new Point(picture.Right, picture.Center.Y));
 
         if (_hover is { } hover && _grab == Grab.None)
             context.DrawGeometry(null, HoverPen, Outline(Box(picture, hover).Corners));
 
-        foreach (var item in _vm.Items)
+        foreach (var item in Model.Items)
         {
             var (corners, knob) = Box(picture, item);
             context.DrawGeometry(null, item.IsPrimary ? PrimaryPen : OtherPen, Outline(corners));
@@ -176,7 +142,7 @@ public sealed class LayerGizmo : Control, ICustomHitTest
     protected override void OnPointerPressed(PointerPressedEventArgs e)
     {
         base.OnPointerPressed(e);
-        if (_vm is null || !_vm.ShowOverlay || !e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
+        if (Model is null || !Model.ShowOverlay || !e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
             return;
 
         var p = e.GetPosition(this);
@@ -186,14 +152,14 @@ public sealed class LayerGizmo : Control, ICustomHitTest
         if (_grab == Grab.None)
         {
             var (x, y) = ToFrame(picture, p);
-            if (!_vm.Pick(x, y, additive))
+            if (!Model.Pick(x, y, additive))
                 return;
             // Ctrl/Shift-click only changes the selection; a plain press goes on to move what is under it
             _grab = additive ? Grab.None : Grab.Move;
         }
         e.Handled = true;
         _hover = null;
-        if (_grab == Grab.None || _vm.Primary is not { } primary)
+        if (_grab == Grab.None || Model.Primary is not { } primary)
         {
             InvalidateVisual();
             return;
@@ -204,14 +170,14 @@ public sealed class LayerGizmo : Control, ICustomHitTest
         var offset = p - _center;
         _pressDistance = Math.Max(1, Math.Sqrt(offset.X * offset.X + offset.Y * offset.Y));
         _pressAngle = Math.Atan2(offset.Y, offset.X) * 180 / Math.PI;
-        _vm.Begin();
+        Model.Begin();
         e.Pointer.Capture(this);
     }
 
     protected override void OnPointerMoved(PointerEventArgs e)
     {
         base.OnPointerMoved(e);
-        if (_vm is null || !_vm.ShowOverlay)
+        if (Model is null || !Model.ShowOverlay)
             return;
         var p = e.GetPosition(this);
         var picture = PictureRect();
@@ -226,7 +192,7 @@ public sealed class LayerGizmo : Control, ICustomHitTest
                 Grab.Rotate => new Cursor(StandardCursorType.Hand),
                 _ => hovered is not null ? new Cursor(StandardCursorType.SizeAll) : Cursor.Default,
             };
-            var hover = hovered is not null && _vm.Items.All(item => item.ClipId != hovered.ClipId) ? hovered : null;
+            var hover = hovered is not null && Model.Items.All(item => item.ClipId != hovered.ClipId) ? hovered : null;
             if (hover != _hover)
             {
                 _hover = hover;
@@ -238,13 +204,13 @@ public sealed class LayerGizmo : Control, ICustomHitTest
         switch (_grab)
         {
             case Grab.Move:
-                _vm.Move((p.X - _press.X) / picture.Width, (p.Y - _press.Y) / picture.Height,
+                Model.Move((p.X - _press.X) / picture.Width, (p.Y - _press.Y) / picture.Height,
                     snap: (e.KeyModifiers & KeyModifiers.Control) == 0);
                 break;
             case Grab.Scale:
             {
                 var offset = p - _center;
-                _vm.Scale(Math.Sqrt(offset.X * offset.X + offset.Y * offset.Y) / _pressDistance);
+                Model.Scale(Math.Sqrt(offset.X * offset.X + offset.Y * offset.Y) / _pressDistance);
                 break;
             }
             case Grab.Rotate:
@@ -252,8 +218,8 @@ public sealed class LayerGizmo : Control, ICustomHitTest
                 var offset = p - _center;
                 var turn = Math.Atan2(offset.Y, offset.X) * 180 / Math.PI - _pressAngle;
                 if ((e.KeyModifiers & KeyModifiers.Shift) != 0)
-                    turn = Math.Round((_vm.StartRotation + turn) / 15) * 15 - _vm.StartRotation;
-                _vm.Rotate(turn);
+                    turn = Math.Round((Model.StartRotation + turn) / 15) * 15 - Model.StartRotation;
+                Model.Rotate(turn);
                 break;
             }
         }
@@ -268,7 +234,7 @@ public sealed class LayerGizmo : Control, ICustomHitTest
         if (e.Pointer.Captured == this)
             e.Pointer.Capture(null);
         _grab = Grab.None;
-        _vm?.End();
+        Model?.End();
         e.Handled = true;
     }
 
@@ -278,7 +244,7 @@ public sealed class LayerGizmo : Control, ICustomHitTest
         if (_grab == Grab.None)
             return;
         _grab = Grab.None;
-        _vm?.End();
+        Model?.End();
     }
 
     protected override void OnPointerExited(PointerEventArgs e)

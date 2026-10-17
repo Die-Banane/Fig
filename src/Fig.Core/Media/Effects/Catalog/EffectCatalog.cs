@@ -133,18 +133,7 @@ namespace Fig.Core.Media
                     DisplayName = descriptor.DisplayName,
                     Icon = descriptor.Icon,
                     Description = descriptor.Description,
-                    ParamSchema = type.GetCustomAttributes<EffectParamAttribute>()
-                        .Select(p => new ParamDef
-                        {
-                            Key = p.Key,
-                            Label = p.Label,
-                            Kind = p.Kind,
-                            Default = p.Default,
-                            Min = p.Min,
-                            Max = p.Max,
-                            Choices = p.Choices,
-                        })
-                        .ToList(),
+                    ParamSchema = ParamSchema.Read<EffectParamAttribute>(type),
                 };
                 list.Add(new EffectEntry(type, entry));
             }

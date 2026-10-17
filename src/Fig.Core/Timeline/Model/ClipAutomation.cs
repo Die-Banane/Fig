@@ -69,20 +69,16 @@ namespace Fig.Core.Timeline
             return false;
         }
 
-        /// <summary>True when the clip carries any automation tracks.</summary>
-        public static bool HasAnyAutomation(Clip clip)
-            => clip.Keyframes.Count > 0;
-
         /// <summary>Samples the four crop insets at a clip-relative time (base values when no track; none for clips that can't be cropped).</summary>
         public static (double L, double T, double R, double B) SampleCrop(Clip clip, double localT)
         {
-            if (clip is not ICroppable crop)
+            if (clip is not ICroppable)
                 return (0, 0, 0, 0);
             return (
-                Evaluate(clip, AutomationKeys.CropLeft, localT, crop.CropL),
-                Evaluate(clip, AutomationKeys.CropTop, localT, crop.CropT),
-                Evaluate(clip, AutomationKeys.CropRight, localT, crop.CropR),
-                Evaluate(clip, AutomationKeys.CropBottom, localT, crop.CropB));
+                ClipProperties.CropLeft.NumberAt(clip, localT),
+                ClipProperties.CropTop.NumberAt(clip, localT),
+                ClipProperties.CropRight.NumberAt(clip, localT),
+                ClipProperties.CropBottom.NumberAt(clip, localT));
         }
     }
 }

@@ -7,13 +7,11 @@ namespace Fig.Core.Media
     /// <summary>Mosaics the image into square blocks.</summary>
     [Effect(EffectCatalog.Pixelate, "Pixelate", Icon = "grid-3x3", Description = "Mosaic into blocks.")]
     [EffectParam("block", "Block size", Kind = ParamKind.Int, Default = 8, Min = 1, Max = 64)]
-    internal sealed class PixelateEffect : IEffectProcessor
+    internal sealed class PixelateEffect : EffectProcessor
     {
-        public string TypeId => EffectCatalog.Pixelate;
-
-        public DecodedFrame Apply(DecodedFrame frame, IReadOnlyDictionary<string, ParamValue> parameters, double localT)
+        protected override DecodedFrame Render(DecodedFrame frame, ParamSet p, double localT)
         {
-            var block = parameters.TryGetValue("block", out var b) ? Math.Max(1, b.AsInt) : 8;
+            var block = p.Int("block");
             if (block == 1)
                 return frame;
 

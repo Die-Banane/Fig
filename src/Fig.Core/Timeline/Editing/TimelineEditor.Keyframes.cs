@@ -179,6 +179,10 @@ namespace Fig.Core.Timeline
         public void SetKeyframeValue(KeyframeHostRef hostRef, string key, double timeSec, double value, string? gesture = null)
             => SetKeyframeValue(hostRef, key, timeSec, (KeyframeHost host) => host.ToValue(key, value), gesture);
 
+        /// <summary>Sets one key to a typed value (a colour, a choice...) at a time, as <see cref="SetKeyframeValue(KeyframeHostRef, string, double, double, string?)"/>.</summary>
+        public void SetKeyframe(KeyframeHostRef hostRef, string key, double timeSec, ParamValue value, string? gesture = null)
+            => SetKeyframeValue(hostRef, key, timeSec, _ => value, gesture);
+
         private void SetKeyframeValue(KeyframeHostRef hostRef, string key, double timeSec, Func<KeyframeHost, ParamValue> value,
             string? gesture, KeyframeEasing newKeyEasing = KeyframeEasing.Linear)
         {
@@ -219,6 +223,26 @@ namespace Fig.Core.Timeline
                     if (host.Includes(name) && track.Count > 0)
                         host.Store[name] = track.ToList();
             });
+
+        /// <summary>
+        /// Sets a clip property on clips (one undo step; a slider drag folds into it). An animated property sets the
+        /// key at the playhead instead (each clip's own moment), so dragging a keyed slider reshapes the animation there.
+        /// </summary>
+        public void SetClipProperty(IEnumerable<string> clipIds, ClipProperty property, ParamValue value, double playheadSec)
+        {
+            var clips = clipIds.Distinct().Select(FindClip).Where(c => c is not null && property.Has(c)).Cast<Clip>().ToList();
+            if (clips.Count == 0)
+                return;
+            var animated = clips.Where(property.IsAnimated).ToList();
+            foreach (var clip in animated)
+            {
+                var local = Math.Clamp(playheadSec - clip.StartSec, 0, clip.DurSec);
+                SetKeyframeValue(KeyframeHostRef.OfClip(clip.Id), property.Key, local, value.AsNumber, $"{property.Key}@{Math.Round(local, 4)}");
+            }
+            var still = clips.Except(animated).Select(c => c.Id).ToList();
+            if (still.Count > 0)
+                SetClipValue(still, property.Key, property.Get, property.Set, value);
+        }
 
         /// <summary>
         /// Writes keys at a time: a key already there takes the new value and keeps its easing (or takes

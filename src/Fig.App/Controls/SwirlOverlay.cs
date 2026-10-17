@@ -13,7 +13,7 @@ namespace Fig.App.Controls;
 /// swirl, the handle on the circle's right to change its radius, and the handle on the arc to
 /// change how far it turns.
 /// </summary>
-public sealed class SwirlOverlay : Control
+public sealed class SwirlOverlay : PreviewOverlay<SwirlControlsViewModel>
 {
     private enum Grab { None, Center, Radius, Rotation }
 
@@ -23,46 +23,19 @@ public sealed class SwirlOverlay : Control
     private static readonly Pen ArcPen = new(Accent, 2);
     private static readonly Pen HandlePen = new(Accent, 1.5);
 
-    private SwirlControlsViewModel? _vm;
     private Grab _grab;
 
-    public SwirlOverlay()
-    {
-        ClipToBounds = true;
-        DataContextChanged += (_, _) =>
-        {
-            if (_vm is not null)
-                _vm.PropertyChanged -= OnVmChanged;
-            _vm = DataContext as SwirlControlsViewModel;
-            if (_vm is not null)
-                _vm.PropertyChanged += OnVmChanged;
-            InvalidateVisual();
-        };
-    }
 
-    private void OnVmChanged(object? sender, PropertyChangedEventArgs e) => InvalidateVisual();
 
-    private Rect PictureRect()
-    {
-        var aspect = _vm?.FrameAspect > 0 ? _vm.FrameAspect : 16.0 / 9;
-        var w = Bounds.Width;
-        var h = w / aspect;
-        if (h > Bounds.Height)
-        {
-            h = Bounds.Height;
-            w = h * aspect;
-        }
-        return new Rect((Bounds.Width - w) / 2, (Bounds.Height - h) / 2, w, h);
-    }
 
-    private Point Center(Rect picture) => new(picture.X + _vm!.CenterX * picture.Width, picture.Y + _vm.CenterY * picture.Height);
+    private Point Center(Rect picture) => new(picture.X + Model!.CenterX * picture.Width, picture.Y + Model.CenterY * picture.Height);
 
-    private double RadiusPx(Rect picture) => _vm!.Radius * Math.Min(picture.Width, picture.Height);
+    private double RadiusPx(Rect picture) => Model!.Radius * Math.Min(picture.Width, picture.Height);
 
     /// <summary>The rotation handle sits on the circle: straight up at 0°, turning with the swirl.</summary>
     private Point RotationHandle(Rect picture)
     {
-        var angle = (-90 + (_vm!.Clockwise ? 1 : -1) * _vm.RotationDegrees) * Math.PI / 180;
+        var angle = (-90 + (Model!.Clockwise ? 1 : -1) * Model.RotationDegrees) * Math.PI / 180;
         var c = Center(picture);
         var r = RadiusPx(picture);
         return new Point(c.X + r * Math.Cos(angle), c.Y + r * Math.Sin(angle));
@@ -82,7 +55,7 @@ public sealed class SwirlOverlay : Control
     {
         // a transparent fill makes the whole area take part in hit testing (a bare Control would not)
         context.DrawRectangle(Brushes.Transparent, null, new Rect(Bounds.Size));
-        if (_vm is null || !_vm.ShowOverlay)
+        if (Model is null || !Model.ShowOverlay)
             return;
         var picture = PictureRect();
         var c = Center(picture);
@@ -91,7 +64,7 @@ public sealed class SwirlOverlay : Control
         context.DrawEllipse(null, CirclePen, c, r, r);
 
         // the arc from "up" to the rotation handle shows how far (and which way) it turns
-        var sweep = Math.Min(_vm.RotationDegrees, 359.9) * (_vm.Clockwise ? 1 : -1);
+        var sweep = Math.Min(Model.RotationDegrees, 359.9) * (Model.Clockwise ? 1 : -1);
         var start = new Point(c.X, c.Y - r);
         var end = RotationHandle(picture);
         var arc = new StreamGeometry();
@@ -109,8 +82,8 @@ public sealed class SwirlOverlay : Control
         context.DrawRectangle(Brushes.White, HandlePen, Box(end));
 
         DrawChip(context, "Drag center", new Point(c.X + 14, c.Y + 12), picture);
-        DrawChip(context, $"Radius · {_vm.Radius * 100:0}%", new Point(c.X + r + 10, c.Y - 10), picture);
-        DrawChip(context, $"Rotation · {_vm.RotationDegrees:0}°", new Point(end.X + 12, end.Y - 26), picture);
+        DrawChip(context, $"Radius · {Model.Radius * 100:0}%", new Point(c.X + r + 10, c.Y - 10), picture);
+        DrawChip(context, $"Rotation · {Model.RotationDegrees:0}°", new Point(end.X + 12, end.Y - 26), picture);
     }
 
     private static void DrawChip(DrawingContext context, string text, Point at, Rect limit)
@@ -139,7 +112,7 @@ public sealed class SwirlOverlay : Control
     protected override void OnPointerPressed(PointerPressedEventArgs e)
     {
         base.OnPointerPressed(e);
-        if (_vm is null || !_vm.ShowOverlay || !e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
+        if (Model is null || !Model.ShowOverlay || !e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
             return;
         _grab = HitTest(e.GetPosition(this), PictureRect());
         if (_grab == Grab.None)
@@ -151,7 +124,7 @@ public sealed class SwirlOverlay : Control
     protected override void OnPointerMoved(PointerEventArgs e)
     {
         base.OnPointerMoved(e);
-        if (_vm is null || !_vm.ShowOverlay)
+        if (Model is null || !Model.ShowOverlay)
             return;
         var p = e.GetPosition(this);
         var picture = PictureRect();
@@ -166,19 +139,19 @@ public sealed class SwirlOverlay : Control
         switch (_grab)
         {
             case Grab.Center:
-                _vm.Set(centerX: (p.X - picture.X) / picture.Width, centerY: (p.Y - picture.Y) / picture.Height);
+                Model.Set(centerX: (p.X - picture.X) / picture.Width, centerY: (p.Y - picture.Y) / picture.Height);
                 break;
             case Grab.Radius:
             {
                 var distance = Math.Sqrt((p.X - c.X) * (p.X - c.X) + (p.Y - c.Y) * (p.Y - c.Y));
-                _vm.Set(radius: distance / Math.Min(picture.Width, picture.Height));
+                Model.Set(radius: distance / Math.Min(picture.Width, picture.Height));
                 break;
             }
             case Grab.Rotation:
             {
                 var angle = Math.Atan2(p.Y - c.Y, p.X - c.X) * 180 / Math.PI;   // 0° = right
                 var turned = (angle + 90 + 360) % 360;                          // 0° = straight up, clockwise
-                _vm.Set(rotation: _vm.Clockwise ? turned : (360 - turned) % 360);
+                Model.Set(rotation: Model.Clockwise ? turned : (360 - turned) % 360);
                 break;
             }
         }

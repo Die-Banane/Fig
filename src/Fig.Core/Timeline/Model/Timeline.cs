@@ -30,15 +30,6 @@ namespace Fig.Core.Timeline
 
         public double ToSeconds(long frame) => (double)frame * Den / Num;
 
-        public static FrameRate FromFps(double fps)
-        {
-            var common = Common(fps);
-            if (Math.Abs(common.Fps - fps) < 0.001)
-                return common;
-            // high-precision rational approximation for unusual rates
-            return new FrameRate((int)Math.Round(fps * 1000), 1000);
-        }
-
         public static FrameRate Common(double fps)
         {
             return Math.Abs(fps - 23.976) < 0.001 ? new FrameRate(24000, 1001)

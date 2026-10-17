@@ -10,6 +10,12 @@ namespace Fig.Core.Media
     /// fast paths for operations whose math is exactly equivalent to the scalar version
     /// (saturating add/subtract for brightness/invert).
     /// </summary>
+    /// <summary>What one colour becomes, for <see cref="PixelOps.MapColor{T}"/>. Channels are 0–255.</summary>
+    internal interface IColorMap
+    {
+        void Map(ref double r, ref double g, ref double b);
+    }
+
     internal static class PixelOps
     {
         // Parallelize only once the frame is large enough to amortize the thread-pool overhead.
@@ -20,6 +26,37 @@ namespace Fig.Core.Media
 
         /// <summary>Benchmark/debug switch: run kernels single-threaded (disables row parallelism).</summary>
         public static bool ForceSequential;
+
+        /// <summary>
+        /// A colour change made pixel by pixel: <paramref name="map"/> says what one colour (0–255 per channel) becomes;
+        /// this does the rest: a new frame, the rows in parallel, rounding and clamping, alpha kept. A struct, so the
+        /// per-pixel call inlines.
+        /// </summary>
+        public static DecodedFrame MapColor<T>(DecodedFrame frame, T map) where T : struct, IColorMap
+        {
+            var src = frame.Pixels;
+            var w = frame.Width;
+            var h = frame.Height;
+            var px = FramePool.Rent(w * h * 4);
+            Rows(h, y =>
+            {
+                var row = y * w * 4;
+                for (var x = 0; x < w; x++)
+                {
+                    var i = row + x * 4;
+                    double b = src[i], g = src[i + 1], r = src[i + 2];
+                    map.Map(ref r, ref g, ref b);
+                    px[i] = ToByte(b);
+                    px[i + 1] = ToByte(g);
+                    px[i + 2] = ToByte(r);
+                    px[i + 3] = src[i + 3];
+                }
+            });
+            return new DecodedFrame { Width = w, Height = h, Pixels = px };
+        }
+
+        /// <summary>A channel value rounded and held to 0–255.</summary>
+        public static byte ToByte(double v) => (byte)Math.Clamp((int)Math.Round(v), 0, 255);
 
         /// <summary>Runs <paramref name="row"/> for every scanline, in parallel on larger frames.</summary>
         public static void Rows(int height, Action<int> row)

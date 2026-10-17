@@ -25,14 +25,6 @@ public class FrameRateTests
     }
 
     [Fact]
-    public void FromFps_UsesCanonicalRationals()
-    {
-        Assert.Equal(new FrameRate(24000, 1001), FrameRate.FromFps(23.976));
-        Assert.Equal(new FrameRate(25, 1), FrameRate.FromFps(25));
-        Assert.Equal(new FrameRate(30000, 1001), FrameRate.FromFps(29.97));
-    }
-
-    [Fact]
     public void Plausible_SnapsToStandard_AndRejectsJunk()
     {
         Assert.Equal(new FrameRate(30000, 1001), FrameRate.Plausible(new FrameRate(13698, 457)));

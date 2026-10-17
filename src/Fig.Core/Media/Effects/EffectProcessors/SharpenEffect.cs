@@ -7,13 +7,11 @@ namespace Fig.Core.Media
     /// <summary>3x3 unsharp-mask sharpen; "amount" scales the correction.</summary>
     [Effect(EffectCatalog.Sharpen, "Sharpen", Icon = "gauge", Description = "Increase local contrast at edges.")]
     [EffectParam("amount", "Amount", Default = 0.5, Min = 0, Max = 2)]
-    internal sealed class SharpenEffect : IEffectProcessor
+    internal sealed class SharpenEffect : EffectProcessor
     {
-        public string TypeId => EffectCatalog.Sharpen;
-
-        public DecodedFrame Apply(DecodedFrame frame, IReadOnlyDictionary<string, ParamValue> parameters, double localT)
+        protected override DecodedFrame Render(DecodedFrame frame, ParamSet p, double localT)
         {
-            var amount = parameters.TryGetValue("amount", out var a) ? Math.Clamp(a.AsDouble, 0, 2) : 0.5;
+            var amount = p.Number("amount");
             if (amount < 1e-6)
                 return frame;
 

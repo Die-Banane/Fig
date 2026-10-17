@@ -19,27 +19,21 @@ namespace Fig.Core.Media
         Choices = new[] { "Clockwise", "Counterclockwise" })]
     [TransitionParam("easing", "Easing", Kind = ParamKind.List, Default = 3,
         Choices = new[] { "Linear", "Ease in", "Ease out", "Ease in & out" })]
-    internal sealed class SwirlBlender : ITransitionBlender
+    internal sealed class SwirlBlender : TransitionBlender
     {
-        public string TypeId => TransitionCatalog.Swirl;
-
-        public DecodedFrame Blend(DecodedFrame outgoing, DecodedFrame incoming, double t01, IReadOnlyDictionary<string, ParamValue> parameters)
+        protected override DecodedFrame Render(DecodedFrame outgoing, DecodedFrame incoming, double t01, ParamSet parameters)
         {
-            t01 = Math.Clamp(t01, 0, 1);
-            if (outgoing.Width != incoming.Width || outgoing.Height != incoming.Height)
-                return t01 < 0.5 ? outgoing : incoming;
             if (t01 <= 0)
                 return outgoing;
             if (t01 >= 1)
                 return incoming;
 
-            double Num(string key, double fallback) => parameters.TryGetValue(key, out var v) ? v.AsNumber : fallback;
-            var centerX = Math.Clamp(Num("centerX", 0.5), 0, 1);
-            var centerY = Math.Clamp(Num("centerY", 0.5), 0, 1);
-            var radiusFrac = Math.Clamp(Num("radius", 0.42), 0.05, 1);
-            var rotation = Num("rotation", 90) * Math.PI / 180.0;
-            var direction = parameters.TryGetValue("direction", out var d) && d.AsChoice == 1 ? -1.0 : 1.0;
-            var easing = parameters.TryGetValue("easing", out var e) ? e.AsChoice : 3;
+            var centerX = parameters.Number("centerX");
+            var centerY = parameters.Number("centerY");
+            var radiusFrac = parameters.Number("radius");
+            var rotation = parameters.Number("rotation") * Math.PI / 180.0;
+            var direction = parameters.Choice("direction") == 1 ? -1.0 : 1.0;
+            var easing = parameters.Choice("easing");
 
             var p = Ease(t01, easing);
             var w = outgoing.Width;

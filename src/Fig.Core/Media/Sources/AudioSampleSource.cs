@@ -44,23 +44,13 @@ namespace Fig.Core.Media
 
             try
             {
-                var pIn = inCtx;
-                ThrowIfError(ffmpeg.avformat_open_input(&pIn, sourcePath, null, null), "avformat_open_input");
-                inCtx = pIn;
-                ThrowIfError(ffmpeg.avformat_find_stream_info(inCtx, null), "avformat_find_stream_info");
+                inCtx = FfmpegOpen.Input(sourcePath);
 
-                var aIdx = ffmpeg.av_find_best_stream(inCtx, AVMediaType.AVMEDIA_TYPE_AUDIO, -1, -1, null, 0);
-                ThrowIfError(aIdx, "av_find_best_stream(audio)");
+                var aIdx = FfmpegOpen.BestStream(inCtx, AVMediaType.AVMEDIA_TYPE_AUDIO);
                 var stream = inCtx->streams[aIdx];
                 var par = stream->codecpar;
 
-                var dec = ffmpeg.avcodec_find_decoder(par->codec_id);
-                if (dec == null)
-                    throw new InvalidOperationException("No audio decoder found");
-                decCtx = ffmpeg.avcodec_alloc_context3(dec);
-                ThrowIfError(ffmpeg.avcodec_parameters_to_context(decCtx, par), "avcodec_parameters_to_context");
-                decCtx->pkt_timebase = stream->time_base;
-                ThrowIfError(ffmpeg.avcodec_open2(decCtx, dec, null), "avcodec_open2");
+                decCtx = FfmpegOpen.Decoder(stream);
 
                 swr = ffmpeg.swr_alloc();
                 AVChannelLayout stereo = default;

@@ -7,13 +7,11 @@ namespace Fig.Core.Media
     /// <summary>Mirrors the image on the chosen axis.</summary>
     [Effect(EffectCatalog.Flip, "Flip", Icon = "flip-horizontal-2", Description = "Mirror the image.")]
     [EffectParam("axis", "Axis", Kind = ParamKind.List, Default = 0, Min = 0, Max = 2, Choices = new[] { "Horizontal", "Vertical", "Both" })]
-    internal sealed class FlipEffect : IEffectProcessor
+    internal sealed class FlipEffect : EffectProcessor
     {
-        public string TypeId => EffectCatalog.Flip;
-
-        public DecodedFrame Apply(DecodedFrame frame, IReadOnlyDictionary<string, ParamValue> parameters, double localT)
+        protected override DecodedFrame Render(DecodedFrame frame, ParamSet p, double localT)
         {
-            var axis = parameters.TryGetValue("axis", out var a) ? a.AsChoice : 0;
+            var axis = p.Choice("axis");
             var flipX = axis is 0 or 2;
             var flipY = axis is 1 or 2;
             if (!flipX && !flipY)

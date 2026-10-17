@@ -16,16 +16,18 @@ namespace Fig.Core.Media
     public static class TransformMath
     {
         /// <summary>The camera described by a set of resolved parameters, kept inside the picture.</summary>
-        public static TransformView ViewFrom(IReadOnlyDictionary<string, ParamValue> p)
+        public static TransformView ViewFrom(IReadOnlyDictionary<string, ParamValue> values)
+            => ViewFrom(new ParamSet(ParamSchema.Of<EffectParamAttribute>(typeof(TransformEffect)), values));
+
+        internal static TransformView ViewFrom(ParamSet p)
         {
-            double Num(string key, double fallback) => p.TryGetValue(key, out var v) ? v.AsNumber : fallback;
-            var zoom = Math.Clamp(Num("zoom", 1), 1, 8);
+            var zoom = p.Number("zoom");
             var half = 0.5 / zoom;
             return new TransformView(
-                Math.Clamp(Num("centerX", 0.5), half, 1 - half),
-                Math.Clamp(Num("centerY", 0.5), half, 1 - half),
+                Math.Clamp(p.Number("centerX"), half, 1 - half),
+                Math.Clamp(p.Number("centerY"), half, 1 - half),
                 zoom,
-                Num("rotation", 0));
+                p.Number("rotation"));
         }
 
         /// <summary>The camera of a Transform effect at a clip-relative time, keyframes included.</summary>

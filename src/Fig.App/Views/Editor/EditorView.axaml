@@ -15,6 +15,23 @@
 
     <UserControl.Resources>
         <conv:PathToBitmapConverter x:Key="PathToBitmap"/>
+        <!-- one set of keyframe controls for every keyframable value: previous, add/remove at the playhead, next -->
+        <DataTemplate x:Key="KeyframeButtons" x:DataType="vm:ParamEditorViewModel">
+            <StackPanel Orientation="Horizontal" Spacing="2" IsVisible="{Binding ShowKeyframes}" VerticalAlignment="Center">
+                <Button Classes="kf-btn" Command="{Binding StepKeyframesCommand}" CommandParameter="False"
+                        IsVisible="{Binding HasKeyframes}" ToolTip.Tip="Previous keyframe" AutomationProperties.Name="Previous keyframe">
+                    <local:StrokeIcon Icon="chevron-left" Width="12" Height="12"/>
+                </Button>
+                <ToggleButton Classes="kf-diamond" IsChecked="{Binding IsOnKeyframe, Mode=OneWay}" Command="{Binding ToggleKeyframeCommand}"
+                              ToolTip.Tip="Add or remove a keyframe at the playhead" AutomationProperties.Name="Keyframe">
+                    <local:StrokeIcon Icon="diamond" Width="10" Height="10"/>
+                </ToggleButton>
+                <Button Classes="kf-btn" Command="{Binding StepKeyframesCommand}" CommandParameter="True"
+                        IsVisible="{Binding HasKeyframes}" ToolTip.Tip="Next keyframe" AutomationProperties.Name="Next keyframe">
+                    <local:StrokeIcon Icon="chevron-right" Width="12" Height="12"/>
+                </Button>
+            </StackPanel>
+        </DataTemplate>
     </UserControl.Resources>
 
     <UserControl.Styles>
@@ -292,88 +309,62 @@
 
     <UserControl.DataTemplates>
 
-        <!-- schema-driven parameter editors (implicit by VM type) -->
+        <!-- one row per kind of value (effect parameters, clip properties, transition and node settings), by VM type -->
         <DataTemplate DataType="vm:DoubleParamEditorViewModel">
-            <StackPanel Spacing="4" Margin="0,8,0,0">
-                <DockPanel>
-                    <TextBlock Text="{Binding Value, StringFormat={}{0:0.##}}" DockPanel.Dock="Right"
-                               Classes="field-value" FontSize="11"/>
-                    <TextBlock Text="{Binding Label}" Classes="field-value"/>
-                </DockPanel>
-                <ctrls:FigSlider Minimum="{Binding Min}" Maximum="{Binding Max}" Value="{Binding Value}"/>
-                <StackPanel Orientation="Horizontal" Spacing="4" IsVisible="{Binding ShowKeyframes}">
-                    <Border Background="{StaticResource WarnBg}" CornerRadius="{StaticResource RadiusControl}"
-                            Padding="6,4" VerticalAlignment="Center">
-                        <StackPanel Orientation="Horizontal" Spacing="4">
-                            <local:StrokeIcon Icon="diamond" Width="12" Height="12" IconBrush="{StaticResource Warn}"/>
-                            <TextBlock Text="{Binding KeyframeCount}" Foreground="{StaticResource Warn}"
-                                       FontSize="11" FontWeight="SemiBold"/>
-                        </StackPanel>
-                    </Border>
-                    <Button Classes="kf-btn" Command="{Binding AddKeyframeCommand}" ToolTip.Tip="Keyframe at playhead">
-                        <local:StrokeIcon Icon="plus" Width="14" Height="14"/>
-                    </Button>
-                    <Button Classes="kf-btn" Command="{Binding StepKeyframesCommand}" CommandParameter="False"
-                            ToolTip.Tip="Previous keyframe">
-                        <local:StrokeIcon Icon="chevron-left" Width="14" Height="14"/>
-                    </Button>
-                    <Button Classes="kf-btn" Command="{Binding StepKeyframesCommand}" CommandParameter="True"
-                            ToolTip.Tip="Next keyframe">
-                        <local:StrokeIcon Icon="chevron-right" Width="14" Height="14"/>
-                    </Button>
-                    <Button Classes="kf-btn danger" Command="{Binding ClearKeyframesCommand}"
-                            ToolTip.Tip="Clear keyframes">
-                        <local:StrokeIcon Icon="x" Width="14" Height="14" IconBrush="{StaticResource Danger}"/>
-                    </Button>
-                </StackPanel>
-            </StackPanel>
+            <Grid ColumnDefinitions="72,*,52,Auto" ColumnSpacing="7" Margin="0,3" IsVisible="{Binding IsShown}">
+                <TextBlock Text="{Binding Label}" Classes="field-label" VerticalAlignment="Center"
+                           TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Label}"/>
+                <ctrls:FigSlider Grid.Column="1" Minimum="{Binding Min}" Maximum="{Binding Max}" Value="{Binding Value}"
+                                 VerticalAlignment="Center" AutomationProperties.Name="{Binding Label}"/>
+                <Border Grid.Column="2" Classes="inspector-value">
+                    <TextBlock Text="{Binding ValueText}" Classes="field-value" FontSize="10"
+                               HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                </Border>
+                <ContentControl Grid.Column="3" Content="{Binding}" ContentTemplate="{StaticResource KeyframeButtons}"/>
+            </Grid>
         </DataTemplate>
 
         <DataTemplate DataType="vm:BoolParamEditorViewModel">
-            <Grid Margin="0,8,0,0" ColumnDefinitions="*,Auto">
-                <CheckBox Grid.Column="0" IsChecked="{Binding Value}" Content="{Binding Label}"
-                          Foreground="{StaticResource TextSecondary}" FontSize="12"/>
-                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" IsVisible="{Binding ShowKeyframes}">
-                    <Border Background="{StaticResource WarnBg}" CornerRadius="{StaticResource RadiusControl}"
-                            Padding="6,4" VerticalAlignment="Center">
-                        <StackPanel Orientation="Horizontal" Spacing="4">
-                            <local:StrokeIcon Icon="diamond" Width="12" Height="12" IconBrush="{StaticResource Warn}"/>
-                            <TextBlock Text="{Binding KeyframeCount}" Foreground="{StaticResource Warn}" FontSize="11"/>
-                        </StackPanel>
-                    </Border>
-                    <Button Classes="kf-btn" Command="{Binding AddKeyframeCommand}" ToolTip.Tip="Keyframe at playhead">
-                        <local:StrokeIcon Icon="plus" Width="14" Height="14"/>
-                    </Button>
-                    <Button Classes="kf-btn danger" Command="{Binding ClearKeyframesCommand}" ToolTip.Tip="Clear keyframes">
-                        <local:StrokeIcon Icon="x" Width="14" Height="14" IconBrush="{StaticResource Danger}"/>
-                    </Button>
-                </StackPanel>
+            <Grid ColumnDefinitions="*,Auto" Margin="0,3" IsVisible="{Binding IsShown}">
+                <CheckBox IsChecked="{Binding Value}" Content="{Binding Label}" IsVisible="{Binding !HasIcon}"/>
+                <ToggleButton Classes="fig icon" IsChecked="{Binding Value}" IsVisible="{Binding HasIcon}" HorizontalAlignment="Left"
+                              ToolTip.Tip="{Binding Label}" AutomationProperties.Name="{Binding Label}">
+                    <local:StrokeIcon Icon="{Binding Icon}" Width="14" Height="14"/>
+                </ToggleButton>
+                <ContentControl Grid.Column="1" Content="{Binding}" ContentTemplate="{StaticResource KeyframeButtons}"/>
             </Grid>
         </DataTemplate>
 
         <DataTemplate DataType="vm:ColorParamEditorViewModel">
-            <StackPanel Spacing="4" Margin="0,8,0,0">
-                <TextBlock Text="{Binding Label}" Classes="field-value"/>
-                <Grid ColumnDefinitions="Auto,*,Auto">
-                    <ColorPicker Grid.Column="0" Grid.ColumnSpan="2" HorizontalAlignment="Stretch"
-                                 Color="{Binding Hex, Converter={x:Static conv:HexColorConverter.Instance}}"
-                                 AutomationProperties.Name="{Binding Label}"/>
-                    <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4" Margin="8,0,0,0"
-                                IsVisible="{Binding ShowKeyframes}" VerticalAlignment="Center">
-                        <Button Classes="kf-btn" Command="{Binding AddKeyframeCommand}" ToolTip.Tip="Keyframe at playhead">
-                            <local:StrokeIcon Icon="plus" Width="14" Height="14"/>
-                        </Button>
-                    </StackPanel>
-                </Grid>
-            </StackPanel>
+            <Grid ColumnDefinitions="72,*,Auto" ColumnSpacing="7" Margin="0,3" IsVisible="{Binding IsShown}">
+                <TextBlock Text="{Binding Label}" Classes="field-label" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                <ColorPicker Grid.Column="1" HorizontalAlignment="Left"
+                             Color="{Binding Hex, Converter={x:Static conv:HexColorConverter.Instance}}"
+                             AutomationProperties.Name="{Binding Label}"/>
+                <ContentControl Grid.Column="2" Content="{Binding}" ContentTemplate="{StaticResource KeyframeButtons}"/>
+            </Grid>
         </DataTemplate>
 
         <DataTemplate DataType="vm:ChoiceParamEditorViewModel">
-            <StackPanel Spacing="4" Margin="0,8,0,0">
-                <TextBlock Text="{Binding Label}" Classes="field-value"/>
-                <ComboBox ItemsSource="{Binding Choices}" SelectedIndex="{Binding Index}"
-                          FontSize="11" HorizontalAlignment="Stretch"/>
-            </StackPanel>
+            <Grid ColumnDefinitions="72,*" ColumnSpacing="7" Margin="0,3" IsVisible="{Binding IsShown}">
+                <TextBlock Text="{Binding Label}" Classes="field-label" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                <ComboBox Grid.Column="1" ItemsSource="{Binding Choices}" SelectedIndex="{Binding Index}"
+                          FontSize="11" HorizontalAlignment="Stretch" AutomationProperties.Name="{Binding Label}"/>
+            </Grid>
+        </DataTemplate>
+
+        <!-- a group of clip properties (from the property schema), with a reset to their defaults -->
+        <DataTemplate DataType="vm:PropertyGroupViewModel">
+            <Border Classes="inspector-group" IsVisible="{Binding IsShown}">
+                <StackPanel Spacing="4">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <TextBlock Classes="inspector-section" Text="{Binding Title}" VerticalAlignment="Center"/>
+                        <Button Grid.Column="1" Content="Reset" Classes="btn-ghost" Padding="7,3"
+                                Command="{Binding ResetCommand}" ToolTip.Tip="Back to the defaults"/>
+                    </Grid>
+                    <ItemsControl ItemsSource="{Binding Editors}"/>
+                </StackPanel>
+            </Border>
         </DataTemplate>
 
         <!-- Video -->
@@ -381,87 +372,9 @@
             <ContentControl Content="{Binding Host}">
                 <ContentControl.ContentTemplate>
                     <DataTemplate x:DataType="vm:PropertiesViewModel">
-                                <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-                                    <StackPanel Spacing="0">
-                                        <Border Classes="inspector-group">
-                                            <StackPanel Spacing="8">
-                                                <Grid ColumnDefinitions="*,Auto">
-                                                    <TextBlock Classes="inspector-section" Text="Compositing" VerticalAlignment="Center"/>
-                                                    <Button Grid.Column="1" Content="Reset" Classes="btn-ghost" Padding="7,3"
-                                                            Command="{Binding ResetCompositingCommand}" ToolTip.Tip="Set opacity back to 100%"/>
-                                                </Grid>
-                                                <Grid ColumnDefinitions="58,*,48,20" ColumnSpacing="7">
-                                                    <TextBlock Text="Opacity" Classes="field-label" VerticalAlignment="Center"/>
-                                                    <ctrls:FigSlider Grid.Column="1" Minimum="0" Maximum="1"
-                                                                       Value="{Binding OpacityValue}" VerticalAlignment="Center"/>
-                                                    <Border Grid.Column="2" Classes="inspector-value">
-                                                        <TextBlock Text="{Binding OpacityValue, StringFormat={}{0:P0}}"
-                                                                   Classes="field-value" FontSize="10"
-                                                                   HorizontalAlignment="Right" VerticalAlignment="Center"/>
-                                                    </Border>
-                                                    <ToggleButton Grid.Column="3" Classes="kf-diamond"
-                                                                  IsChecked="{Binding OpacityAutomation.IsKeyframed, Mode=OneWay}"
-                                                                  Command="{Binding OpacityAutomation.ToggleCommand}"
-                                                                  ToolTip.Tip="Toggle opacity keyframe">
-                                                        <local:StrokeIcon Icon="diamond" Width="10" Height="10"/>
-                                                    </ToggleButton>
-                                                </Grid>
-                                            </StackPanel>
-                                        </Border>
-
-                                        <Border Classes="inspector-group" IsVisible="{Binding HasCrop}">
-                                            <StackPanel Spacing="7">
-                                                <Grid ColumnDefinitions="*,Auto">
-                                                    <TextBlock Classes="inspector-section" Text="Crop" VerticalAlignment="Center"/>
-                                                    <Button Grid.Column="1" Content="Reset" Classes="btn-ghost"
-                                                            Padding="7,3" Command="{Binding ResetCropCommand}"/>
-                                                </Grid>
-
-                                                <Grid ColumnDefinitions="58,*,48,20" ColumnSpacing="7">
-                                                    <TextBlock Text="Left" Classes="field-label" VerticalAlignment="Center"/>
-                                                    <ctrls:FigSlider Grid.Column="1" Minimum="0" Maximum="0.45" Value="{Binding CropLeft}"/>
-                                                    <Border Grid.Column="2" Classes="inspector-value">
-                                                        <TextBlock Text="{Binding CropLeft, StringFormat={}{0:P0}}" Classes="field-value" FontSize="10" HorizontalAlignment="Right"/>
-                                                    </Border>
-                                                    <ToggleButton Grid.Column="3" Classes="kf-diamond" IsChecked="{Binding CropLeftAutomation.IsKeyframed, Mode=OneWay}" Command="{Binding CropLeftAutomation.ToggleCommand}">
-                                                        <local:StrokeIcon Icon="diamond" Width="10" Height="10"/>
-                                                    </ToggleButton>
-                                                </Grid>
-                                                <Grid ColumnDefinitions="58,*,48,20" ColumnSpacing="7">
-                                                    <TextBlock Text="Right" Classes="field-label" VerticalAlignment="Center"/>
-                                                    <ctrls:FigSlider Grid.Column="1" Minimum="0" Maximum="0.45" Value="{Binding CropRight}"/>
-                                                    <Border Grid.Column="2" Classes="inspector-value">
-                                                        <TextBlock Text="{Binding CropRight, StringFormat={}{0:P0}}" Classes="field-value" FontSize="10" HorizontalAlignment="Right"/>
-                                                    </Border>
-                                                    <ToggleButton Grid.Column="3" Classes="kf-diamond" IsChecked="{Binding CropRightAutomation.IsKeyframed, Mode=OneWay}" Command="{Binding CropRightAutomation.ToggleCommand}">
-                                                        <local:StrokeIcon Icon="diamond" Width="10" Height="10"/>
-                                                    </ToggleButton>
-                                                </Grid>
-                                                <Grid ColumnDefinitions="58,*,48,20" ColumnSpacing="7">
-                                                    <TextBlock Text="Top" Classes="field-label" VerticalAlignment="Center"/>
-                                                    <ctrls:FigSlider Grid.Column="1" Minimum="0" Maximum="0.45" Value="{Binding CropTop}"/>
-                                                    <Border Grid.Column="2" Classes="inspector-value">
-                                                        <TextBlock Text="{Binding CropTop, StringFormat={}{0:P0}}" Classes="field-value" FontSize="10" HorizontalAlignment="Right"/>
-                                                    </Border>
-                                                    <ToggleButton Grid.Column="3" Classes="kf-diamond" IsChecked="{Binding CropTopAutomation.IsKeyframed, Mode=OneWay}" Command="{Binding CropTopAutomation.ToggleCommand}">
-                                                        <local:StrokeIcon Icon="diamond" Width="10" Height="10"/>
-                                                    </ToggleButton>
-                                                </Grid>
-                                                <Grid ColumnDefinitions="58,*,48,20" ColumnSpacing="7">
-                                                    <TextBlock Text="Bottom" Classes="field-label" VerticalAlignment="Center"/>
-                                                    <ctrls:FigSlider Grid.Column="1" Minimum="0" Maximum="0.45" Value="{Binding CropBottom}"/>
-                                                    <Border Grid.Column="2" Classes="inspector-value">
-                                                        <TextBlock Text="{Binding CropBottom, StringFormat={}{0:P0}}" Classes="field-value" FontSize="10" HorizontalAlignment="Right"/>
-                                                    </Border>
-                                                    <ToggleButton Grid.Column="3" Classes="kf-diamond" IsChecked="{Binding CropBottomAutomation.IsKeyframed, Mode=OneWay}" Command="{Binding CropBottomAutomation.ToggleCommand}">
-                                                        <local:StrokeIcon Icon="diamond" Width="10" Height="10"/>
-                                                    </ToggleButton>
-                                                </Grid>
-                                            </StackPanel>
-                                        </Border>
-                                    </StackPanel>
-                                </ScrollViewer>
-
+                        <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                            <ItemsControl ItemsSource="{Binding PictureGroups}"/>
+                        </ScrollViewer>
                     </DataTemplate>
                 </ContentControl.ContentTemplate>
             </ContentControl>
@@ -479,63 +392,15 @@
                                         <TextBlock Classes="inspector-section" Text="Text"/>
                                         <TextBox Text="{Binding TextValue}" AcceptsReturn="True" TextWrapping="Wrap"
                                                  MinHeight="64" AutomationProperties.Name="Title text"/>
-                                    </StackPanel>
-                                </Border>
-                                <Border Classes="inspector-group">
-                                    <StackPanel Spacing="8">
-                                        <TextBlock Classes="inspector-section" Text="Font"/>
                                         <ComboBox ItemsSource="{Binding FontFamilies}" SelectedItem="{Binding FontFamilyValue}"
                                                   HorizontalAlignment="Stretch" AutomationProperties.Name="Font">
                                             <ComboBox.ItemsPanel>
                                                 <ItemsPanelTemplate><VirtualizingStackPanel/></ItemsPanelTemplate>
                                             </ComboBox.ItemsPanel>
                                         </ComboBox>
-                                        <StackPanel Orientation="Horizontal" Spacing="4">
-                                            <ToggleButton Classes="fig icon" IsChecked="{Binding TextBold}" ToolTip.Tip="Bold">
-                                                <local:StrokeIcon Icon="bold" Width="14" Height="14"/>
-                                            </ToggleButton>
-                                            <ToggleButton Classes="fig icon" IsChecked="{Binding TextItalic}" ToolTip.Tip="Italic">
-                                                <local:StrokeIcon Icon="italic" Width="14" Height="14"/>
-                                            </ToggleButton>
-                                            <ComboBox ItemsSource="{Binding TextAligns}" SelectedItem="{Binding TextAlignValue}"
-                                                      MinWidth="96" Margin="6,0,0,0" AutomationProperties.Name="Alignment"/>
-                                        </StackPanel>
-                                                <Grid ColumnDefinitions="58,*,48" ColumnSpacing="7">
-                                                    <TextBlock Text="Size" Classes="field-label" VerticalAlignment="Center"/>
-                                                    <ctrls:FigSlider Grid.Column="1" Minimum="1" Maximum="40"
-                                                                       Value="{Binding TextSizeValue}" VerticalAlignment="Center"/>
-                                                    <Border Grid.Column="2" Classes="inspector-value">
-                                                        <TextBlock Text="{Binding TextSizeValue, StringFormat={}{0:0.#}%}" Classes="field-value" FontSize="10"
-                                                                   HorizontalAlignment="Right" VerticalAlignment="Center"/>
-                                                    </Border>
-                                                    <ToggleButton Grid.Column="3" Classes="kf-diamond"
-                                                                      IsChecked="{Binding TextSizeAutomation.IsKeyframed, Mode=OneWay}"
-                                                                      Command="{Binding TextSizeAutomation.ToggleCommand}"
-                                                                      ToolTip.Tip="Toggle text size keyframe">
-                                                            <local:StrokeIcon Icon="diamond" Width="10" Height="10"/>
-                                                        </ToggleButton>
-                                                </Grid>
-                                                <Grid ColumnDefinitions="58,Auto,*" ColumnSpacing="7">
-                                                    <TextBlock Text="Colour" Classes="field-label" VerticalAlignment="Center"/>
-                                                    <ColorPicker Grid.Column="1" Grid.ColumnSpan="2" HorizontalAlignment="Stretch"
-                                                                 Color="{Binding TextColorHex, Converter={x:Static conv:HexColorConverter.Instance}}"
-                                                                 AutomationProperties.Name="Text colour"/>
-                                                </Grid>
                                     </StackPanel>
                                 </Border>
-                                <Border Classes="inspector-group">
-                                    <StackPanel Spacing="8">
-                                        <TextBlock Classes="inspector-section" Text="Backing"/>
-                                        <CheckBox Content="Drop shadow" IsChecked="{Binding TextShadow}"/>
-                                        <CheckBox Content="Background box" IsChecked="{Binding TextBackground}"/>
-                                                <Grid ColumnDefinitions="58,Auto,*" ColumnSpacing="7" IsVisible="{Binding TextBackground}">
-                                                    <TextBlock Text="Box" Classes="field-label" VerticalAlignment="Center"/>
-                                                    <ColorPicker Grid.Column="1" Grid.ColumnSpan="2" HorizontalAlignment="Stretch"
-                                                                 Color="{Binding TextBackgroundHex, Converter={x:Static conv:HexColorConverter.Instance}}"
-                                                                 AutomationProperties.Name="Box colour"/>
-                                                </Grid>
-                                    </StackPanel>
-                                </Border>
+                                <ItemsControl ItemsSource="{Binding TextGroups}"/>
                             </StackPanel>
                         </ScrollViewer>
                     </DataTemplate>
@@ -549,51 +414,7 @@
                 <ContentControl.ContentTemplate>
                     <DataTemplate x:DataType="vm:PropertiesViewModel">
                         <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-                            <Border Classes="inspector-group">
-                                <StackPanel Spacing="8">
-                                    <Grid ColumnDefinitions="*,Auto">
-                                        <TextBlock Classes="inspector-section" Text="Position" VerticalAlignment="Center"/>
-                                        <Button Grid.Column="1" Content="Reset" Classes="btn-ghost" Padding="7,3"
-                                                Command="{Binding ResetLayoutCommand}" ToolTip.Tip="Centre it, at full size, unrotated"/>
-                                    </Grid>
-                                                <Grid ColumnDefinitions="58,*,48" ColumnSpacing="7">
-                                                    <TextBlock Text="X" Classes="field-label" VerticalAlignment="Center"/>
-                                                    <ctrls:FigSlider Grid.Column="1" Minimum="0" Maximum="1"
-                                                                       Value="{Binding LayoutX}" VerticalAlignment="Center"/>
-                                                    <Border Grid.Column="2" Classes="inspector-value">
-                                                        <TextBlock Text="{Binding LayoutX, StringFormat={}{0:P0}}" Classes="field-value" FontSize="10"
-                                                                   HorizontalAlignment="Right" VerticalAlignment="Center"/>
-                                                    </Border>
-                                                </Grid>
-                                                <Grid ColumnDefinitions="58,*,48" ColumnSpacing="7">
-                                                    <TextBlock Text="Y" Classes="field-label" VerticalAlignment="Center"/>
-                                                    <ctrls:FigSlider Grid.Column="1" Minimum="0" Maximum="1"
-                                                                       Value="{Binding LayoutY}" VerticalAlignment="Center"/>
-                                                    <Border Grid.Column="2" Classes="inspector-value">
-                                                        <TextBlock Text="{Binding LayoutY, StringFormat={}{0:P0}}" Classes="field-value" FontSize="10"
-                                                                   HorizontalAlignment="Right" VerticalAlignment="Center"/>
-                                                    </Border>
-                                                </Grid>
-                                                <Grid ColumnDefinitions="58,*,48" ColumnSpacing="7">
-                                                    <TextBlock Text="Scale" Classes="field-label" VerticalAlignment="Center"/>
-                                                    <ctrls:FigSlider Grid.Column="1" Minimum="0.1" Maximum="4"
-                                                                       Value="{Binding LayoutScale}" VerticalAlignment="Center"/>
-                                                    <Border Grid.Column="2" Classes="inspector-value">
-                                                        <TextBlock Text="{Binding LayoutScale, StringFormat={}{0:P0}}" Classes="field-value" FontSize="10"
-                                                                   HorizontalAlignment="Right" VerticalAlignment="Center"/>
-                                                    </Border>
-                                                </Grid>
-                                                <Grid ColumnDefinitions="58,*,48" ColumnSpacing="7">
-                                                    <TextBlock Text="Rotate" Classes="field-label" VerticalAlignment="Center"/>
-                                                    <ctrls:FigSlider Grid.Column="1" Minimum="-180" Maximum="180"
-                                                                       Value="{Binding LayoutRotation}" VerticalAlignment="Center"/>
-                                                    <Border Grid.Column="2" Classes="inspector-value">
-                                                        <TextBlock Text="{Binding LayoutRotation, StringFormat={}{0:0}°}" Classes="field-value" FontSize="10"
-                                                                   HorizontalAlignment="Right" VerticalAlignment="Center"/>
-                                                    </Border>
-                                                </Grid>
-                                </StackPanel>
-                            </Border>
+                            <ItemsControl ItemsSource="{Binding LayoutGroups}"/>
                         </ScrollViewer>
                     </DataTemplate>
                 </ContentControl.ContentTemplate>
@@ -605,80 +426,13 @@
             <ContentControl Content="{Binding Host}">
                 <ContentControl.ContentTemplate>
                     <DataTemplate x:DataType="vm:PropertiesViewModel">
-                                <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-                                    <StackPanel>
-                                    <Border Classes="inspector-group">
-                                        <StackPanel Spacing="8">
-                                            <Grid ColumnDefinitions="*,Auto">
-                                                <TextBlock Classes="inspector-section" Text="Clip audio" VerticalAlignment="Center"/>
-                                                <Button Grid.Column="1" Content="Reset" Classes="btn-ghost" Padding="7,3"
-                                                        Command="{Binding ResetAudioCommand}" ToolTip.Tip="Set the level back to 100%"/>
-                                            </Grid>
-                                            <Grid ColumnDefinitions="58,*,48,20" ColumnSpacing="7">
-                                                <TextBlock Text="Level" Classes="field-label" VerticalAlignment="Center"/>
-                                                <ctrls:FigSlider Grid.Column="1" Minimum="0" Maximum="1" Value="{Binding VolumeValue}"/>
-                                                <Border Grid.Column="2" Classes="inspector-value">
-                                                    <TextBlock Text="{Binding VolumeValue, StringFormat={}{0:P0}}" Classes="field-value" FontSize="10" HorizontalAlignment="Right"/>
-                                                </Border>
-                                                <ToggleButton Grid.Column="3" Classes="kf-diamond" IsChecked="{Binding VolumeAutomation.IsKeyframed, Mode=OneWay}" Command="{Binding VolumeAutomation.ToggleCommand}">
-                                                    <local:StrokeIcon Icon="diamond" Width="10" Height="10"/>
-                                                </ToggleButton>
-                                            </Grid>
-                                            <Grid ColumnDefinitions="65,*,Auto">
-                                                <Grid Grid.Column="1" ColumnDefinitions="*,Auto">
-                                                    <TextBlock Text="0%" Classes="field-label" FontSize="10"/>
-                                                    <TextBlock Grid.Column="1" Text="100%" Classes="field-label" FontSize="10"/>
-                                                </Grid>
-                                            </Grid>
-                                        </StackPanel>
-                                    </Border>
-                                    <Border Classes="inspector-group" IsVisible="{Binding HasOwnSoundFades}">
-                                        <StackPanel Spacing="8">
-                                            <TextBlock Classes="inspector-section" Text="Sound fades"/>
-                                            <Grid ColumnDefinitions="58,*,56" ColumnSpacing="7">
-                                                <TextBlock Text="Fade in" Classes="field-label" VerticalAlignment="Center"/>
-                                                <ctrls:FigSlider Grid.Column="1" Minimum="0" Maximum="5" Value="{Binding SoundFadeInValue}"/>
-                                                <Border Grid.Column="2" Classes="inspector-value">
-                                                    <TextBlock Text="{Binding SoundFadeInValue, StringFormat={}{0:0.00}s}" Classes="field-value" FontSize="10" HorizontalAlignment="Right"/>
-                                                </Border>
-                                            </Grid>
-                                            <Grid ColumnDefinitions="58,*,56" ColumnSpacing="7">
-                                                <TextBlock Text="Fade out" Classes="field-label" VerticalAlignment="Center"/>
-                                                <ctrls:FigSlider Grid.Column="1" Minimum="0" Maximum="5" Value="{Binding SoundFadeOutValue}"/>
-                                                <Border Grid.Column="2" Classes="inspector-value">
-                                                    <TextBlock Text="{Binding SoundFadeOutValue, StringFormat={}{0:0.00}s}" Classes="field-value" FontSize="10" HorizontalAlignment="Right"/>
-                                                </Border>
-                                            </Grid>
-                                            <TextBlock Classes="field-label" TextWrapping="Wrap" Text="Apart from the picture's fades. Also from the corners of the sound strip."/>
-                                        </StackPanel>
-                                    </Border>
-                                    <Border Classes="inspector-group">
-                                        <StackPanel Spacing="10">
-                                            <TextBlock Classes="inspector-section" Text="Volume keyframes"/>
-                                            <StackPanel Orientation="Horizontal" Spacing="6">
-                                                <Button Classes="kf-btn" Command="{Binding VolumeAutomation.StepCommand}" CommandParameter="False"
-                                                        ToolTip.Tip="Previous keyframe" AutomationProperties.Name="Previous keyframe">
-                                                    <local:StrokeIcon Icon="chevron-left" Width="14" Height="14"/>
-                                                </Button>
-                                                <ToggleButton Classes="kf-diamond" Width="28" Height="28"
-                                                              IsChecked="{Binding VolumeAutomation.IsKeyframed, Mode=OneWay}"
-                                                              Command="{Binding VolumeAutomation.ToggleCommand}"
-                                                              ToolTip.Tip="Add or remove a keyframe at the playhead">
-                                                    <local:StrokeIcon Icon="diamond" Width="12" Height="12"/>
-                                                </ToggleButton>
-                                                <Button Classes="kf-btn" Command="{Binding VolumeAutomation.StepCommand}" CommandParameter="True"
-                                                        ToolTip.Tip="Next keyframe" AutomationProperties.Name="Next keyframe">
-                                                    <local:StrokeIcon Icon="chevron-right" Width="14" Height="14"/>
-                                                </Button>
-                                            </StackPanel>
-                                            <TextBlock Classes="field-label" Text="Previous · Add at playhead · Next"/>
-                                        </StackPanel>
-                                    </Border>
-                                    <TextBlock IsVisible="{Binding IsLinked}" Text="{Binding LinkedToLabel}" Classes="field-label"
-                                               Margin="4,16,0,0"/>
-                                    </StackPanel>
-                                </ScrollViewer>
-
+                        <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                            <StackPanel>
+                                <ItemsControl ItemsSource="{Binding SoundGroups}"/>
+                                <TextBlock IsVisible="{Binding IsLinked}" Text="{Binding LinkedToLabel}" Classes="field-label"
+                                           Margin="4,16,0,0"/>
+                            </StackPanel>
+                        </ScrollViewer>
                     </DataTemplate>
                 </ContentControl.ContentTemplate>
             </ContentControl>
@@ -720,21 +474,9 @@
                                             <Button IsVisible="{Binding HasSpeedCurve}" Command="{Binding RemoveSpeedCurveCommand}"
                                                     Classes="fig compact" HorizontalAlignment="Stretch" Content="Remove speed curve"
                                                     ToolTip.Tip="Play at one speed again"/>
-                                            <StackPanel Spacing="8" IsVisible="{Binding CanSmoothFrames}" Margin="0,4,0,0">
-                                                <TextBlock Classes="inspector-section" Text="Smoothing"/>
-                                                <CheckBox IsChecked="{Binding BlendFramesValue}" Content="Blend frames in slow motion"
-                                                          ToolTip.Tip="Where the clip plays slower than its footage, mix the real frames around each moment so the motion glides instead of stepping"/>
-                                                <Grid ColumnDefinitions="58,*,56" ColumnSpacing="7"
-                                                      ToolTip.Tip="Where the clip plays faster than its footage, average the frames it skips so fast motion smears">
-                                                    <TextBlock Text="Motion blur" Classes="field-label" VerticalAlignment="Center" TextWrapping="Wrap"/>
-                                                    <ctrls:FigSlider Grid.Column="1" Minimum="0" Maximum="1" Value="{Binding MotionBlurValue}"/>
-                                                    <Border Grid.Column="2" Classes="inspector-value">
-                                                        <TextBlock Text="{Binding MotionBlurValue, StringFormat={}{0:P0}}" Classes="field-value" FontSize="10" HorizontalAlignment="Right"/>
-                                                    </Border>
-                                                </Grid>
-                                            </StackPanel>
                                         </StackPanel>
                                     </Border>
+                                    <ItemsControl ItemsSource="{Binding RetimeGroups}"/>
                                     <Border Classes="inspector-group">
                                         <StackPanel Spacing="10">
                                             <TextBlock Classes="inspector-section" Text="Clip duration"/>
@@ -763,42 +505,19 @@
             <ContentControl Content="{Binding Host}">
                 <ContentControl.ContentTemplate>
                     <DataTemplate x:DataType="vm:PropertiesViewModel">
-                                <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-                                    <StackPanel>
-                                    <Border Classes="inspector-group">
-                                        <StackPanel Spacing="8">
-                                            <Grid ColumnDefinitions="*,Auto">
-                                                <TextBlock Classes="inspector-section" Text="Clip fades" VerticalAlignment="Center"/>
-                                                <Button Grid.Column="1" Content="Reset" Classes="btn-ghost" Padding="7,3"
-                                                        Command="{Binding ResetFadesCommand}" ToolTip.Tip="Remove both fades"/>
-                                            </Grid>
-                                            <Grid ColumnDefinitions="58,*,56" ColumnSpacing="7">
-                                                <TextBlock Text="Fade in" Classes="field-label" VerticalAlignment="Center"/>
-                                                <ctrls:FigSlider Grid.Column="1" Minimum="0" Maximum="5" Value="{Binding FadeInValue}"/>
-                                                <Border Grid.Column="2" Classes="inspector-value">
-                                                    <TextBlock Text="{Binding FadeInValue, StringFormat={}{0:0.00}s}" Classes="field-value" FontSize="10" HorizontalAlignment="Right"/>
-                                                </Border>
-                                            </Grid>
-                                            <Grid ColumnDefinitions="58,*,56" ColumnSpacing="7">
-                                                <TextBlock Text="Fade out" Classes="field-label" VerticalAlignment="Center"/>
-                                                <ctrls:FigSlider Grid.Column="1" Minimum="0" Maximum="5" Value="{Binding FadeOutValue}"/>
-                                                <Border Grid.Column="2" Classes="inspector-value">
-                                                    <TextBlock Text="{Binding FadeOutValue, StringFormat={}{0:0.00}s}" Classes="field-value" FontSize="10" HorizontalAlignment="Right"/>
-                                                </Border>
-                                            </Grid>
-                                        </StackPanel>
-                                    </Border>
-                                    <Border Classes="inspector-group">
-                                        <StackPanel Spacing="10">
-                                            <TextBlock Classes="inspector-section" Text="Fade envelope"/>
-                                            <ctrls:FadeEnvelope Height="88" FadeIn="{Binding FadeInValue}" FadeOut="{Binding FadeOutValue}"
-                                                                ClipDuration="{Binding ClipDurationSec}"/>
-                                            <TextBlock Classes="field-label" TextWrapping="Wrap" Text="Adjust fades here or from the clip corners."/>
-                                        </StackPanel>
-                                    </Border>
+                        <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                            <StackPanel>
+                                <ItemsControl ItemsSource="{Binding FadesGroups}"/>
+                                <Border Classes="inspector-group">
+                                    <StackPanel Spacing="10">
+                                        <TextBlock Classes="inspector-section" Text="Fade envelope"/>
+                                        <ctrls:FadeEnvelope Height="88" FadeIn="{Binding FadeInValue}" FadeOut="{Binding FadeOutValue}"
+                                                            ClipDuration="{Binding ClipDurationSec}"/>
+                                        <TextBlock Classes="field-label" TextWrapping="Wrap" Text="Adjust fades here or from the clip corners."/>
                                     </StackPanel>
-                                </ScrollViewer>
-
+                                </Border>
+                            </StackPanel>
+                        </ScrollViewer>
                     </DataTemplate>
                 </ContentControl.ContentTemplate>
             </ContentControl>
@@ -890,7 +609,7 @@
                                                 </Grid>
                                                 <TextBlock Text="{Binding Hint}" Classes="field-label" TextWrapping="Wrap"/>
 
-                                                <ctrls:KeyframeRuler IsVisible="{Binding IsAnimated}"/>
+                                                <ctrls:KeyframeRuler Lane="{Binding Lane}" IsVisible="{Binding IsAnimated}"/>
 
                                                 <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding IsAnimated}">
                                                     <Button Classes="kf-btn" Command="{Binding PreviousKeyframeCommand}"
@@ -939,7 +658,7 @@
                                                     <TextBlock Text="Movement to the next keyframe" Classes="inspector-section"/>
                                                     <ComboBox HorizontalAlignment="Stretch" SelectedIndex="{Binding EasingIndex}"
                                                               IsEnabled="{Binding IsOnKeyframe}"
-                                                              ItemsSource="{x:Static vm:TransformControlsViewModel.EasingNames}"
+                                                              ItemsSource="{x:Static ctrls:KeyframeMenu.EasingNames}"
                                                               AutomationProperties.Name="Movement easing"/>
                                                     <Button Classes="fig" Content="Back to full frame here" Command="{Binding BackToFullFrameCommand}"
                                                             ToolTip.Tip="Add a keyframe at the playhead that zooms all the way back out"/>

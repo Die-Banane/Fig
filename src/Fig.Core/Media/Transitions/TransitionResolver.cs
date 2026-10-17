@@ -99,14 +99,5 @@ namespace Fig.Core.Media
             return outTx ?? inTx;
         }
 
-        /// <summary>True when a normal covering clip should be omitted because a transition owns this time.</summary>
-        public static bool SuppressNormalLayer(ActiveTransition? active, Clip clip, double timeSec)
-        {
-            if (active is null)
-                return false;
-            // During the transition window, both A and B are handled by the blender — skip normal layers.
-            return ReferenceEquals(clip, active.Outgoing) || ReferenceEquals(clip, active.Incoming)
-                   || clip.Id == active.Outgoing.Id || clip.Id == active.Incoming.Id;
-        }
     }
 }

@@ -419,24 +419,6 @@ public class LinkedMediaTests
     }
 
     [Fact]
-    public void TrimLinked_AppliesTrimToWholeGroup()
-    {
-        var editor = CreateEditor();
-        var asset = VideoWithAudio("vid7");
-        var videoTrack = editor.Document.Tracks[0];
-        var video = PlaceLinked(editor, asset, videoTrack.Id, 0);
-        var audioTrack = editor.Document.Tracks.First(t => t.Kind == TrackKind.Audio);
-        var audio = audioTrack.Clips[0];
-
-        editor.TrimLinked(video.Id, 2, 8);
-
-        Assert.Equal(2, ((VideoClip)video).SrcInSec);
-        Assert.Equal(8, ((VideoClip)video).SrcOutSec);
-        Assert.Equal(2, ((AudioClip)audio).SrcInSec);
-        Assert.Equal(8, ((AudioClip)audio).SrcOutSec);
-    }
-
-    [Fact]
     public void TimelineGeometry_ClipFitsInsideTrack()
     {
         // label strip + body must fit within the track height with room for padding

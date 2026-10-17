@@ -5,12 +5,11 @@ namespace Fig.Core.Media;
 
 [Effect("soft-blur", "Soft Blur", Category = "Blur", Icon = "droplets", Description = "Soften detail with a fast two-pass blur.")]
 [EffectParam("amount", "Radius", Default = 0.012, Min = 0, Max = 0.08)]
-internal sealed class SoftBlurEffect : IEffectProcessor
+internal sealed class SoftBlurEffect : EffectProcessor
 {
-    public string TypeId => "soft-blur";
-    public DecodedFrame Apply(DecodedFrame f, IReadOnlyDictionary<string, ParamValue> p, double t)
+    protected override DecodedFrame Render(DecodedFrame f, ParamSet p, double t)
     {
-        double amount = Number(p, "amount", 0.012, 0, 0.08);
+        double amount = p.Number("amount");
         return amount == 0 ? f : Blur(f, Math.Max(1, (int)Math.Round(amount * Math.Min(f.Width, f.Height))));
     }
 }
@@ -18,14 +17,13 @@ internal sealed class SoftBlurEffect : IEffectProcessor
 [Effect("directional-blur", "Directional Blur", Category = "Blur", Icon = "move-horizontal", Description = "Smear the picture along an adjustable angle.")]
 [EffectParam("amount", "Distance", Default = 0.025, Min = 0, Max = 0.15)]
 [EffectParam("angle", "Angle", Default = 0, Min = -180, Max = 180)]
-internal sealed class DirectionalBlurEffect : IEffectProcessor
+internal sealed class DirectionalBlurEffect : EffectProcessor
 {
-    public string TypeId => "directional-blur";
-    public DecodedFrame Apply(DecodedFrame f, IReadOnlyDictionary<string, ParamValue> p, double t)
+    protected override DecodedFrame Render(DecodedFrame f, ParamSet p, double t)
     {
-        double distance = Number(p, "amount", 0.025, 0, 0.15) * f.Width;
+        double distance = p.Number("amount") * f.Width;
         if (distance == 0) return f;
-        double angle = Number(p, "angle", 0, -180, 180) * Math.PI / 180;
+        double angle = p.Number("angle") * Math.PI / 180;
         // One tap step, shared by every pixel.
         double stepX = Math.Cos(angle) * distance / 4, stepY = Math.Sin(angle) * distance / 4;
         return Shade(f, (x, y, rgb) =>
@@ -38,12 +36,11 @@ internal sealed class DirectionalBlurEffect : IEffectProcessor
 
 [Effect("zoom-blur", "Zoom Blur", Category = "Blur", Icon = "focus", Description = "Streak details radially toward the center.")]
 [EffectParam("amount", "Strength", Default = 0.15, Min = 0, Max = 0.7)]
-internal sealed class ZoomBlurEffect : IEffectProcessor
+internal sealed class ZoomBlurEffect : EffectProcessor
 {
-    public string TypeId => "zoom-blur";
-    public DecodedFrame Apply(DecodedFrame f, IReadOnlyDictionary<string, ParamValue> p, double t)
+    protected override DecodedFrame Render(DecodedFrame f, ParamSet p, double t)
     {
-        double amount = Number(p, "amount", 0.15, 0, 0.7);
+        double amount = p.Number("amount");
         if (amount == 0) return f;
         double cx = (f.Width - 1) / 2.0, cy = (f.Height - 1) / 2.0;
         return Shade(f, (x, y, rgb) =>
@@ -61,18 +58,17 @@ internal sealed class ZoomBlurEffect : IEffectProcessor
 [EffectParam("amount", "Intensity", Default = 0.6, Min = 0, Max = 2)]
 [EffectParam("radius", "Spread", Default = 0.025, Min = 0.002, Max = 0.1)]
 [EffectParam("threshold", "Highlight threshold", Default = 0.65, Min = 0, Max = 1)]
-internal sealed class GlowEffect : IEffectProcessor
+internal sealed class GlowEffect : EffectProcessor
 {
-    public string TypeId => "glow";
-    public DecodedFrame Apply(DecodedFrame f, IReadOnlyDictionary<string, ParamValue> p, double t)
+    protected override DecodedFrame Render(DecodedFrame f, ParamSet p, double t)
     {
-        double amount = Number(p, "amount", 0.6, 0, 2), threshold = Number(p, "threshold", 0.65) * 255;
+        double amount = p.Number("amount"), threshold = p.Number("threshold") * 255;
         if (amount == 0) return f;
         var highlights = Rgb(f, (x, y, c) => Math.Max(0, f.Pixels[(y * f.Width + x) * 4 + c] - threshold));
         DecodedFrame? blurred = null;
         try
         {
-            blurred = Blur(highlights, Math.Max(1, (int)(Number(p, "radius", 0.025, 0.002, 0.1) * Math.Min(f.Width, f.Height))));
+            blurred = Blur(highlights, Math.Max(1, (int)(p.Number("radius") * Math.Min(f.Width, f.Height))));
             return Rgb(f, (x, y, c) => f.Pixels[(y * f.Width + x) * 4 + c] + blurred.Pixels[(y * f.Width + x) * 4 + c] * amount);
         }
         finally
@@ -86,14 +82,13 @@ internal sealed class GlowEffect : IEffectProcessor
 [Effect("film-grain", "Film Grain", Category = "Retro", Icon = "film", Description = "Animated monochrome grain with repeatable results on export.")]
 [EffectParam("amount", "Strength", Default = 0.15, Min = 0, Max = 1)]
 [EffectParam("size", "Grain size", Kind = ParamKind.Int, Default = 1, Min = 1, Max = 6)]
-internal sealed class FilmGrainEffect : IEffectProcessor
+internal sealed class FilmGrainEffect : EffectProcessor
 {
-    public string TypeId => "film-grain";
-    public DecodedFrame Apply(DecodedFrame f, IReadOnlyDictionary<string, ParamValue> p, double t)
+    protected override DecodedFrame Render(DecodedFrame f, ParamSet p, double t)
     {
-        double amount = Number(p, "amount", 0.15) * 100;
+        double amount = p.Number("amount") * 100;
         if (amount == 0) return f;
-        int size = (int)Number(p, "size", 1, 1, 6), seed = (int)Math.Floor(t * 24);
+        int size = p.Int("size"), seed = (int)Math.Floor(t * 24);
         return Rgb(f, (x, y, c) => f.Pixels[(y * f.Width + x) * 4 + c] + (Noise(x / size, y / size, seed) - 0.5) * amount);
     }
 }
@@ -101,12 +96,11 @@ internal sealed class FilmGrainEffect : IEffectProcessor
 [Effect("vhs", "VHS Tape", Category = "Retro", Icon = "tv", Description = "Rolling tape wobble, scanlines, color bleed and analog noise.")]
 [EffectParam("amount", "Intensity", Default = 0.45, Min = 0, Max = 1)]
 [EffectParam("speed", "Tracking speed", Default = 1, Min = 0.1, Max = 4)]
-internal sealed class VhsEffect : IEffectProcessor
+internal sealed class VhsEffect : EffectProcessor
 {
-    public string TypeId => "vhs";
-    public DecodedFrame Apply(DecodedFrame f, IReadOnlyDictionary<string, ParamValue> p, double t)
+    protected override DecodedFrame Render(DecodedFrame f, ParamSet p, double t)
     {
-        double amount = Number(p, "amount", 0.45), speed = Number(p, "speed", 1, 0.1, 4);
+        double amount = p.Number("amount"), speed = p.Number("speed");
         if (amount == 0) return f;
         int seed = (int)Math.Floor(t * 30);
         double bleedStep = f.Width * amount * 0.004;
@@ -125,14 +119,13 @@ internal sealed class VhsEffect : IEffectProcessor
 [Effect("digital-glitch", "Digital Glitch", Category = "Glitch", Icon = "zap", Description = "Animated horizontal slice displacement and RGB separation.")]
 [EffectParam("amount", "Intensity", Default = 0.4, Min = 0, Max = 1)]
 [EffectParam("speed", "Changes per second", Default = 12, Min = 1, Max = 30)]
-internal sealed class DigitalGlitchEffect : IEffectProcessor
+internal sealed class DigitalGlitchEffect : EffectProcessor
 {
-    public string TypeId => "digital-glitch";
-    public DecodedFrame Apply(DecodedFrame f, IReadOnlyDictionary<string, ParamValue> p, double t)
+    protected override DecodedFrame Render(DecodedFrame f, ParamSet p, double t)
     {
-        double amount = Number(p, "amount", 0.4);
+        double amount = p.Number("amount");
         if (amount == 0) return f;
-        int seed = (int)Math.Floor(t * Number(p, "speed", 12, 1, 30));
+        int seed = (int)Math.Floor(t * p.Number("speed"));
         double split = f.Width * amount * 0.015;
         return Shade(f, (x, y, rgb) =>
         {
@@ -147,12 +140,11 @@ internal sealed class DigitalGlitchEffect : IEffectProcessor
 [Effect("camera-shake", "Camera Shake", Category = "Motion", Icon = "move", Description = "Handheld-style animated movement with protective zoom.")]
 [EffectParam("amount", "Strength", Default = 0.025, Min = 0, Max = 0.12)]
 [EffectParam("speed", "Speed", Default = 8, Min = 0.5, Max = 25)]
-internal sealed class CameraShakeEffect : IEffectProcessor
+internal sealed class CameraShakeEffect : EffectProcessor
 {
-    public string TypeId => "camera-shake";
-    public DecodedFrame Apply(DecodedFrame f, IReadOnlyDictionary<string, ParamValue> p, double t)
+    protected override DecodedFrame Render(DecodedFrame f, ParamSet p, double t)
     {
-        double amount = Number(p, "amount", 0.025, 0, 0.12), speed = Number(p, "speed", 8, 0.5, 25);
+        double amount = p.Number("amount"), speed = p.Number("speed");
         if (amount == 0) return f;
         double dx = amount * (Math.Sin(t * speed * 6.28) + 0.4 * Math.Sin(t * speed * 13.7)) / 1.4;
         double dy = amount * (Math.Sin(t * speed * 8.1 + 1) + 0.4 * Math.Sin(t * speed * 17.3)) / 1.4;
@@ -164,14 +156,13 @@ internal sealed class CameraShakeEffect : IEffectProcessor
 [Effect("pulse-zoom", "Pulse Zoom", Category = "Motion", Icon = "focus", Description = "Repeated camera pushes at an adjustable tempo.")]
 [EffectParam("amount", "Zoom strength", Default = 0.12, Min = 0, Max = 0.8)]
 [EffectParam("bpm", "Tempo (BPM)", Default = 120, Min = 30, Max = 240)]
-internal sealed class PulseZoomEffect : IEffectProcessor
+internal sealed class PulseZoomEffect : EffectProcessor
 {
-    public string TypeId => "pulse-zoom";
-    public DecodedFrame Apply(DecodedFrame f, IReadOnlyDictionary<string, ParamValue> p, double t)
+    protected override DecodedFrame Render(DecodedFrame f, ParamSet p, double t)
     {
-        double amount = Number(p, "amount", 0.12, 0, 0.8);
+        double amount = p.Number("amount");
         if (amount == 0) return f;
-        double pulse = Math.Pow(0.5 + 0.5 * Math.Cos(t * Number(p, "bpm", 120, 30, 240) / 60 * Math.PI * 2), 4);
+        double pulse = Math.Pow(0.5 + 0.5 * Math.Cos(t * p.Number("bpm") / 60 * Math.PI * 2), 4);
         double zoom = 1 + amount * pulse;
         return Warp(f, (u, v) => (0.5 + (u - 0.5) / zoom, 0.5 + (v - 0.5) / zoom));
     }
@@ -181,27 +172,25 @@ internal sealed class PulseZoomEffect : IEffectProcessor
 [EffectParam("amount", "Intensity", Default = 0.7, Min = 0, Max = 1)]
 [EffectParam("frequency", "Flashes per second", Default = 2, Min = 0.25, Max = 12)]
 [EffectParam("dark", "Black flash", Kind = ParamKind.Bool, Default = 0)]
-internal sealed class StrobeEffect : IEffectProcessor
+internal sealed class StrobeEffect : EffectProcessor
 {
-    public string TypeId => "strobe";
-    public DecodedFrame Apply(DecodedFrame f, IReadOnlyDictionary<string, ParamValue> p, double t)
+    protected override DecodedFrame Render(DecodedFrame f, ParamSet p, double t)
     {
-        double phase = t * Number(p, "frequency", 2, 0.25, 12);
-        double flash = Math.Max(0, 1 - (phase - Math.Floor(phase)) / 0.2) * Number(p, "amount", 0.7);
+        double phase = t * p.Number("frequency");
+        double flash = Math.Max(0, 1 - (phase - Math.Floor(phase)) / 0.2) * p.Number("amount");
         if (flash <= 0) return f;
-        double target = p.TryGetValue("dark", out var dark) && dark.AsBool ? 0 : 255;
+        double target = p.Bool("dark") ? 0 : 255;
         return Rgb(f, (x, y, c) => f.Pixels[(y * f.Width + x) * 4 + c] * (1 - flash) + target * flash);
     }
 }
 
 [Effect("lens-distortion", "Lens Distortion", Category = "Distort", Icon = "aperture", Description = "Barrel or pincushion distortion around the image center.")]
 [EffectParam("amount", "Distortion", Default = 0.3, Min = -0.6, Max = 0.6)]
-internal sealed class LensDistortionEffect : IEffectProcessor
+internal sealed class LensDistortionEffect : EffectProcessor
 {
-    public string TypeId => "lens-distortion";
-    public DecodedFrame Apply(DecodedFrame f, IReadOnlyDictionary<string, ParamValue> p, double t)
+    protected override DecodedFrame Render(DecodedFrame f, ParamSet p, double t)
     {
-        double amount = Number(p, "amount", 0.3, -0.6, 0.6);
+        double amount = p.Number("amount");
         if (amount == 0) return f;
         // Barrel distortion pushes samples past the frame edge; a compensating zoom
         // keeps the farthest corner sample on the border so no clamped edge pixels show.
@@ -217,12 +206,11 @@ internal sealed class LensDistortionEffect : IEffectProcessor
 
 [Effect("mirror", "Mirror", Category = "Distort", Icon = "columns-2", Description = "Reflect half the picture or create four mirrored quadrants.")]
 [EffectParam("axis", "Reflection", Kind = ParamKind.List, Default = 0, Choices = new[] { "Left to right", "Top to bottom", "Four quadrants" })]
-internal sealed class MirrorEffect : IEffectProcessor
+internal sealed class MirrorEffect : EffectProcessor
 {
-    public string TypeId => "mirror";
-    public DecodedFrame Apply(DecodedFrame f, IReadOnlyDictionary<string, ParamValue> p, double t)
+    protected override DecodedFrame Render(DecodedFrame f, ParamSet p, double t)
     {
-        int axis = p.TryGetValue("axis", out var a) ? a.AsChoice : 0;
+        int axis = p.Choice("axis");
         return Warp(f, (u, v) => (axis != 1 ? Math.Min(u, 1 - u) : u, axis != 0 ? Math.Min(v, 1 - v) : v));
     }
 }
@@ -230,12 +218,11 @@ internal sealed class MirrorEffect : IEffectProcessor
 [Effect("light-leak", "Light Leak", Category = "Light", Icon = "sunrise", Description = "Animated warm film light spilling in from the frame edge.")]
 [EffectParam("amount", "Intensity", Default = 0.5, Min = 0, Max = 1)]
 [EffectParam("speed", "Drift speed", Default = 0.5, Min = 0, Max = 3)]
-internal sealed class LightLeakEffect : IEffectProcessor
+internal sealed class LightLeakEffect : EffectProcessor
 {
-    public string TypeId => "light-leak";
-    public DecodedFrame Apply(DecodedFrame f, IReadOnlyDictionary<string, ParamValue> p, double t)
+    protected override DecodedFrame Render(DecodedFrame f, ParamSet p, double t)
     {
-        double amount = Number(p, "amount", 0.5), speed = Number(p, "speed", 0.5, 0, 3);
+        double amount = p.Number("amount"), speed = p.Number("speed");
         if (amount == 0) return f;
         double center = -0.12 + Math.Sin(t * speed) * 0.15;
         return Rgb(f, (x, y, c) =>
@@ -253,15 +240,14 @@ internal sealed class LightLeakEffect : IEffectProcessor
 [EffectParam("amount", "Blend", Default = 1, Min = 0, Max = 1)]
 [EffectParam("shadows", "Shadows", Kind = ParamKind.Color, Default = 0xFF14284D)]
 [EffectParam("highlights", "Highlights", Kind = ParamKind.Color, Default = 0xFFFFC857)]
-internal sealed class DuotoneEffect : IEffectProcessor
+internal sealed class DuotoneEffect : EffectProcessor
 {
-    public string TypeId => "duotone";
-    public DecodedFrame Apply(DecodedFrame f, IReadOnlyDictionary<string, ParamValue> p, double t)
+    protected override DecodedFrame Render(DecodedFrame f, ParamSet p, double t)
     {
-        double amount = Number(p, "amount", 1);
+        double amount = p.Number("amount");
         if (amount == 0) return f;
-        uint low = p.TryGetValue("shadows", out var a) ? a.AsColor : 0xFF14284Du;
-        uint high = p.TryGetValue("highlights", out var b) ? b.AsColor : 0xFFFFC857u;
+        uint low = p.Color("shadows");
+        uint high = p.Color("highlights");
         return Rgb(f, (x, y, c) =>
         {
             int i = (y * f.Width + x) * 4;

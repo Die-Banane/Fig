@@ -166,33 +166,6 @@ namespace Fig.App.Views
         private Track? TrackOf(IEffectOwner clip) =>
             clip as Track ?? Editor?.Document.Tracks.FirstOrDefault(t => t.Clips.Any(c => ReferenceEquals(c, clip)));
 
-        /// <summary>
-        /// Test hook: where an effect bar (or one of its keyframes) is, in this control's coordinates.
-        /// For a keyframe the point is on its diamond; otherwise it is the middle of the bar's key lane.
-        /// </summary>
-        internal Point? RackPointFor(string clipId, string effectId, double? keyframeSec = null)
-        {
-            if (Editor is null)
-                return null;
-            for (var t = 0; t < Editor.Document.Tracks.Count; t++)
-            {
-                var track = Editor.Document.Tracks[t];
-                IEffectOwner? clip = track.Id == clipId ? track : track.Clips.FirstOrDefault(c => c.Id == clipId);
-                if (clip is null)
-                    continue;
-                var items = BuildRack(clip);
-                var index = items.FindIndex(i => i.Effect?.Id == effectId);
-                if (index < 0)
-                    return null;
-                var clipX = TrackHeaderWidth + Viewport.TimeToX(clip.StartSec);
-                var rect = RackItemRect(clip, items[index], index, clipX, TrackTop(t) + TimelineGeometry.ClipInset, track);
-                var y = rect.Y + RackLabelRow + (RackBarFull - RackLabelRow) / 2.0;
-                var x = keyframeSec is { } k ? clipX + Viewport.TimeToX(k) - Viewport.TimeToX(0) : rect.Center.X;
-                return new Point(keyframeSec is null ? rect.Center.X : TrackHeaderWidth + Viewport.TimeToX(clip.StartSec + keyframeSec.Value), y);
-            }
-            return null;
-        }
-
         private bool IsRackExpanded(IEffectOwner clip) => TrackOf(clip) is not { } track || IsTrackRackExpanded(track);
 
         private double RackBar(IEffectOwner clip) => IsRackExpanded(clip) ? RackBarFull : RackBarCompact;
@@ -574,15 +547,6 @@ namespace Fig.App.Views
             return false;
         }
 
-        private static string EasingName(KeyframeEasing easing) => easing switch
-        {
-            KeyframeEasing.EaseIn => "Ease in",
-            KeyframeEasing.EaseOut => "Ease out",
-            KeyframeEasing.EaseInOut => "Ease in & out",
-            KeyframeEasing.Hold => "Hold (no movement)",
-            _ => "Linear",
-        };
-
         /// <summary>Right-click menu for an effect bar, or for one of its keyframes.</summary>
         private bool TryOpenRackMenu(Point pos)
         {
@@ -675,7 +639,7 @@ namespace Fig.App.Views
             var remove = new MenuItem { Header = "Remove effect", Foreground = new SolidColorBrush(Color.Parse("#ff6b6b")) };
             remove.Click += (_, _) => { Editor.RemoveEffect(clip.Id, fx.Id); InvalidateMeasure(); InvalidateVisual(); };
             menu.Items.Add(remove);
-            menu.Open(this);
+            ShowMenu(menu);
             return true;
         }
 

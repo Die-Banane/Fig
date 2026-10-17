@@ -7,50 +7,33 @@ namespace Fig.Core.Media
     /// <summary>Rotates hue by an angle in degrees (standard RGB rotation matrix).</summary>
     [Effect(EffectCatalog.Hue, "Hue", Category = "Color", Icon = "rotate-ccw-clock", Description = "Rotate the hue of the image.")]
     [EffectParam("degrees", "Degrees", Default = 0, Min = 0, Max = 360)]
-    internal sealed class HueEffect : IEffectProcessor
+    internal sealed class HueEffect : EffectProcessor
     {
-        public string TypeId => EffectCatalog.Hue;
-
-        public DecodedFrame Apply(DecodedFrame frame, IReadOnlyDictionary<string, ParamValue> parameters, double localT)
+        protected override DecodedFrame Render(DecodedFrame frame, ParamSet p, double localT)
         {
-            var degrees = parameters.TryGetValue("degrees", out var d) ? d.AsDouble : 0;
+            var degrees = p.Number("degrees");
             degrees = ((degrees % 360) + 360) % 360;
             if (degrees < 1e-6 || degrees > 359.999)
                 return frame;
+            return PixelOps.MapColor(frame, Hue.Rotating(degrees));
+        }
 
-            var rad = degrees * Math.PI / 180.0;
-            var cos = Math.Cos(rad);
-            var sin = Math.Sin(rad);
-            var a00 = 0.213 + cos * 0.787 - sin * 0.213;
-            var a01 = 0.715 - cos * 0.715 - sin * 0.715;
-            var a02 = 0.072 - cos * 0.072 + sin * 0.928;
-            var a10 = 0.213 - cos * 0.213 + sin * 0.143;
-            var a11 = 0.715 + cos * 0.285 + sin * 0.140;
-            var a12 = 0.072 - cos * 0.072 - sin * 0.283;
-            var a20 = 0.213 - cos * 0.213 - sin * 0.787;
-            var a21 = 0.715 - cos * 0.715 + sin * 0.715;
-            var a22 = 0.072 + cos * 0.928 + sin * 0.072;
-
-            var src = frame.Pixels;
-            var w = frame.Width;
-            var h = frame.Height;
-            var px = FramePool.Rent(w * h * 4);
-            PixelOps.Rows(h, y =>
+        /// <summary>A hue rotation as a colour matrix.</summary>
+        private readonly record struct Hue(double A00, double A01, double A02, double A10, double A11, double A12,
+            double A20, double A21, double A22) : IColorMap
+        {
+            public static Hue Rotating(double degrees)
             {
-                var row = y * w * 4;
-                for (var x = 0; x < w; x++)
-                {
-                    var i = row + x * 4;
-                    var b = src[i];
-                    var g = src[i + 1];
-                    var r = src[i + 2];
-                    px[i] = (byte)Math.Clamp((int)Math.Round(a20 * r + a21 * g + a22 * b), 0, 255);
-                    px[i + 1] = (byte)Math.Clamp((int)Math.Round(a10 * r + a11 * g + a12 * b), 0, 255);
-                    px[i + 2] = (byte)Math.Clamp((int)Math.Round(a00 * r + a01 * g + a02 * b), 0, 255);
-                    px[i + 3] = src[i + 3];
-                }
-            });
-            return new DecodedFrame { Width = w, Height = h, Pixels = px };
+                var rad = degrees * Math.PI / 180.0;
+                var (cos, sin) = (Math.Cos(rad), Math.Sin(rad));
+                return new Hue(
+                    0.213 + cos * 0.787 - sin * 0.213, 0.715 - cos * 0.715 - sin * 0.715, 0.072 - cos * 0.072 + sin * 0.928,
+                    0.213 - cos * 0.213 + sin * 0.143, 0.715 + cos * 0.285 + sin * 0.140, 0.072 - cos * 0.072 - sin * 0.283,
+                    0.213 - cos * 0.213 - sin * 0.787, 0.715 - cos * 0.715 + sin * 0.715, 0.072 + cos * 0.928 + sin * 0.072);
+            }
+
+            public void Map(ref double r, ref double g, ref double b)
+                => (r, g, b) = (A00 * r + A01 * g + A02 * b, A10 * r + A11 * g + A12 * b, A20 * r + A21 * g + A22 * b);
         }
     }
 }

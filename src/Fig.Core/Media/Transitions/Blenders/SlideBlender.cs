@@ -7,16 +7,11 @@ namespace Fig.Core.Media
     /// <summary>Slides the incoming clip in over the outgoing from a chosen side.</summary>
     [Transition(TransitionCatalog.Slide, "Slide", Category = "Camera", Icon = "move-horizontal", Description = "Slide the incoming clip over the outgoing.")]
     [TransitionParam("direction", "Direction", Kind = ParamKind.List, Default = 0, Min = 0, Max = 3, Choices = new[] { "Left", "Right", "Up", "Down" })]
-    internal sealed class SlideBlender : ITransitionBlender
+    internal sealed class SlideBlender : TransitionBlender
     {
-        public string TypeId => TransitionCatalog.Slide;
-
-        public DecodedFrame Blend(DecodedFrame outgoing, DecodedFrame incoming, double t01, IReadOnlyDictionary<string, ParamValue> parameters)
+        protected override DecodedFrame Render(DecodedFrame outgoing, DecodedFrame incoming, double t01, ParamSet parameters)
         {
-            t01 = Math.Clamp(t01, 0, 1);
-            if (outgoing.Width != incoming.Width || outgoing.Height != incoming.Height)
-                return t01 < 0.5 ? outgoing : incoming;
-            var dir = parameters.TryGetValue("direction", out var d) ? d.AsChoice : 0;
+            var dir = parameters.Choice("direction");
 
             var a = outgoing.Pixels;
             var b = incoming.Pixels;

@@ -53,11 +53,6 @@ public partial class BeatAnalysisService
         return filters;
     }
 
-    /// <summary>Returns beat timestamps in source seconds for the requested source range.</summary>
-    public List<double> GenerateBeatTimes(string sourcePath, double startSec = 0, double? durationSec = null,
-        double sensitivity = 0.5, bool kicksOnly = false)
-        => Analyze(sourcePath, startSec, durationSec).Select(sensitivity, kicksOnly);
-
     /// <summary>
     /// Decodes and analyzes a source range once. The result answers any sensitivity cheaply, which
     /// is what lets the UI move a slider and see markers follow in real time.

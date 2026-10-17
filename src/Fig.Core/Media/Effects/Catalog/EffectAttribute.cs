@@ -26,20 +26,5 @@ namespace Fig.Core.Media
 
     /// <summary>Declares one parameter on an effect's implementation class.</summary>
     [AttributeUsage(AttributeTargets.Class, AllowMultiple = true)]
-    public sealed class EffectParamAttribute : Attribute
-    {
-        public string Key { get; }
-        public string Label { get; }
-        public ParamKind Kind { get; set; } = ParamKind.Double;
-        public double Default { get; set; }
-        public double Min { get; set; }
-        public double Max { get; set; }
-        public string[] Choices { get; set; } = Array.Empty<string>();
-
-        public EffectParamAttribute(string key, string label)
-        {
-            Key = key;
-            Label = label;
-        }
-    }
+    public sealed class EffectParamAttribute(string key, string label) : ParamAttribute(key, label);
 }

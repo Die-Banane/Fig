@@ -117,21 +117,12 @@ namespace Fig.App.Views
 
         private static void DrawSpeedLabel(DrawingContext context, Point at, double speed, KeyframeEasing easing)
         {
-            var text = new FormattedText(easing == KeyframeEasing.Linear ? $"{speed:0.00}×" : $"{speed:0.00}×  {SpeedEasingName(easing)}",
+            var text = new FormattedText(easing == KeyframeEasing.Linear ? $"{speed:0.00}×" : $"{speed:0.00}×  {Fig.App.Controls.KeyframeMenu.NameOf(easing).ToLowerInvariant()}",
                 System.Globalization.CultureInfo.CurrentCulture, FlowDirection.LeftToRight, Typeface.Default, 10, Brushes.White);
             var box = new Rect(at.X + 8, at.Y - text.Height - 6, text.Width + 8, text.Height + 2);
             context.DrawRectangle(SpeedLabelBack, null, new RoundedRect(box, 3));
             context.DrawText(text, new Point(box.X + 4, box.Y + 1));
         }
-
-        private static string SpeedEasingName(KeyframeEasing easing) => easing switch
-        {
-            KeyframeEasing.EaseIn => "ease in",
-            KeyframeEasing.EaseOut => "ease out",
-            KeyframeEasing.EaseInOut => "ease in and out",
-            KeyframeEasing.Hold => "hold",
-            _ => "linear",
-        };
 
         /// <summary>The speed point under <paramref name="pos"/>, on any clip with a curve.</summary>
         private (Clip Clip, int Index)? HitTestSpeedPoint(Point pos)

@@ -11,9 +11,10 @@ using Fig.Core.Timeline;
 namespace Fig.App.Controls;
 
 /// <summary>
-/// The selected effect's keyframes on a ruler that spans the whole clip: big diamonds to select and
-/// drag, the playhead, and (optionally) the stretch the effect is limited to. Click empty space to move
-/// the playhead, double-click to add a keyframe there, right-click a diamond for more.
+/// A keyframe host's keys on a ruler that spans what it covers: big diamonds to pick and drag, the playhead, and
+/// (optionally) the stretch an effect is limited to. Click empty space to move the playhead, double-click to add a
+/// keyframe there, right-click a diamond for the same menu every keyframe has (<see cref="KeyframeMenu"/>).
+/// Works for any kind of keyframe: give it a <see cref="KeyframeLaneViewModel"/> through <see cref="Lane"/>.
 /// </summary>
 public sealed class KeyframeRuler : Control
 {
@@ -29,7 +30,17 @@ public sealed class KeyframeRuler : Control
     private static readonly Pen Border = new(new SolidColorBrush(Color.Parse("#2b2d31")), 1);
     private static readonly Pen Tick = new(new SolidColorBrush(Color.Parse("#3a3c42")), 1);
 
-    private TransformControlsViewModel? _vm;
+    public static readonly StyledProperty<KeyframeLaneViewModel?> LaneProperty =
+        AvaloniaProperty.Register<KeyframeRuler, KeyframeLaneViewModel?>(nameof(Lane));
+
+    /// <summary>The keyframes shown and edited.</summary>
+    public KeyframeLaneViewModel? Lane
+    {
+        get => GetValue(LaneProperty);
+        set => SetValue(LaneProperty, value);
+    }
+
+    private KeyframeLaneViewModel? _vm;
     private double? _dragKey;
     private string _gesture = "";
     private bool _scrubbing;
@@ -39,27 +50,28 @@ public sealed class KeyframeRuler : Control
     {
         ClipToBounds = true;
         Height = 66;
-        DataContextChanged += (_, _) =>
-        {
-            if (_vm is not null)
-                _vm.PropertyChanged -= OnVmChanged;
-            _vm = DataContext as TransformControlsViewModel;
-            if (_vm is not null)
-                _vm.PropertyChanged += OnVmChanged;
-            InvalidateVisual();
-        };
+    }
+
+    protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
+    {
+        base.OnPropertyChanged(change);
+        if (change.Property != LaneProperty)
+            return;
+        if (_vm is not null)
+            _vm.PropertyChanged -= OnVmChanged;
+        _vm = Lane;
+        if (_vm is not null)
+            _vm.PropertyChanged += OnVmChanged;
+        InvalidateVisual();
     }
 
     private void OnVmChanged(object? sender, PropertyChangedEventArgs e) => InvalidateVisual();
 
-    private Rect Lane => new(Pad, LabelBand, Math.Max(1, Bounds.Width - 2 * Pad), Bounds.Height - LabelBand - 6);
+    private Rect LaneRect => new(Pad, LabelBand, Math.Max(1, Bounds.Width - 2 * Pad), Bounds.Height - LabelBand - 6);
 
-    private double XOf(double sec) => Lane.X + Math.Clamp(sec / Math.Max(0.001, _vm!.ClipDurationSec), 0, 1) * Lane.Width;
+    private double XOf(double sec) => LaneRect.X + Math.Clamp(sec / Math.Max(0.001, _vm!.ClipDurationSec), 0, 1) * LaneRect.Width;
 
-    /// <summary>Test hook: where a clip-relative time is on the ruler (control coordinates).</summary>
-    internal Point PointForTime(double sec) => new(XOf(sec), Lane.Center.Y - 2);
-
-    private double TimeOf(double x) => Math.Clamp((x - Lane.X) / Lane.Width, 0, 1) * _vm!.ClipDurationSec;
+    private double TimeOf(double x) => Math.Clamp((x - LaneRect.X) / LaneRect.Width, 0, 1) * _vm!.ClipDurationSec;
 
     private double? KeyAt(Point p)
     {
@@ -70,7 +82,7 @@ public sealed class KeyframeRuler : Control
         foreach (var k in _vm.KeyTimes)
         {
             var d = Math.Abs(XOf(k) - p.X);
-            if (d <= bestDistance && Math.Abs(p.Y - Lane.Center.Y) <= 14)
+            if (d <= bestDistance && Math.Abs(p.Y - LaneRect.Center.Y) <= 14)
             {
                 best = k;
                 bestDistance = d;
@@ -88,7 +100,7 @@ public sealed class KeyframeRuler : Control
         if (_vm is null)
             return;
 
-        var lane = Lane;
+        var lane = LaneRect;
         context.DrawRectangle(Surface, Border, lane, 5, 5);
 
         if (_vm.LimitStart is { } ls && _vm.LimitEnd is { } le)
@@ -173,18 +185,18 @@ public sealed class KeyframeRuler : Control
 
         if (key is { } hit)
         {
-            _vm.RulerSelect(hit);
+            _vm.Select(hit);
             _dragKey = hit;
             _gesture = Guid.NewGuid().ToString("N");
         }
         else if (e.ClickCount >= 2)
         {
-            _vm.RulerAdd(_vm.RulerSnap(TimeOf(p.X)));
+            _vm.Add(_vm.Snap(TimeOf(p.X)));
         }
         else
         {
             _scrubbing = true;
-            _vm.RulerSeek(_vm.RulerSnap(TimeOf(p.X)));
+            _vm.Seek(_vm.Snap(TimeOf(p.X)));
         }
         e.Pointer.Capture(this);
         e.Handled = true;
@@ -199,10 +211,10 @@ public sealed class KeyframeRuler : Control
 
         if (_dragKey is { } current)
         {
-            var target = Math.Clamp(_vm.RulerSnap(TimeOf(p.X)), 0, _vm.ClipDurationSec);
+            var target = Math.Clamp(_vm.Snap(TimeOf(p.X)), 0, _vm.ClipDurationSec);
             if (Math.Abs(target - current) > 1e-6)
             {
-                _vm.RulerMove(current, target, _gesture);
+                _vm.Move(current, target, _gesture);
                 _dragKey = target;
             }
             e.Handled = true;
@@ -210,7 +222,7 @@ public sealed class KeyframeRuler : Control
         }
         if (_scrubbing)
         {
-            _vm.RulerSeek(_vm.RulerSnap(TimeOf(p.X)));
+            _vm.Seek(_vm.Snap(TimeOf(p.X)));
             e.Handled = true;
             return;
         }
@@ -236,32 +248,8 @@ public sealed class KeyframeRuler : Control
 
     private void OpenKeyMenu(double time)
     {
-        if (_vm is null)
+        if (_vm?.Host is not { } host)
             return;
-        var menu = new ContextMenu();
-
-        var jump = new MenuItem { Header = "Jump to keyframe" };
-        jump.Click += (_, _) => _vm.RulerSelect(time);
-        menu.Items.Add(jump);
-
-        var duplicate = new MenuItem { Header = "Duplicate to the playhead" };
-        duplicate.Click += (_, _) => _vm.RulerDuplicateToPlayhead(time);
-        menu.Items.Add(duplicate);
-
-        var current = _vm.RulerEasingAt(time);
-        var easing = new MenuItem { Header = "Movement to the next keyframe" };
-        foreach (var option in Enum.GetValues<KeyframeEasing>())
-        {
-            var item = new MenuItem { Header = (option == current ? "✓  " : "     ") + TransformControlsViewModel.EasingNames[(int)option] };
-            item.Click += (_, _) => _vm.RulerSetEasing(time, option);
-            easing.Items.Add(item);
-        }
-        menu.Items.Add(easing);
-
-        menu.Items.Add(new Separator());
-        var delete = new MenuItem { Header = "Delete keyframe", Foreground = new SolidColorBrush(Color.Parse("#ff6b6b")) };
-        delete.Click += (_, _) => _vm.RulerDelete(time);
-        menu.Items.Add(delete);
-        menu.Open(this);
+        KeyframeMenu.Build(_vm.Editor, new KeyframeRef(host, time), InvalidateVisual).Open(this);
     }
 }

@@ -27,20 +27,6 @@ public class TimelineGeometryTests
     }
 
     [Fact]
-    public void ClipX_IsStartSecScaled()
-    {
-        var clip = new VideoClip { StartSec = 3 };
-        Assert.Equal(300, TimelineGeometry.ClipX(clip, 100));
-    }
-
-    [Fact]
-    public void ClipWidth_IsDurationScaled()
-    {
-        var clip = new VideoClip { DurSec = 4.5 };
-        Assert.Equal(450, TimelineGeometry.ClipWidth(clip, 100));
-    }
-
-    [Fact]
     public void TrackTop_StacksByTrackHeight()
     {
         var h = TimelineGeometry.TrackHeight;

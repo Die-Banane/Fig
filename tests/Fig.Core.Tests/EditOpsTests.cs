@@ -203,39 +203,6 @@ public class RippleDeleteCommandTests
     }
 }
 
-public class RippleInsertCommandTests
-{
-    [Fact]
-    public void RippleInsert_PushesClipsRight()
-    {
-        var (editor, track) = TimelineFixtures.Create();
-        editor.AddClip(track.Id, TimelineFixtures.Video("a", 0, 4));
-        editor.AddClip(track.Id, TimelineFixtures.Video("b", 4, 2));
-
-        editor.RippleInsert(track.Id, TimelineFixtures.Video("x", 0, 3), 2);
-
-        Assert.Equal(4, track.Clips.Count);
-        Assert.Equal(0, track.Clips[0].StartSec);   // 'a' left half [0,2)
-        Assert.Equal(2, track.Clips[1].StartSec);   // inserted 'x' [2,5)
-        Assert.Equal(5, track.Clips[2].StartSec);   // 'a' right half pushed to [5,7)
-        Assert.Equal(7, track.Clips[3].StartSec);   // 'b' pushed to [7,9)
-    }
-
-    [Fact]
-    public void RippleInsert_Undo_Restores()
-    {
-        var (editor, track) = TimelineFixtures.Create();
-        editor.AddClip(track.Id, TimelineFixtures.Video("a", 0, 4));
-        editor.AddClip(track.Id, TimelineFixtures.Video("b", 4, 2));
-
-        editor.RippleInsert(track.Id, TimelineFixtures.Video("x", 0, 3), 2);
-        editor.Undo();
-
-        Assert.Equal(2, track.Clips.Count);
-        Assert.Equal(0, track.Clips[0].StartSec);
-        Assert.Equal(4, track.Clips[1].StartSec);
-    }
-}
 
 public class OverwriteInsertCommandTests
 {
@@ -245,7 +212,7 @@ public class OverwriteInsertCommandTests
         var (editor, track) = TimelineFixtures.Create();
         editor.AddClip(track.Id, TimelineFixtures.Video("a", 0, 10));
 
-        editor.OverwriteInsert(track.Id, TimelineFixtures.Video("x", 0, 4), 3);
+        editor.History.Execute(new OverwriteInsertCommand(editor, track.Id, TimelineFixtures.Video("x", 0, 4), 3));
 
         Assert.Equal(3, track.Clips.Count);
         Assert.Equal(0, track.Clips[0].StartSec);      // left remnant [0,3)
@@ -262,7 +229,7 @@ public class OverwriteInsertCommandTests
         var (editor, track) = TimelineFixtures.Create();
         editor.AddClip(track.Id, TimelineFixtures.Video("a", 0, 10));
 
-        editor.OverwriteInsert(track.Id, TimelineFixtures.Video("x", 0, 4), 3);
+        editor.History.Execute(new OverwriteInsertCommand(editor, track.Id, TimelineFixtures.Video("x", 0, 4), 3));
         editor.Undo();
 
         Assert.Single(track.Clips);
@@ -277,12 +244,15 @@ public class OverwriteInsertCommandTests
         var (editor, track) = TimelineFixtures.Create();
         editor.AddClip(track.Id, TimelineFixtures.Video("a", 0, 10));
 
-        editor.OverwriteInsert(track.Id, TimelineFixtures.Video("x", 0, 4), 3);
+        editor.History.Execute(new OverwriteInsertCommand(editor, track.Id, TimelineFixtures.Video("x", 0, 4), 3));
         editor.Undo();
         editor.Redo();
 
         Assert.Equal(3, track.Clips.Count);
         Assert.Equal("x", track.Clips[1].Id);
+
+        editor.Undo();
+        Assert.Equal("a", Assert.Single(track.Clips).Id);
     }
 
     [Fact]
@@ -292,7 +262,7 @@ public class OverwriteInsertCommandTests
         editor.AddClip(track.Id, TimelineFixtures.Video("a", 1, 2));   // [1,3)
         editor.AddClip(track.Id, TimelineFixtures.Video("b", 5, 1));   // untouched
 
-        editor.OverwriteInsert(track.Id, TimelineFixtures.Video("x", 0, 4), 0);  // [0,4)
+        editor.History.Execute(new OverwriteInsertCommand(editor, track.Id, TimelineFixtures.Video("x", 0, 4), 0));  // [0,4)
 
         Assert.Equal(2, track.Clips.Count);
         Assert.Equal("x", track.Clips[0].Id);
@@ -400,28 +370,6 @@ public class QueryHelpersTests
 
         Assert.Equal("b", editor.FindClipAt(track.Id, 5.5)!.Id);
         Assert.Null(editor.FindClipAt(track.Id, 8));
-    }
-
-    [Fact]
-    public void ClipsOverlapping_FindsRange()
-    {
-        var (editor, track) = TimelineFixtures.Create();
-        editor.AddClip(track.Id, TimelineFixtures.Video("a", 0, 5));
-        editor.AddClip(track.Id, TimelineFixtures.Video("b", 5, 3));
-
-        Assert.Equal(2, editor.ClipsOverlapping(track.Id, 4, 6).Count);
-        Assert.Equal(2, editor.ClipsOverlapping(track.Id, 4.5, 5.5).Count);
-        Assert.Single(editor.ClipsOverlapping(track.Id, 5.5, 8));
-    }
-
-    [Fact]
-    public void TrackEnd_ReturnsLastClipEnd()
-    {
-        var (editor, track) = TimelineFixtures.Create();
-        editor.AddClip(track.Id, TimelineFixtures.Video("a", 0, 5));
-        editor.AddClip(track.Id, TimelineFixtures.Video("b", 5, 3));
-
-        Assert.Equal(8, editor.TrackEnd(track.Id));
     }
 
     [Fact]

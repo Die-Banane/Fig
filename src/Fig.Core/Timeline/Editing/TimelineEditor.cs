@@ -54,18 +54,6 @@ namespace Fig.Core.Timeline
             RaiseChanged();
         }
 
-        /// <summary>Trims the clip's in/out range, applying the same trim to its linked group.</summary>
-        public void TrimLinked(string clipId, double newIn, double newOut)
-        {
-            var commands = LinkGroup(clipId)
-                .Select(c => (IEditCommand)new TrimCommand(this, c.Id, newIn, newOut))
-                .ToArray();
-            if (commands.Length == 0)
-                return;
-            History.Execute(commands.Length == 1 ? commands[0] : new CompositeCommand(commands));
-            RaiseChanged();
-        }
-
         public void Move(string clipId, double newStartSec)
         {
             var clip = FindClip(clipId) ?? throw new InvalidOperationException($"Clip '{clipId}' not found");
@@ -327,54 +315,6 @@ namespace Fig.Core.Timeline
             return true;
         }
 
-        public bool MoveClipToTrack(string clipId, string targetTrackId)
-        {
-            var clip = FindClip(clipId);
-            if (clip is null)
-                return false;
-            var target = FindTrack(targetTrackId);
-            if (target is null)
-                return false;
-
-            // the primary clip must be placed on a track of matching kind
-            var clipKind = clip.Kind == ClipKind.Audio ? TrackKind.Audio : TrackKind.Video;
-            if (target.Kind != clipKind)
-                return false;
-
-            var group = LinkGroup(clipId);
-
-            // compute each member's target track (same kind), skipping ones already there
-            var destinations = new List<(Clip Member, Track Target)>();
-            foreach (var member in group)
-            {
-                var memberKind = member.Kind == ClipKind.Audio ? TrackKind.Audio : TrackKind.Video;
-                var current = FindClipTrack(member.Id);
-                var targetForMember = member.Id == clip.Id ? target : FindFreeTrack(memberKind, member, current);
-
-                if (targetForMember is null || (current is not null && current.Id == targetForMember.Id))
-                    continue;
-
-                destinations.Add((member, targetForMember));
-            }
-
-            // overlap check on every destination
-            foreach (var (member, dest) in destinations)
-            {
-                if (WouldOverlap(dest.Id, member.StartSec, member.DurSec, member.Id))
-                    return false;
-            }
-
-            foreach (var (member, dest) in destinations)
-            {
-                var current = FindClipTrack(member.Id);
-                current?.Clips.Remove(member);
-                InsertClip(dest, member);
-            }
-
-            RaiseChanged();
-            return true;
-        }
-
         /// <summary>Finds a track of <paramref name="kind"/> where <paramref name="clip"/> fits without overlap, else null.</summary>
         private Track? FindFreeTrack(TrackKind kind, Clip clip, Track? current)
         {
@@ -497,18 +437,6 @@ namespace Fig.Core.Timeline
                 return;
             var group = Guid.NewGuid().ToString("N");
             History.Execute(new SetLinkGroupsCommand(this, members.ToDictionary(c => c.Id, _ => (string?)group)));
-            RaiseChanged();
-        }
-
-        public void RippleInsert(string trackId, Clip clip, double posSec)
-        {
-            History.Execute(new RippleInsertCommand(this, trackId, clip, posSec));
-            RaiseChanged();
-        }
-
-        public void OverwriteInsert(string trackId, Clip clip, double posSec)
-        {
-            History.Execute(new OverwriteInsertCommand(this, trackId, clip, posSec));
             RaiseChanged();
         }
 
@@ -729,27 +657,6 @@ namespace Fig.Core.Timeline
             return null;
         }
 
-        public IReadOnlyList<Clip> ClipsOverlapping(string trackId, double startSec, double endSec)
-        {
-            var track = FindTrack(trackId);
-            if (track is null)
-                return Array.Empty<Clip>();
-            return track.Clips
-                .Where(c => c.StartSec < endSec && c.StartSec + c.DurSec > startSec)
-                .ToList();
-        }
-
-        public double TrackEnd(string trackId)
-        {
-            var track = FindTrack(trackId);
-            if (track is null)
-                return 0;
-            double end = 0;
-            foreach (var clip in track.Clips)
-                end = Math.Max(end, clip.StartSec + clip.DurSec);
-            return end;
-        }
-
         public void Execute(IEditCommand command)
         {
             History.Execute(command);
@@ -770,16 +677,6 @@ namespace Fig.Core.Timeline
                 return false;
             RaiseChanged();
             return true;
-        }
-
-        public void SetOpacity(string clipId, double opacity)
-        {
-            opacity = Math.Clamp(opacity, 0, 1);
-            var clip = FindClip(clipId);
-            if (clip is null || Math.Abs(clip.Opacity - opacity) < 1e-6)
-                return;
-            History.ExecuteCoalescing(new SetOpacityCommand(this, clipId, opacity));
-            RaiseChanged();
         }
 
         /// <summary>Sets the fade-in of the clip's picture, or of a video clip's own sound (and its link group's).</summary>
@@ -1055,24 +952,6 @@ namespace Fig.Core.Timeline
         private static KeyframeHostRef ClipHost(string clipId, string key)
             => key == AutomationKeys.Speed ? KeyframeHostRef.OfSpeed(clipId) : KeyframeHostRef.OfClip(clipId);
 
-        public void SetTransitionIn(string clipId, TransitionRef? transition)
-        {
-            if (FindClip(clipId) is null)
-                return;
-            History.Execute(new SetTransitionInCommand(this, clipId, transition));
-            RaiseChanged();
-        }
-
-        public void SetTransitionOut(string clipId, TransitionRef? transition)
-        {
-            // transitions are a video-only concept; the transition resolver only scans
-            // video tracks, so an edge on an audio clip would silently never render
-            if (FindClip(clipId) is not VideoClip)
-                return;
-            History.Execute(new SetTransitionOutCommand(this, clipId, transition));
-            RaiseChanged();
-        }
-
         /// <summary>
         /// Applies a catalog transition to the cut between two abutting clips
         /// (outgoing.transitionOut + incoming.transitionIn). Video clips only.
@@ -1235,16 +1114,6 @@ namespace Fig.Core.Timeline
             return new CutTransition(left.Id, right.Id, left, right, typeId, dur, left.StartSec + left.DurSec);
         }
 
-        public void SetVolume(string clipId, double volume)
-        {
-            volume = Math.Clamp(volume, 0, 1);
-            var clip = FindClip(clipId);
-            if (clip is null || Math.Abs(clip.Volume - volume) < 1e-6)
-                return;
-            History.ExecuteCoalescing(new SetVolumeCommand(this, clipId, volume));
-            RaiseChanged();
-        }
-
         public void SetSpeed(string clipId, double speed)
         {
             speed = Math.Clamp(speed, 0.1, 8.0);
@@ -1253,18 +1122,6 @@ namespace Fig.Core.Timeline
             if (clip is null || Math.Abs(clip.Speed - speed) < 1e-6 || ClipTime.HasCurve(clip))
                 return;
             History.ExecuteCoalescing(new SetSpeedCommand(this, clipId, speed));
-            RaiseChanged();
-        }
-
-        public void SetCrop(string clipId, double cropL, double cropT, double cropR, double cropB)
-        {
-            if (FindClip(clipId) is not ICroppable clip)
-                return;
-            (cropL, cropT, cropR, cropB) = SetCropCommand.Normalize(cropL, cropT, cropR, cropB);
-            if (Near(clip.CropL, cropL) && Near(clip.CropT, cropT)
-                && Near(clip.CropR, cropR) && Near(clip.CropB, cropB))
-                return;
-            History.ExecuteCoalescing(new SetCropCommand(this, clipId, cropL, cropT, cropR, cropB));
             RaiseChanged();
         }
 
@@ -1681,14 +1538,6 @@ namespace Fig.Core.Timeline
         }
 
         // ---- clip enable / disable ----
-
-        public void ToggleEnabled(string clipId)
-        {
-            if (FindClip(clipId) is null)
-                return;
-            History.Execute(new ToggleEnabledCommand(this, new[] { clipId }));
-            RaiseChanged();
-        }
 
         /// <summary>Toggles Enabled on every distinct selected link group.</summary>
         public void ToggleEnabledSelected()

@@ -6,20 +6,10 @@ namespace Fig.Core.Media
 {
     /// <summary>Linearly blends the outgoing and incoming frames across the transition window.</summary>
     [Transition(TransitionCatalog.CrossDissolve, "Cross Dissolve", Description = "Blend outgoing and incoming clips over the cut.")]
-    internal sealed class CrossDissolveBlender : ITransitionBlender
+    internal sealed class CrossDissolveBlender : TransitionBlender
     {
-        public string TypeId => TransitionCatalog.CrossDissolve;
-
-        public DecodedFrame Blend(
-            DecodedFrame outgoing,
-            DecodedFrame incoming,
-            double t01,
-            IReadOnlyDictionary<string, ParamValue> parameters)
+        protected override DecodedFrame Render(DecodedFrame outgoing, DecodedFrame incoming, double t01, ParamSet parameters)
         {
-            t01 = Math.Clamp(t01, 0, 1);
-            if (outgoing.Width != incoming.Width || outgoing.Height != incoming.Height)
-                return t01 < 0.5 ? outgoing : incoming;
-
             var a = outgoing.Pixels;
             var b = incoming.Pixels;
             var w = outgoing.Width;

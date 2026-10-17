@@ -54,20 +54,5 @@ namespace Fig.Core.Media
     }
 
     [AttributeUsage(AttributeTargets.Class, AllowMultiple = true)]
-    public sealed class PrimitiveParamAttribute : Attribute
-    {
-        public string Key { get; }
-        public string Label { get; }
-        public ParamKind Kind { get; set; } = ParamKind.Double;
-        public double Default { get; set; }
-        public double Min { get; set; }
-        public double Max { get; set; }
-        public string[] Choices { get; set; } = Array.Empty<string>();
-
-        public PrimitiveParamAttribute(string key, string label)
-        {
-            Key = key;
-            Label = label;
-        }
-    }
+    public sealed class PrimitiveParamAttribute(string key, string label) : ParamAttribute(key, label);
 }

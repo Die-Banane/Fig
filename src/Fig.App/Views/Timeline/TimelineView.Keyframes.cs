@@ -45,25 +45,6 @@ namespace Fig.App.Views
             return null;
         }
 
-        /// <summary>Where a diamond is drawn, of any kind (for tests and tools), or null when it isn't on screen.</summary>
-        internal Point? DiamondPointFor(KeyframeHostRef host, double timeSec)
-        {
-            if (Editor is null)
-                return null;
-            if (host.EffectId is { } effectId)
-                return RackPointFor(host.OwnerId, effectId, timeSec);
-            if (Editor.FindClipForView(host.OwnerId) is not { } clip)
-                return null;
-            var x = TrackHeaderWidth + Viewport.TimeToX(clip.StartSec + timeSec);
-            if (host.Lane == KeyframeHostRef.SpeedLane)
-                return SpeedBand(clip) is { } band ? new Point(x, SpeedToY(band, ClipTime.SpeedAt(clip, timeSec))) : null;
-            if (Editor.Document.Tracks.FirstOrDefault(t => t.Clips.Contains(clip)) is not { } track)
-                return null;
-            var top = TrackTop(Editor.Document.Tracks.IndexOf(track)) + TimelineGeometry.ClipInset
-                      + (clip is TextClip ? 0 : TimelineGeometry.LabelHeight(track));
-            return new Point(x, top + 6);
-        }
-
         /// <summary>True when the diamond of <paramref name="host"/> at <paramref name="timeSec"/> is picked, held or hovered.</summary>
         private bool IsDiamondHot(KeyframeHostRef host, double timeSec)
         {
@@ -72,25 +53,18 @@ namespace Fig.App.Views
                    || Is(Editor?.Selection.Keyframe, host, timeSec) || Is(_hoverDiamond, host, timeSec);
         }
 
-        /// <summary>Picks a diamond: it, and the clip or effect bar it sits on, become the selection.</summary>
+        /// <summary>Picks a diamond: it, and the clip or effect bar it sits on, become the selection (the shared pick).</summary>
         private void PickDiamond(KeyframeRef keyframe)
         {
-            if (Editor is null)
-                return;
-            var host = keyframe.Host;
-            if (host.EffectId is { } effectId)
+            if (keyframe.Host.EffectId is null)
             {
-                // the effect's inspector opens on it, as before
-                _editorVm?.Properties.SelectEffect(host.OwnerId, effectId);
-                Editor.Selection.SelectKeyframe(new SelectionKey(SelectionGroup.Effect, effectId, host.OwnerId), keyframe);
-                _editorVm?.Properties.SelectKeyframe(keyframe.TimeSec);
-            }
-            else
-            {
-                _selectedClipId = host.OwnerId;
+                _selectedClipId = keyframe.Host.OwnerId;
                 _selectedTrackId = null;
-                Editor.Selection.SelectKeyframe(new SelectionKey(SelectionGroup.Clip, host.OwnerId), keyframe);
             }
+            if (_editorVm is not null)
+                _editorVm.PickKeyframe(keyframe, seek: false);
+            else if (Editor is not null && keyframe.Host.EffectId is null)
+                Editor.Selection.SelectKeyframe(new SelectionKey(SelectionGroup.Clip, keyframe.Host.OwnerId), keyframe);
         }
 
         /// <summary>A left press on a diamond: picks it, jumps there, and gets ready to drag it. True when one was there.</summary>
@@ -209,56 +183,14 @@ namespace Fig.App.Views
             return true;
         }
 
-        /// <summary>Right-click on a diamond, of any kind: the same menu. True when one was there.</summary>
+        /// <summary>Right-click on a diamond, of any kind: the one keyframe menu. True when one was there.</summary>
         private bool TryOpenDiamondMenu(Point pos)
         {
-            if (Editor is null || HitTestDiamond(pos) is not { } hit || Editor.FindKeyframeHost(hit.Keyframe.Host) is not { } host)
+            if (Editor is null || _editorVm is null || HitTestDiamond(pos) is not { } hit)
                 return false;
-            var keyframe = hit.Keyframe;
-            PickDiamond(keyframe);
+            PickDiamond(hit.Keyframe);
             InvalidateVisual();
-
-            var menu = new ContextMenu();
-            var jump = new MenuItem { Header = "Jump to keyframe" };
-            jump.Click += (_, _) => SetPlayhead(Editor.SnapTime(host.OriginSec + keyframe.TimeSec));
-            menu.Items.Add(jump);
-
-            var duplicate = new MenuItem { Header = "Duplicate to the playhead" };
-            duplicate.Click += (_, _) =>
-            {
-                Editor.DuplicateKeyframes(keyframe, (_editorVm?.PlayheadTimeSec ?? 0) - host.OriginSec);
-                InvalidateVisual();
-            };
-            menu.Items.Add(duplicate);
-
-            var current = host.EasingAt(keyframe.TimeSec);
-            var easing = new MenuItem { Header = "Movement to the next keyframe" };
-            foreach (var option in Enum.GetValues<KeyframeEasing>())
-            {
-                var chosen = option;
-                var item = new MenuItem { Header = (option == current ? "✓  " : "     ") + EasingName(option) };
-                item.Click += (_, _) =>
-                {
-                    Editor.SetKeyframeEasing(keyframe, chosen);
-                    InvalidateVisual();
-                };
-                easing.Items.Add(item);
-            }
-            menu.Items.Add(easing);
-
-            menu.Items.Add(new Separator());
-            var delete = new MenuItem { Header = "Delete keyframe", Foreground = DangerBrush };
-            delete.Click += (_, _) =>
-            {
-                Editor.RemoveKeyframes(keyframe);
-                Editor.Selection.ClearKeyframe();
-                if (_editorVm is not null && keyframe.Host.EffectId is not null)
-                    _editorVm.Properties.SelectedKeyframeSec = null;
-                _editorVm?.Properties.RefreshAutomation();
-                InvalidateVisual();
-            };
-            menu.Items.Add(delete);
-            menu.Open(this);
+            ShowMenu(Fig.App.Controls.KeyframeMenu.Build(_editorVm, hit.Keyframe, InvalidateVisual));
             return true;
         }
     }

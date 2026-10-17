@@ -511,6 +511,7 @@ namespace Fig.App.Views
         protected override void OnPointerPressed(PointerPressedEventArgs e)
         {
             base.OnPointerPressed(e);
+            _openMenu?.Close();   // a press anywhere else closes the menu
             NoteModifiers(e.KeyModifiers);
             _modifiersAtPress = e.KeyModifiers;
             if (Editor is null)
@@ -701,7 +702,7 @@ namespace Fig.App.Views
                         Editor.AddTrack(TrackKind.Audio);
                         InvalidateVisual();
                     };
-                menu.Open(this);
+                ShowMenu(menu);
                 e.Handled = true;
                 return;
             }

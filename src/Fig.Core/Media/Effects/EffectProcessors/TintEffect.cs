@@ -12,60 +12,37 @@ namespace Fig.Core.Media
     [EffectParam("color", "Color", Kind = ParamKind.Color, Default = 0xFF0080FF)]
     [EffectParam("strength", "Strength", Default = 0.5, Min = 0, Max = 1)]
     [EffectParam("preserve_luma", "Preserve luma", Kind = ParamKind.Bool, Default = 0)]
-    internal sealed class TintEffect : IEffectProcessor
+    internal sealed class TintEffect : EffectProcessor
     {
-        public string TypeId => EffectCatalog.Tint;
-
-        public DecodedFrame Apply(DecodedFrame frame, IReadOnlyDictionary<string, ParamValue> parameters, double localT)
+        protected override DecodedFrame Render(DecodedFrame frame, ParamSet p, double localT)
         {
-            var color = parameters.TryGetValue("color", out var c) ? c.AsColor : 0xFF0080FFu;
-            var strength = parameters.TryGetValue("strength", out var s) ? Math.Clamp(s.AsDouble, 0, 1) : 0;
+            var color = p.Color("color");
+            var strength = p.Number("strength");
             if (strength < 1e-6)
                 return frame;
-            var preserveLuma = parameters.TryGetValue("preserve_luma", out var pl) && pl.AsBool;
+            var preserveLuma = p.Bool("preserve_luma");
+            return PixelOps.MapColor(frame, new Tint((byte)(color >> 16), (byte)(color >> 8), (byte)color, strength, preserveLuma));
+        }
 
-            var tintR = (byte)(color >> 16);
-            var tintG = (byte)(color >> 8);
-            var tintB = (byte)color;
-
-            var src = frame.Pixels;
-            var w = frame.Width;
-            var h = frame.Height;
-            var px = FramePool.Rent(w * h * 4);
-            PixelOps.Rows(h, y =>
+        private readonly record struct Tint(byte R, byte G, byte B, double Strength, bool PreserveLuma) : IColorMap
+        {
+            public void Map(ref double r, ref double g, ref double b)
             {
-                var row = y * w * 4;
-                for (var x = 0; x < w; x++)
+                var nr = (double)(byte)Math.Round(r + (R - r) * Strength);
+                var ng = (double)(byte)Math.Round(g + (G - g) * Strength);
+                var nb = (double)(byte)Math.Round(b + (B - b) * Strength);
+                if (PreserveLuma)
                 {
-                    var i = row + x * 4;
-                    var b = src[i];
-                    var g = src[i + 1];
-                    var r = src[i + 2];
-
-                    var nb = (byte)Math.Round(b + (tintB - b) * strength);
-                    var ng = (byte)Math.Round(g + (tintG - g) * strength);
-                    var nr = (byte)Math.Round(r + (tintR - r) * strength);
-
-                    if (preserveLuma)
+                    var lumaIn = 0.299 * r + 0.587 * g + 0.114 * b;
+                    var lumaOut = 0.299 * nr + 0.587 * ng + 0.114 * nb;
+                    if (lumaOut > 1e-6)
                     {
-                        var lumaIn = 0.299 * r + 0.587 * g + 0.114 * b;
-                        var lumaOut = 0.299 * nr + 0.587 * ng + 0.114 * nb;
-                        if (lumaOut > 1e-6)
-                        {
-                            var ratio = Math.Clamp(lumaIn / lumaOut, 0, 1.15);
-                            nr = (byte)Math.Clamp((int)Math.Round(nr * ratio), 0, 255);
-                            ng = (byte)Math.Clamp((int)Math.Round(ng * ratio), 0, 255);
-                            nb = (byte)Math.Clamp((int)Math.Round(nb * ratio), 0, 255);
-                        }
+                        var ratio = Math.Clamp(lumaIn / lumaOut, 0, 1.15);
+                        (nr, ng, nb) = (nr * ratio, ng * ratio, nb * ratio);
                     }
-
-                    px[i] = nb;
-                    px[i + 1] = ng;
-                    px[i + 2] = nr;
-                    px[i + 3] = src[i + 3];
                 }
-            });
-            return new DecodedFrame { Width = w, Height = h, Pixels = px };
+                (r, g, b) = (nr, ng, nb);
+            }
         }
     }
 }

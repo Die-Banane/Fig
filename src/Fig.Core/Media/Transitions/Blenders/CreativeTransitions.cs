@@ -6,29 +6,19 @@ namespace Fig.Core.Media;
 internal enum CreativeTransitionKind { Flash, Blur, ZoomIn, ZoomOut, Whip, Spin, Glitch, Pixel, Luma, Radial, Blinds, Flip }
 
 /// <summary>Stateless shared render path; every transition has exact, unmodified endpoints.</summary>
-internal abstract class CreativeTransitionBlender : ITransitionBlender
+internal abstract class CreativeTransitionBlender : TransitionBlender
 {
-    public abstract string TypeId { get; }
     private protected abstract CreativeTransitionKind Kind { get; }
 
-    public DecodedFrame Blend(DecodedFrame a, DecodedFrame b, double t01, IReadOnlyDictionary<string, ParamValue> p)
+    protected override DecodedFrame Render(DecodedFrame a, DecodedFrame b, double t, ParamSet p)
     {
-        double t = double.IsFinite(t01) ? Math.Clamp(t01, 0, 1) : 0;
         if (t <= 0) return a;
         if (t >= 1) return b;
-        if (a.Width != b.Width || a.Height != b.Height) return t < 0.5 ? a : b;
         double progress = t * t * (3 - 2 * t);
         double peak = Math.Sin(Math.PI * t);
-        double defaultAmount = Kind switch
-        {
-            CreativeTransitionKind.Flash => 1,
-            CreativeTransitionKind.ZoomIn or CreativeTransitionKind.ZoomOut => 0.55,
-            CreativeTransitionKind.Glitch => 0.65,
-            _ => 0.5,
-        };
-        double amount = Number(p, "amount", defaultAmount);
-        double softness = Number(p, "softness", 0.08, 0.001, 0.4);
-        double direction = p.TryGetValue("direction", out var dir) && dir.AsChoice == 1 ? -1 : 1;
+        // the kinds share this code but not their parameters (a whip pan has no amount, a flip has nothing)
+        double amount = p.Declares("amount") ? p.Number("amount") : 0;
+        double direction = p.Declares("direction") && p.Choice("direction") == 1 ? -1 : 1;
 
         if (Kind == CreativeTransitionKind.Flash)
         {
@@ -51,11 +41,12 @@ internal abstract class CreativeTransitionBlender : ITransitionBlender
         if (Kind is CreativeTransitionKind.ZoomIn or CreativeTransitionKind.ZoomOut or CreativeTransitionKind.Whip or CreativeTransitionKind.Spin or CreativeTransitionKind.Glitch or CreativeTransitionKind.Flip)
             return Geometry(a, b, t, progress, peak, amount, direction);
 
+        double softness = p.Number("softness");
         double Smooth(double value) => Math.Clamp(0.5 + value / softness, 0, 1);
         // Loop-invariant parameters are resolved once, not per pixel.
-        int columns = (int)Number(p, "tiles", 24, 4, 100);
+        int columns = Kind == CreativeTransitionKind.Pixel ? p.Int("tiles") : 1;
         int rows = Math.Max(1, (int)Math.Round(columns * (double)a.Height / a.Width));
-        double stripes = Number(p, "stripes", 10, 2, 40);
+        double stripes = Kind == CreativeTransitionKind.Blinds ? p.Number("stripes") : 1;
         // Extending the threshold range by the softness margin gives clean endpoints.
         double reveal = progress * (1 + softness) - softness / 2;
         return Mix(a, b, (x, y) =>
@@ -151,62 +142,62 @@ internal abstract class CreativeTransitionBlender : ITransitionBlender
 [Transition("white-flash", "White Flash", Category = "Light", Icon = "zap", DefaultDurationSec = 0.35, PreviewProgress = 0.35, Description = "A bright flash bridges the cut.")]
 [TransitionParam("amount", "Flash intensity", Default = 1, Min = 0, Max = 1)]
 internal sealed class WhiteFlashBlender : CreativeTransitionBlender
-{ public override string TypeId => "white-flash"; private protected override CreativeTransitionKind Kind => CreativeTransitionKind.Flash; }
+{ private protected override CreativeTransitionKind Kind => CreativeTransitionKind.Flash; }
 
 [Transition("blur-dissolve", "Blur Dissolve", Category = "Blur", Icon = "droplets", DefaultDurationSec = 0.6, Description = "Defocus both shots into a soft dissolve.")]
 [TransitionParam("amount", "Blur strength", Default = 0.5, Min = 0, Max = 1)]
 internal sealed class BlurDissolveBlender : CreativeTransitionBlender
-{ public override string TypeId => "blur-dissolve"; private protected override CreativeTransitionKind Kind => CreativeTransitionKind.Blur; }
+{ private protected override CreativeTransitionKind Kind => CreativeTransitionKind.Blur; }
 
 [Transition("zoom-in", "Zoom In", Category = "Camera", Icon = "zoom-in", DefaultDurationSec = 0.45, Description = "Push through the cut into the next shot.")]
 [TransitionParam("amount", "Zoom strength", Default = 0.55, Min = 0, Max = 1)]
 internal sealed class ZoomInBlender : CreativeTransitionBlender
-{ public override string TypeId => "zoom-in"; private protected override CreativeTransitionKind Kind => CreativeTransitionKind.ZoomIn; }
+{ private protected override CreativeTransitionKind Kind => CreativeTransitionKind.ZoomIn; }
 
 [Transition("zoom-out", "Zoom Out", Category = "Camera", Icon = "zoom-out", DefaultDurationSec = 0.45, Description = "Pull back through the cut to reveal the next shot.")]
 [TransitionParam("amount", "Zoom strength", Default = 0.55, Min = 0, Max = 1)]
 internal sealed class ZoomOutBlender : CreativeTransitionBlender
-{ public override string TypeId => "zoom-out"; private protected override CreativeTransitionKind Kind => CreativeTransitionKind.ZoomOut; }
+{ private protected override CreativeTransitionKind Kind => CreativeTransitionKind.ZoomOut; }
 
 [Transition("whip-pan", "Whip Pan", Category = "Camera", Icon = "move-horizontal", DefaultDurationSec = 0.3, Description = "Wrap the image sideways across a fast camera pan.")]
 [TransitionParam("direction", "Direction", Kind = ParamKind.List, Default = 0, Choices = new[] { "Left", "Right" })]
 internal sealed class WhipPanBlender : CreativeTransitionBlender
-{ public override string TypeId => "whip-pan"; private protected override CreativeTransitionKind Kind => CreativeTransitionKind.Whip; }
+{ private protected override CreativeTransitionKind Kind => CreativeTransitionKind.Whip; }
 
 [Transition("spin", "Spin", Category = "Camera", Icon = "rotate-cw", DefaultDurationSec = 0.55, Description = "Rotate and zoom both shots through the cut.")]
 [TransitionParam("amount", "Rotation strength", Default = 0.5, Min = 0, Max = 1)]
 [TransitionParam("direction", "Direction", Kind = ParamKind.List, Default = 0, Choices = new[] { "Clockwise", "Counterclockwise" })]
 internal sealed class SpinBlender : CreativeTransitionBlender
-{ public override string TypeId => "spin"; private protected override CreativeTransitionKind Kind => CreativeTransitionKind.Spin; }
+{ private protected override CreativeTransitionKind Kind => CreativeTransitionKind.Spin; }
 
 [Transition("glitch-cut", "Glitch Cut", Category = "Glitch", Icon = "zap", DefaultDurationSec = 0.3, Description = "Displaced horizontal strips break up the cut.")]
 [TransitionParam("amount", "Displacement", Default = 0.65, Min = 0, Max = 1)]
 internal sealed class GlitchCutBlender : CreativeTransitionBlender
-{ public override string TypeId => "glitch-cut"; private protected override CreativeTransitionKind Kind => CreativeTransitionKind.Glitch; }
+{ private protected override CreativeTransitionKind Kind => CreativeTransitionKind.Glitch; }
 
 [Transition("pixel-dissolve", "Pixel Dissolve", Category = "Glitch", Icon = "grid-3x3", DefaultDurationSec = 0.6, Description = "Small tiles reveal the next shot in a scattered pattern.")]
 [TransitionParam("tiles", "Tile columns", Kind = ParamKind.Int, Default = 24, Min = 4, Max = 100)]
 [TransitionParam("softness", "Edge softness", Default = 0.08, Min = 0.001, Max = 0.4)]
 internal sealed class PixelDissolveBlender : CreativeTransitionBlender
-{ public override string TypeId => "pixel-dissolve"; private protected override CreativeTransitionKind Kind => CreativeTransitionKind.Pixel; }
+{ private protected override CreativeTransitionKind Kind => CreativeTransitionKind.Pixel; }
 
 [Transition("luma-dissolve", "Luma Dissolve", Category = "Light", Icon = "sun", DefaultDurationSec = 0.7, Description = "Highlights reveal the incoming shot before shadows.")]
 [TransitionParam("softness", "Edge softness", Default = 0.12, Min = 0.001, Max = 0.4)]
 internal sealed class LumaDissolveBlender : CreativeTransitionBlender
-{ public override string TypeId => "luma-dissolve"; private protected override CreativeTransitionKind Kind => CreativeTransitionKind.Luma; }
+{ private protected override CreativeTransitionKind Kind => CreativeTransitionKind.Luma; }
 
 [Transition("radial-wipe", "Clock Wipe", Category = "Wipe", Icon = "clock", DefaultDurationSec = 0.7, Description = "Sweep around the image center like a clock hand.")]
 [TransitionParam("softness", "Edge softness", Default = 0.04, Min = 0.001, Max = 0.4)]
 [TransitionParam("direction", "Direction", Kind = ParamKind.List, Default = 0, Choices = new[] { "Clockwise", "Counterclockwise" })]
 internal sealed class RadialWipeBlender : CreativeTransitionBlender
-{ public override string TypeId => "radial-wipe"; private protected override CreativeTransitionKind Kind => CreativeTransitionKind.Radial; }
+{ private protected override CreativeTransitionKind Kind => CreativeTransitionKind.Radial; }
 
 [Transition("blinds", "Venetian Blinds", Category = "Wipe", Icon = "columns-2", DefaultDurationSec = 0.65, Description = "Open repeating vertical strips onto the next shot.")]
 [TransitionParam("stripes", "Strips", Kind = ParamKind.Int, Default = 10, Min = 2, Max = 40)]
 [TransitionParam("softness", "Edge softness", Default = 0.08, Min = 0.001, Max = 0.4)]
 internal sealed class BlindsBlender : CreativeTransitionBlender
-{ public override string TypeId => "blinds"; private protected override CreativeTransitionKind Kind => CreativeTransitionKind.Blinds; }
+{ private protected override CreativeTransitionKind Kind => CreativeTransitionKind.Blinds; }
 
 [Transition("card-flip", "Card Flip", Category = "Camera", Icon = "columns-2", DefaultDurationSec = 0.6, PreviewProgress = 0.35, Description = "Turn the picture edge-on, then unfold the next shot.")]
 internal sealed class CardFlipBlender : CreativeTransitionBlender
-{ public override string TypeId => "card-flip"; private protected override CreativeTransitionKind Kind => CreativeTransitionKind.Flip; }
+{ private protected override CreativeTransitionKind Kind => CreativeTransitionKind.Flip; }

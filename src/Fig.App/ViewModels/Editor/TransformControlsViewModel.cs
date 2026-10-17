@@ -15,14 +15,11 @@ namespace Fig.App.ViewModels;
 /// (the stopwatch) and changes at the playhead become keyframes; values hold before the first and
 /// after the last keyframe.
 /// </summary>
-public sealed partial class TransformControlsViewModel : ViewModelBase
+public sealed partial class TransformControlsViewModel : ViewModelBase, Fig.App.Controls.IPreviewOverlayModel
 {
     private readonly PropertiesViewModel _host;
     private readonly EditorViewModel _editor;
     private bool _refreshing;
-
-    /// <summary>Names in the same order as <see cref="KeyframeEasing"/>.</summary>
-    public static readonly string[] EasingNames = ["Linear", "Ease in", "Ease out", "Ease in & out", "Hold"];
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowOverlay))]
@@ -56,13 +53,8 @@ public sealed partial class TransformControlsViewModel : ViewModelBase
     /// <summary>The effect is limited to part of the clip (otherwise it covers all of it).</summary>
     [ObservableProperty] private bool _hasLimit;
 
-    // what the keyframe ruler draws
-    [ObservableProperty] private double _clipDurationSec = 1;
-    [ObservableProperty] private double _playheadLocal;
-    [ObservableProperty] private double? _selectedKeyframe;
-    [ObservableProperty] private double? _limitStart;
-    [ObservableProperty] private double? _limitEnd;
-    public IReadOnlyList<double> KeyTimes { get; private set; } = Array.Empty<double>();
+    /// <summary>The effect's keyframes on the inspector's ruler (the same ruler works for any keyframes).</summary>
+    public KeyframeLaneViewModel Lane { get; }
 
     /// <summary>Where the camera looks at each keyframe, in order (the path drawn on the preview).</summary>
     public IReadOnlyList<(double X, double Y)> Path { get; private set; } = Array.Empty<(double, double)>();
@@ -75,7 +67,11 @@ public sealed partial class TransformControlsViewModel : ViewModelBase
     {
         _host = host;
         _editor = editor;
+        Lane = new KeyframeLaneViewModel(editor);
     }
+
+    /// <summary>The selected transform effect's keyframes, as the shared keyframe edits name them.</summary>
+    private static KeyframeHostRef HostOf((IEffectOwner Clip, EffectInstance Effect) s) => KeyframeHostRef.OfEffect(s.Clip.Id, s.Effect.Id);
 
     public void NotifyControlsVisibilityChanged() => OnPropertyChanged(nameof(ShowOverlay));
 
@@ -108,7 +104,10 @@ public sealed partial class TransformControlsViewModel : ViewModelBase
             _host.NotifyGenericParamsChanged();
             _host.NotifyPreviewControlsChanged();
             if (sel is not { } s)
+            {
+                Lane.Refresh(null, 1);
                 return;
+            }
 
             var (clip, fx) = s;
             var times = TimesOf(fx);
@@ -127,21 +126,15 @@ public sealed partial class TransformControlsViewModel : ViewModelBase
             TimeText = Timecode.Format(clip.StartSec + t, rate);
             ClipLabel = clip is Track track ? $"Track · {track.Name ?? "Video"}" : $"Selected clip · {_host.SelectedClipFileName ?? "clip"}";
 
-            ClipDurationSec = Math.Max(0.01, clip.DurSec);
-            PlayheadLocal = Math.Clamp(_editor.PlayheadTimeSec - clip.StartSec, 0, clip.DurSec);
-            SelectedKeyframe = _host.SelectedKeyframeSec is { } sk && times.Any(k => Math.Abs(k - sk) < 1e-4) ? sk : null;
             HasLimit = fx.HasRange;
-            LimitStart = fx.HasRange ? fx.StartSec : null;
-            LimitEnd = fx.HasRange ? fx.StartSec + fx.DurSec : null;
             LimitLengthText = fx.HasRange ? $"{fx.DurSec:0.0} seconds" : "";
-            KeyTimes = times;
-            OnPropertyChanged(nameof(KeyTimes));
+            Lane.Refresh(HostOf(s), clip.DurSec, fx.HasRange ? fx.StartSec : null,
+                fx.HasRange ? fx.StartSec + fx.DurSec : null, _host.SelectedKeyframeSec);
 
             Path = times.Select(k => TransformMath.ViewAt(fx, k)).Select(v => (v.CenterX, v.CenterY)).ToList();
             OnPropertyChanged(nameof(Path));
 
-            var easing = fx.Keyframes.Values.SelectMany(tr => tr).FirstOrDefault(k => Math.Abs(k.TimeSec - t) < 1e-6).Easing;
-            EasingIndex = (int)easing;
+            EasingIndex = (int)(_editor.Editor.FindKeyframeHost(HostOf(s))?.EasingAt(t) ?? KeyframeEasing.Linear);
 
             Summary = times.Count switch
             {
@@ -233,7 +226,8 @@ public sealed partial class TransformControlsViewModel : ViewModelBase
         if (_refreshing || !IsOnKeyframe || Selected() is not { } s)
             return;
         var t = EditTime(s.Clip, s.Effect);
-        _editor.Editor.SetEffectKeyframeEasing(s.Clip.Id, s.Effect.Id, t, (KeyframeEasing)Math.Clamp(value, 0, EasingNames.Length - 1));
+        _editor.Editor.SetKeyframeEasing(new KeyframeRef(HostOf(s), t),
+            (KeyframeEasing)Math.Clamp(value, 0, Fig.App.Controls.KeyframeMenu.EasingNames.Count - 1));
     }
 
     /// <summary>Typing a time moves the keyframe there, or just jumps the playhead when it is not on one.</summary>
@@ -390,74 +384,4 @@ public sealed partial class TransformControlsViewModel : ViewModelBase
         var to = times.Count > 1 ? times[^1] : from + (fx.DurSec ?? clip.DurSec - from);
         _editor.PlayRange(clip.StartSec + Math.Max(0, from - 0.3), clip.StartSec + Math.Min(clip.DurSec, to + 0.3));
     }
-
-    // ---- the keyframe ruler ----------------------------------------------------------------
-
-    private (IEffectOwner Clip, EffectInstance Effect)? RulerTarget() => Selected();
-
-    /// <summary>Moves the playhead to a time in the clip (clip-relative seconds).</summary>
-    public void RulerSeek(double localSec)
-    {
-        if (RulerTarget() is { } s)
-            _editor.SeekFromUser(s.Clip.StartSec + Math.Clamp(localSec, 0, s.Clip.DurSec));
-    }
-
-    public void RulerSelect(double localSec)
-    {
-        _host.SelectKeyframe(localSec);
-        RulerSeek(localSec);
-    }
-
-    public void RulerMove(double fromSec, double toSec, string gesture)
-    {
-        if (RulerTarget() is { } s)
-        {
-            _editor.Editor.MoveEffectKeyframe(s.Clip.Id, s.Effect.Id, fromSec, toSec, gesture);
-            _host.SelectKeyframe(Math.Clamp(toSec, 0, s.Clip.DurSec));
-        }
-    }
-
-    /// <summary>Adds a keyframe at a time (turning animation on first if it is off).</summary>
-    public void RulerAdd(double localSec)
-    {
-        if (RulerTarget() is not { } s)
-            return;
-        var t = Math.Clamp(localSec, 0, s.Clip.DurSec);
-        if (_editor.Editor.AddEffectKeyframe(s.Clip.Id, s.Effect.Id, t) is { } added)
-        {
-            _host.SelectKeyframe(added);
-            RulerSeek(added);
-        }
-    }
-
-    public void RulerDelete(double localSec)
-    {
-        if (RulerTarget() is not { } s)
-            return;
-        _editor.Editor.RemoveEffectKeyframe(s.Clip.Id, s.Effect.Id, localSec);
-        _host.SelectedKeyframeSec = null;
-    }
-
-    public void RulerDuplicateToPlayhead(double localSec)
-    {
-        if (RulerTarget() is not { } s)
-            return;
-        var to = Math.Clamp(_editor.PlayheadTimeSec - s.Clip.StartSec, 0, s.Clip.DurSec);
-        _editor.Editor.DuplicateEffectKeyframe(s.Clip.Id, s.Effect.Id, localSec, to);
-        _host.SelectKeyframe(to);
-    }
-
-    public KeyframeEasing RulerEasingAt(double localSec)
-        => RulerTarget() is { } s
-            ? s.Effect.Keyframes.Values.SelectMany(t => t).FirstOrDefault(k => Math.Abs(k.TimeSec - localSec) < 1e-6).Easing
-            : KeyframeEasing.Linear;
-
-    public void RulerSetEasing(double localSec, KeyframeEasing easing)
-    {
-        if (RulerTarget() is { } s)
-            _editor.Editor.SetEffectKeyframeEasing(s.Clip.Id, s.Effect.Id, localSec, easing);
-    }
-
-    /// <summary>Frame-snaps a clip-relative time, for dragging.</summary>
-    public double RulerSnap(double localSec) => _editor.Editor.SnapTime(localSec);
 }

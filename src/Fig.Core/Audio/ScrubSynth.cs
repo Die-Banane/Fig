@@ -24,9 +24,6 @@ namespace Fig.Core.Audio
         /// <param name="mix">Returns interleaved stereo for (startSec, durationSec) of the timeline.</param>
         public ScrubSynth(Func<double, double, float[]> mix) => _mix = mix;
 
-        /// <summary>Forgets the cached audio (after the timeline changes).</summary>
-        public void Invalidate() => _windowEnd = _windowStart = 0;
-
         /// <summary>
         /// Interleaved stereo for <paramref name="outFrames"/> frames that sweep the timeline from
         /// <paramref name="fromSec"/> to <paramref name="toSec"/> (backwards when to &lt; from).

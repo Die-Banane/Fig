@@ -776,42 +776,18 @@ public sealed partial class GraphEditorViewModel : ViewModelBase
 
     private ParamEditorViewModel MakeEditor(GraphNode node, ParamDef def)
     {
-        void Write(ParamValue v) => SetNodeParam(node.Id, def.Key, v);
-        void None(string _) { }
-        void Step(string _, bool __) { }
-        ParamValue Current() => node.Params.TryGetValue(def.Key, out var v) ? v : def.DefaultValue();
-
-        switch (def.Kind)
-        {
-            case ParamKind.Bool:
-            {
-                var e = new BoolParamEditorViewModel(def.Key, def.Label, Write, None, None, Step) { ShowKeyframes = false };
-                e.Evaluate = () => (Current().Kind == ParamKind.Bool && Current().AsBool, 0);
-                e.RefreshValue();
-                return e;
-            }
-            case ParamKind.Color:
-            {
-                var e = new ColorParamEditorViewModel(def.Key, def.Label, Write, None, None, Step) { ShowKeyframes = false };
-                e.Evaluate = () => (Current().Kind == ParamKind.Color ? Current().AsColor : (uint)def.Default, 0);
-                e.RefreshValue();
-                return e;
-            }
-            case ParamKind.List:
-            {
-                var e = new ChoiceParamEditorViewModel(def.Key, def.Label, def.Choices, Write, None, None, Step) { ShowKeyframes = false };
-                e.Evaluate = () => (Current().Kind == ParamKind.List ? Current().AsChoice : (int)def.Default, 0);
-                e.RefreshValue();
-                return e;
-            }
-            default:
-            {
-                var isInt = def.Kind == ParamKind.Int;
-                var e = new DoubleParamEditorViewModel(def.Key, def.Label, def.Min, def.Max, isInt, Write, None, None, Step) { ShowKeyframes = false };
-                e.Evaluate = () => (Current().Kind is ParamKind.Double or ParamKind.Int ? Current().AsNumber : def.Default, 0);
-                e.RefreshValue();
-                return e;
-            }
-        }
+        // a node's setting: a plain value (graphs are animated through the effect that uses them)
+        ParamValue Current()
+            => node.Params.TryGetValue(def.Key, out var v) && Fits(v, def) ? v : def.DefaultValue();
+        var editor = ParamEditorViewModel.For(def, new PlainParamTarget(Current, v => SetNodeParam(node.Id, def.Key, v)));
+        editor.RefreshValue();
+        return editor;
     }
+
+    /// <summary>A stored value of the kind the parameter is (numbers fit either number kind).</summary>
+    private static bool Fits(ParamValue value, ParamDef def) => def.Kind switch
+    {
+        ParamKind.Double or ParamKind.Int => value.Kind is ParamKind.Double or ParamKind.Int,
+        _ => value.Kind == def.Kind,
+    };
 }

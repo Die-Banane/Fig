@@ -30,12 +30,11 @@ public sealed class SkiaLayerRasterizer : ILayerRasterizer
     public SkiaLayerRasterizer(Func<string, MediaAsset?> findMedia) => _findMedia = findMedia;
 
 
-    private static TextStyle StyleAt(TextClip text, double localT) {
-        var size = ClipAutomation.Evaluate(text, AutomationKeys.TextSize, localT, text.Style.SizePercent);
+    /// <summary>The text's style at a moment: its keyable values (the size) as they are then.</summary>
+    private static TextStyle StyleAt(TextClip text, double localT)
+        // rounded, so sizes too close to tell apart share one cached picture
+        => text.Style with { SizePercent = Math.Round(ClipProperties.TextSize.NumberAt(text, localT), 2) };
 
-        // round so that for indistinguishable sizes, we share cached pics
-        return text.Style with {SizePercent = Math.Round(size, 2)};
-    }
     public DecodedFrame? Rasterize(Clip clip, int width, int height, double localT)
     {
         if (width <= 0 || height <= 0)

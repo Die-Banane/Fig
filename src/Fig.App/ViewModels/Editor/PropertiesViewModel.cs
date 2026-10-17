@@ -35,26 +35,12 @@ public partial class PropertiesViewModel : ViewModelBase
             OnPropertyChanged(nameof(HasEffects));
             OnPropertyChanged(nameof(NoEffects));
         };
-        OpacityAutomation = new AutomationButtonViewModel(this, AutomationKeys.Opacity, () => OpacityValue);
-        TextSizeAutomation = new AutomationButtonViewModel(this, AutomationKeys.TextSize, () => TextSizeValue);
-        VolumeAutomation = new AutomationButtonViewModel(this, AutomationKeys.Volume, () => VolumeValue);
-        CropTopAutomation = new AutomationButtonViewModel(this, AutomationKeys.CropTop, () => CropTop);
-        CropBottomAutomation = new AutomationButtonViewModel(this, AutomationKeys.CropBottom, () => CropBottom);
-        CropLeftAutomation = new AutomationButtonViewModel(this, AutomationKeys.CropLeft, () => CropLeft);
-        CropRightAutomation = new AutomationButtonViewModel(this, AutomationKeys.CropRight, () => CropRight);
     }
 
     public TransformControlsViewModel Transform { get; }
     public SwirlControlsViewModel Swirl { get; }
     /// <summary>The move / scale / rotate gizmo for text and image layers on the preview.</summary>
     public LayerGizmoViewModel Gizmo { get; }
-    public AutomationButtonViewModel OpacityAutomation { get; }
-    public AutomationButtonViewModel TextSizeAutomation { get;}
-    public AutomationButtonViewModel VolumeAutomation { get; }
-    public AutomationButtonViewModel CropTopAutomation { get; }
-    public AutomationButtonViewModel CropBottomAutomation { get; }
-    public AutomationButtonViewModel CropLeftAutomation { get; }
-    public AutomationButtonViewModel CropRightAutomation { get; }
 
     private void OnEditorPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
@@ -63,69 +49,18 @@ public partial class PropertiesViewModel : ViewModelBase
         {
             if (Has(Facet.Effects))
                 RefreshParams();
-            if (Has(Facet.Picture | Facet.Sound))
-                RefreshAutomation();
-            if (Has(Facet.Text))
-                ShowTextSizeAtPlayhead();
+            RefreshProperties();
             Transform.Refresh();
             Gizmo.Refresh();
             NotifyPreviewControlsChanged();
         }
     }
 
-    /// <summary>True when the automation track has a keyframe at the current playhead.</summary>
-    public bool AutomationAtPlayhead(string key)
-    {
-        if (_clipId is null)
-            return false;
-        var clip = FindClip(_clipId);
-        if (clip is null)
-            return false;
-        var localT = Math.Clamp(_editor.PlayheadTimeSec - clip.StartSec, 0, Math.Max(0, clip.DurSec - 1e-4));
-        return ClipAutomation.HasKeyframeAt(clip, key, localT);
-    }
-
-    /// <summary>Adds a keyframe at the playhead with the given value, or removes one when present.</summary>
-    public void ToggleAutomation(string key, double value)
-    {
-        if (_clipId is null)
-            return;
-        var clip = FindClip(_clipId);
-        if (clip is null)
-            return;
-        var localT = Math.Clamp(_editor.PlayheadTimeSec - clip.StartSec, 0, Math.Max(0, clip.DurSec - 1e-4));
-        if (ClipAutomation.HasKeyframeAt(clip, key, localT))
-            _editor.Editor.RemoveClipKeyframe(_clipId, key, localT);
-        else
-            _editor.Editor.SetClipKeyframe(_clipId, key, localT, value);
-        RefreshAutomation();
-        _editor.Preview.RefreshFrame();
-    }
-
-    /// <summary>Moves the playhead to the previous or next keyframe of a clip automation track.</summary>
-    public void StepAutomation(string key, bool forward)
-    {
-        if (_clipId is null || FindClip(_clipId) is not { } clip
-            || !clip.Keyframes.TryGetValue(key, out var track) || track.Count == 0)
-            return;
-        var localT = Math.Max(0, _editor.PlayheadTimeSec - clip.StartSec);
-        var target = forward
-            ? track.Where(k => k.TimeSec > localT + 1e-6).OrderBy(k => k.TimeSec).Cast<KeyframePoint?>().FirstOrDefault()
-            : track.Where(k => k.TimeSec < localT - 1e-6).OrderByDescending(k => k.TimeSec).Cast<KeyframePoint?>().FirstOrDefault();
-        if (target is { } kf)
-            _editor.SeekFromUser(clip.StartSec + kf.TimeSec);
-    }
-
-    /// <summary>Re-reads all automation diamonds against the current playhead.</summary>
+    /// <summary>Re-reads every keyframable value (and its keyframe controls) at the playhead, after a keyframe edit.</summary>
     public void RefreshAutomation()
     {
-        OpacityAutomation.Refresh();
-        TextSizeAutomation.Refresh();
-        VolumeAutomation.Refresh();
-        CropTopAutomation.Refresh();
-        CropBottomAutomation.Refresh();
-        CropLeftAutomation.Refresh();
-        CropRightAutomation.Refresh();
+        RefreshProperties();
+        RefreshParams();
     }
 
     /// <summary>The tabs for what is selected, in order. Empty when nothing can be inspected.</summary>
@@ -198,27 +133,14 @@ public partial class PropertiesViewModel : ViewModelBase
     [ObservableProperty] private double _clipDurationSec = 1;
     public bool IsLinked => LinkedToLabel is not null;
 
-    [ObservableProperty] private double _opacityValue = 1;
+    /// <summary>The clip's fades, for the fade envelope drawing (they are edited through the Fades group).</summary>
     [ObservableProperty] private double _fadeInValue;
     [ObservableProperty] private double _fadeOutValue;
-    /// <summary>A video clip's own sound fades apart from its picture: shown on the Audio tab.</summary>
-    [ObservableProperty] private bool _hasOwnSoundFades;
     /// <summary>The clip takes its speed from a curve drawn on it (the Speed slider is off).</summary>
     [ObservableProperty] [NotifyPropertyChangedFor(nameof(CanAddSpeedCurve))] private bool _hasSpeedCurve;
     [ObservableProperty] [NotifyPropertyChangedFor(nameof(CanAddSpeedCurve))] private bool _canHaveSpeedCurve;
     public bool CanAddSpeedCurve => CanHaveSpeedCurve && !HasSpeedCurve;
-    /// <summary>A video clip: it can blend its frames for slow motion and blur them for fast.</summary>
-    [ObservableProperty] private bool _canSmoothFrames;
-    [ObservableProperty] private bool _blendFramesValue;
-    [ObservableProperty] private double _motionBlurValue;
-    [ObservableProperty] private double _soundFadeInValue;
-    [ObservableProperty] private double _soundFadeOutValue;
-    [ObservableProperty] private double _volumeValue = 1;
     [ObservableProperty] private double _speedValue = 1;
-    [ObservableProperty] private double _cropLeft;
-    [ObservableProperty] private double _cropTop;
-    [ObservableProperty] private double _cropRight;
-    [ObservableProperty] private double _cropBottom;
 
     // track
     [ObservableProperty] private string? _trackNameLabel;
@@ -348,6 +270,7 @@ public partial class PropertiesViewModel : ViewModelBase
             // each facet loads its own values; none of them asks what kind of thing the item is
             var clip = items.OfType<Clip>().LastOrDefault();
             LoadClip(clip, primary, items.Count == 1);
+            LoadProperties(items.OfType<Clip>().ToList());
             if (Has(Facet.Track))
                 LoadTrack(primary.Key.Id, items.Count == 1);
             if (Has(Facet.Marker))
@@ -389,6 +312,7 @@ public partial class PropertiesViewModel : ViewModelBase
     {
         _suppressApply = true;
         ResetState();
+        ClearProperties();
         _contextKey = null;
         _facets = Facet.None;
         Sections.Clear();
@@ -421,21 +345,11 @@ public partial class PropertiesViewModel : ViewModelBase
         if (clip is not null)
         {
             ClipTimingLabel = $"{FormatTime(clip.StartSec)} → {FormatTime(clip.StartSec + clip.DurSec)}  ({FormatTime(clip.DurSec)})";
-            OpacityValue = clip.Opacity;
             FadeInValue = clip.FadeInSec;
             FadeOutValue = clip.FadeOutSec;
-            HasOwnSoundFades = clip is VideoClip;
-            (SoundFadeInValue, SoundFadeOutValue) = ClipFade.Get(clip, FadeOf.Sound);
-            VolumeValue = clip.Volume;
             SpeedValue = clip.Speed;
             HasSpeedCurve = ClipTime.HasCurve(clip);
-            CanSmoothFrames = clip is VideoClip;
-            BlendFramesValue = clip is VideoClip { BlendFrames: true };
-            MotionBlurValue = (clip as VideoClip)?.MotionBlur ?? 0;
             CanHaveSpeedCurve = _editor.Editor.CanHaveSpeedCurve(clip.Id);
-            (CropLeft, CropTop, CropRight, CropBottom) = clip is ICroppable crop
-                ? (crop.CropL, crop.CropT, crop.CropR, crop.CropB)
-                : (0, 0, 0, 0);
             ClipDurationSec = Math.Max(0.01, clip.DurSec);
             RetimedDurationLabel = FormatTime(clip.DurSec);
             OriginalDurationLabel = FormatTime(ClipTime.SourceOffset(clip, clip.DurSec));
@@ -448,7 +362,6 @@ public partial class PropertiesViewModel : ViewModelBase
             LinkedToLabel = clip.LinkGroupId is not null && asset is not null ? $"Linked to {asset.FileName}" : null;
             OnPropertyChanged(nameof(IsLinked));
             LoadLayer(clip);
-            RefreshAutomation();
             if (single)
                 Subtitle = asset?.FileName ?? ClipTimingLabel;
         }
@@ -507,12 +420,6 @@ public partial class PropertiesViewModel : ViewModelBase
     }
 
     [RelayCommand]
-    private void ResetCompositing() => OpacityValue = 1;
-
-    [RelayCommand]
-    private void ResetAudio() => VolumeValue = 1;
-
-    [RelayCommand]
     private void ResetSpeed() => SpeedValue = 1;
 
     [RelayCommand]
@@ -527,13 +434,6 @@ public partial class PropertiesViewModel : ViewModelBase
     {
         if (_clipId is not null)
             _editor.Editor.RemoveSpeedCurve(_clipId);
-    }
-
-    [RelayCommand]
-    private void ResetFades()
-    {
-        FadeInValue = 0;
-        FadeOutValue = 0;
     }
 
     private void LoadMarker(string markerId, bool sameContext)
@@ -673,7 +573,8 @@ public partial class PropertiesViewModel : ViewModelBase
             return;
         JumpToMarker();
         foreach (var param in EffectParams.ToList())
-            param.AddKeyframeCommand.Execute(null);
+            if (!param.Target.IsOnKeyframe)
+                param.ToggleKeyframeCommand.Execute(null);
     }
 
     [RelayCommand]
@@ -908,93 +809,31 @@ public partial class PropertiesViewModel : ViewModelBase
         _lastBuiltEffectId = _selectedEffectId;
         if (_clipId is null || _selectedEffectId is null)
             return;
-        var clip = _editor.Editor.FindEffectOwner(_clipId);
-        if (clip is null)
-            return;
-        var effect = FindEffect(clip, _selectedEffectId);
-        if (effect is null)
-            return;
-        var entry = EffectCatalog.Find(effect.TypeId);
-        if (entry is null)
+        var owner = _editor.Editor.FindEffectOwner(_clipId);
+        var effect = owner is null ? null : FindEffect(owner, _selectedEffectId);
+        if (effect is null || EffectCatalog.Find(effect.TypeId) is not { } entry)
             return;
 
-        var clipId = _clipId;
+        var (clipId, effectId) = (_clipId, effect.Id);
         foreach (var def in entry.ParamSchema)
         {
             var key = def.Key;
-            var editor = CreateParamEditor(clipId, effect, def,
-                write: value => WriteEffectParam(clipId, effect.Id, key, value),
-                addKeyframe: _ => AddEffectKeyframe(clipId, effect.Id, key),
-                clearKeyframes: _ =>
-                {
-                    _editor.Editor.ClearKeyframes(clipId, effect.Id, key);
-                    RefreshParams();
-                },
-                stepKeyframe: (_, forward) => StepEffectKeyframe(clipId, effect.Id, key, forward));
-            SetEvaluate(editor, clipId, effect.Id, def);
-            EffectParams.Add(editor);
+            // an effect's parameter: the same keyed value as a clip's property
+            var target = new KeyedParamTarget(_editor, KeyframeHostRef.OfEffect(clipId, effectId), key, canKey: true,
+                readBase: () => FindEffectById(clipId, effectId)?.Params.TryGetValue(key, out var v) == true ? v : def.DefaultValue(),
+                writeBase: value => _editor.Editor.SetEffectParam(clipId, effectId, key, value));
+            EffectParams.Add(ParamEditorViewModel.For(def, target));
         }
         RefreshParams();
     }
 
-    private void SetEvaluate(ParamEditorViewModel editor, string clipId, string effectId, ParamDef def)
-    {
-        switch (editor)
-        {
-            case DoubleParamEditorViewModel d:
-                d.Evaluate = () => EvalParam(clipId, effectId, def.Key, v => v.AsNumber);
-                break;
-            case BoolParamEditorViewModel b:
-                b.Evaluate = () => EvalParam(clipId, effectId, def.Key, v => v.AsBool);
-                break;
-            case ColorParamEditorViewModel c:
-                c.Evaluate = () => EvalParam(clipId, effectId, def.Key, v => v.AsColor);
-                break;
-            case ChoiceParamEditorViewModel ch:
-                ch.Evaluate = () => EvalParam(clipId, effectId, def.Key, v => v.AsChoice);
-                break;
-        }
-    }
-
-    private static ParamEditorViewModel CreateParamEditor(string clipId, EffectInstance effect, ParamDef def,
-        Action<ParamValue> write, Action<string> addKeyframe, Action<string> clearKeyframes, Action<string, bool> stepKeyframe)
-    {
-        switch (def.Kind)
-        {
-            case ParamKind.Int:
-                return new DoubleParamEditorViewModel(def.Key, def.Label, def.Min, def.Max, true, write, addKeyframe, clearKeyframes, stepKeyframe);
-            case ParamKind.Bool:
-                return new BoolParamEditorViewModel(def.Key, def.Label, write, addKeyframe, clearKeyframes, stepKeyframe);
-            case ParamKind.Color:
-                return new ColorParamEditorViewModel(def.Key, def.Label, write, addKeyframe, clearKeyframes, stepKeyframe);
-            case ParamKind.List:
-                return new ChoiceParamEditorViewModel(def.Key, def.Label, def.Choices, write, addKeyframe, clearKeyframes, stepKeyframe);
-            default:
-                return new DoubleParamEditorViewModel(def.Key, def.Label, def.Min, def.Max, false, write, addKeyframe, clearKeyframes, stepKeyframe);
-        }
-    }
+    private EffectInstance? FindEffectById(string ownerId, string effectId)
+        => _editor.Editor.FindEffectOwner(ownerId) is { } owner ? FindEffect(owner, effectId) : null;
 
     private void RefreshParams()
     {
         foreach (var editor in EffectParams)
             editor.RefreshValue();
-    }
-
-    private (T Value, int Count) EvalParam<T>(string clipId, string effectId, string key, Func<ParamValue, T> convert)
-    {
-        var clip = _editor.Editor.FindEffectOwner(clipId);
-        if (clip is null)
-            return (default!, 0);
-        var effect = FindEffect(clip, effectId);
-        if (effect is null)
-            return (default!, 0);
-        var track = effect.Keyframes.TryGetValue(key, out var t) ? t : null;
-        var count = track?.Count ?? 0;
-        var localT = Math.Max(0, _editor.PlayheadTimeSec - clip.StartSec);
-        var value = count > 0 && track is not null
-            ? EffectPipeline.Evaluate(track, localT)
-            : (effect.Params.TryGetValue(key, out var constant) ? constant : default);
-        return (convert(value), count);
     }
 
     /// <summary>The clip and effect currently selected in the Effects tab, if any.</summary>
@@ -1037,54 +876,6 @@ public partial class PropertiesViewModel : ViewModelBase
             _editor.Editor.SetEffectParam(clipId, effectId, key, value);
     }
 
-    private void AddEffectKeyframe(string clipId, string effectId, string key)
-    {
-        var clip = _editor.Editor.FindEffectOwner(clipId);
-        if (clip is null)
-            return;
-        var effect = FindEffect(clip, effectId);
-        if (effect is null)
-            return;
-        var localT = Math.Max(0, _editor.PlayheadTimeSec - clip.StartSec);
-        var value = effect.Keyframes.TryGetValue(key, out var track) && track.Count > 0
-            ? EffectPipeline.Evaluate(track, localT)
-            : (effect.Params.TryGetValue(key, out var constant) ? constant : default);
-        _editor.Editor.SetKeyframe(clipId, effectId, key, localT, value);
-        RefreshParams();
-    }
-
-    private void StepEffectKeyframe(string clipId, string effectId, string key, bool forward)
-    {
-        var clip = _editor.Editor.FindEffectOwner(clipId);
-        if (clip is null)
-            return;
-        var effect = FindEffect(clip, effectId);
-        if (effect is null || !effect.Keyframes.TryGetValue(key, out var track) || track.Count == 0)
-            return;
-        var localT = Math.Max(0, _editor.PlayheadTimeSec - clip.StartSec);
-        KeyframePoint? target = null;
-        if (forward)
-        {
-            foreach (var k in track)
-                if (k.TimeSec > localT + 1e-6)
-                {
-                    target = k;
-                    break;
-                }
-        }
-        else
-        {
-            for (var i = track.Count - 1; i >= 0; i--)
-                if (track[i].TimeSec < localT - 1e-6)
-                {
-                    target = track[i];
-                    break;
-                }
-        }
-        if (target is { } kf)
-            _editor.SeekFromUser(clip.StartSec + kf.TimeSec);
-    }
-
     private void BuildTransitionParams(CutTransition transition)
     {
         // Only rebuild when the transition structure (type / parameter set) actually changed;
@@ -1103,17 +894,13 @@ public partial class PropertiesViewModel : ViewModelBase
         foreach (var def in entry.ParamSchema)
         {
             var key = def.Key;
-            var editor = CreateTransitionParamEditor(def,
-                write: value => _editor.Editor.SetTransitionParam(transition.LeftClipId, transition.RightClipId, key, value));
-
-            ParamValue current;
-            if (transition.Left.TransitionOut?.Params.TryGetValue(key, out var v1) == true)
-                current = v1;
-            else if (transition.Right.TransitionIn?.Params.TryGetValue(key, out var v2) == true)
-                current = v2;
-            else
-                current = def.DefaultValue();
-            SetInitialValue(editor, current);
+            ParamValue Current()
+                => transition.Left.TransitionOut?.Params.TryGetValue(key, out var v1) == true ? v1
+                    : transition.Right.TransitionIn?.Params.TryGetValue(key, out var v2) == true ? v2
+                    : def.DefaultValue();
+            var editor = ParamEditorViewModel.For(def, new PlainParamTarget(Current,
+                value => _editor.Editor.SetTransitionParam(transition.LeftClipId, transition.RightClipId, key, value)));
+            editor.RefreshValue();
             TransitionParams.Add(editor);
         }
     }
@@ -1131,49 +918,6 @@ public partial class PropertiesViewModel : ViewModelBase
         foreach (var key in source.Keys)
             sb.Append(key).Append(';');
         return sb.ToString();
-    }
-
-    private static ParamEditorViewModel CreateTransitionParamEditor(ParamDef def, Action<ParamValue> write)
-    {
-        Action<string> noop = _ => { };
-        Action<string, bool> noop2 = (_, _) => { };
-        ParamEditorViewModel editor = def.Kind switch
-        {
-            ParamKind.Int => new DoubleParamEditorViewModel(def.Key, def.Label, def.Min, def.Max, true, write, noop, noop, noop2),
-            ParamKind.Bool => new BoolParamEditorViewModel(def.Key, def.Label, write, noop, noop, noop2),
-            ParamKind.Color => new ColorParamEditorViewModel(def.Key, def.Label, write, noop, noop, noop2),
-            ParamKind.List => new ChoiceParamEditorViewModel(def.Key, def.Label, def.Choices, write, noop, noop, noop2),
-            _ => new DoubleParamEditorViewModel(def.Key, def.Label, def.Min, def.Max, false, write, noop, noop, noop2),
-        };
-        editor.ShowKeyframes = false;
-        return editor;
-    }
-
-    private static void SetInitialValue(ParamEditorViewModel editor, ParamValue value)
-    {
-        switch (editor)
-        {
-            case DoubleParamEditorViewModel d:
-                d.SetSuppress(true);
-                d.Value = value.AsNumber;
-                d.SetSuppress(false);
-                break;
-            case BoolParamEditorViewModel b:
-                b.SetSuppress(true);
-                b.Value = value.AsBool;
-                b.SetSuppress(false);
-                break;
-            case ColorParamEditorViewModel c:
-                c.SetSuppress(true);
-                c.Hex = value.AsColor.ToString("X8");
-                c.SetSuppress(false);
-                break;
-            case ChoiceParamEditorViewModel ch:
-                ch.SetSuppress(true);
-                ch.Index = value.AsChoice;
-                ch.SetSuppress(false);
-                break;
-        }
     }
 
     private static EffectInstance? FindEffect(IEffectOwner clip, string effectId)
@@ -1282,115 +1026,12 @@ public partial class PropertiesViewModel : ViewModelBase
         _transitionKey = null;
     }
 
-    partial void OnOpacityValueChanged(double value)
-        => SetOnSelection(Facet.Picture, "opacity", c => c.Opacity, (c, v) => c.Opacity = v, Math.Clamp(value, 0, 1));
-
-    partial void OnFadeInValueChanged(double value)
-    {
-        // each clip clamps the fade to the room it has
-        SetOnSelection(Facet.Fades, "fade in", c => c.FadeInSec, (c, v) => ClipFade.ApplyFadeIn(c, v), Math.Max(0, value));
-        // Reflect clamp back into the slider without re-entering Apply
-        var clip = _clipId is null ? null : FindClip(_clipId);
-        if (clip is not null && Math.Abs(clip.FadeInSec - value) > 1e-6)
-        {
-            _suppressApply = true;
-            FadeInValue = clip.FadeInSec;
-            _suppressApply = false;
-        }
-        _editor.Preview.RefreshFrame();
-    }
-
-    partial void OnFadeOutValueChanged(double value)
-    {
-        SetOnSelection(Facet.Fades, "fade out", c => c.FadeOutSec, (c, v) => ClipFade.ApplyFadeOut(c, v), Math.Max(0, value));
-        var clip = _clipId is null ? null : FindClip(_clipId);
-        if (clip is not null && Math.Abs(clip.FadeOutSec - value) > 1e-6)
-        {
-            _suppressApply = true;
-            FadeOutValue = clip.FadeOutSec;
-            _suppressApply = false;
-        }
-        _editor.Preview.RefreshFrame();
-    }
-
-    partial void OnSoundFadeInValueChanged(double value)
-    {
-        SetOnSelection(Facet.Sound, "sound fade in", c => ClipFade.Get(c, FadeOf.Sound).In,
-            (c, v) => ClipFade.ApplyFadeIn(c, v, FadeOf.Sound), Math.Max(0, value));
-        if ((_clipId is null ? null : FindClip(_clipId)) is { } clip && Math.Abs(ClipFade.Get(clip, FadeOf.Sound).In - value) > 1e-6)
-        {
-            _suppressApply = true;
-            SoundFadeInValue = ClipFade.Get(clip, FadeOf.Sound).In;
-            _suppressApply = false;
-        }
-    }
-
-    partial void OnSoundFadeOutValueChanged(double value)
-    {
-        SetOnSelection(Facet.Sound, "sound fade out", c => ClipFade.Get(c, FadeOf.Sound).Out,
-            (c, v) => ClipFade.ApplyFadeOut(c, v, FadeOf.Sound), Math.Max(0, value));
-        if ((_clipId is null ? null : FindClip(_clipId)) is { } clip && Math.Abs(ClipFade.Get(clip, FadeOf.Sound).Out - value) > 1e-6)
-        {
-            _suppressApply = true;
-            SoundFadeOutValue = ClipFade.Get(clip, FadeOf.Sound).Out;
-            _suppressApply = false;
-        }
-    }
-
-    partial void OnVolumeValueChanged(double value)
-        => SetOnSelection(Facet.Sound, "volume", c => c.Volume, (c, v) => c.Volume = v, Math.Clamp(value, 0, 1));
-
-    partial void OnBlendFramesValueChanged(bool value)
-    {
-        if (_suppressApply || _clipId is null)
-            return;
-        _editor.Editor.SetClipValue(VideoTargets(), "frame blending", c => ((VideoClip)c).BlendFrames, (c, v) => ((VideoClip)c).BlendFrames = v, value);
-        _editor.Preview.RefreshFrame();
-    }
-
-    partial void OnMotionBlurValueChanged(double value)
-    {
-        if (_suppressApply || _clipId is null)
-            return;
-        _editor.Editor.SetClipValue(VideoTargets(), "motion blur", c => ((VideoClip)c).MotionBlur, (c, v) => ((VideoClip)c).MotionBlur = v,
-            Math.Clamp(value, 0, 1));
-        _editor.Preview.RefreshFrame();
-    }
-
-    /// <summary>The selected video clips (smoothing applies to each).</summary>
-    private IEnumerable<string> VideoTargets()
-        => _editor.Editor.Selection.SelectedClipIds.Append(_clipId!).Distinct()
-            .Where(id => _editor.Editor.FindClipForView(id) is VideoClip);
-
     partial void OnSpeedValueChanged(double value)
     {
         if (_suppressApply || _clipId is null || !Has(Facet.Retime))
             return;
         _editor.Editor.SetSpeed(_clipId, value);
         _editor.Preview.RefreshFrame();
-    }
-
-    partial void OnCropLeftChanged(double value) => ApplyCrop();
-    partial void OnCropTopChanged(double value) => ApplyCrop();
-    partial void OnCropRightChanged(double value) => ApplyCrop();
-    partial void OnCropBottomChanged(double value) => ApplyCrop();
-
-    private void ApplyCrop() => SetCrop(SetCropCommand.Normalize(CropLeft, CropTop, CropRight, CropBottom));
-
-    /// <summary>Crops every selected picture that can be cropped to the same insets, as one undo step.</summary>
-    private void SetCrop((double L, double T, double R, double B) crop)
-        => SetOnSelection(Facet.Crop, "crop",
-            c => (((ICroppable)c).CropL, ((ICroppable)c).CropT, ((ICroppable)c).CropR, ((ICroppable)c).CropB),
-            (c, v) => (((ICroppable)c).CropL, ((ICroppable)c).CropT, ((ICroppable)c).CropR, ((ICroppable)c).CropB) = v,
-            crop);
-
-    [RelayCommand]
-    private void ResetCrop()
-    {
-        _suppressApply = true;
-        CropLeft = CropTop = CropRight = CropBottom = 0;
-        _suppressApply = false;
-        SetCrop((0, 0, 0, 0));
     }
 
     private Clip? FindClip(string id)

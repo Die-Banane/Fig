@@ -431,30 +431,6 @@ public sealed class GraphCanvas : Control
 
     // ---- test hooks --------------------------------------------------------------------------
 
-    /// <summary>Where a port is in this control's coordinates, or null when the node or port is missing.</summary>
-    internal Point? PortPoint(string nodeId, string port, bool output)
-    {
-        if (Editor?.Graph.FindNode(nodeId) is not { } node)
-            return null;
-        var box = Layout(node);
-        var list = output ? box.Out : box.In;
-        var hit = list.FirstOrDefault(p => p.Def.Id == port);
-        return hit.Def is null ? null : ToScreen(hit.Pos);
-    }
-
-    /// <summary>The middle of a node's header, in this control's coordinates.</summary>
-    internal Point? NodeHeaderPoint(string nodeId)
-        => Editor?.Graph.FindNode(nodeId) is { } node ? ToScreen(new Point(node.X + NodeW / 2, node.Y + HeaderH / 2)) : null;
-
-    /// <summary>Where a parameter's pin is, in this control's coordinates.</summary>
-    internal Point? PinPoint(string nodeId, string param)
-    {
-        if (Editor?.Graph.FindNode(nodeId) is not { } node)
-            return null;
-        var hit = Layout(node).Params.FirstOrDefault(p => p.Def.Key == param);
-        return hit.Def is null ? null : ToScreen(hit.Pin);
-    }
-
     // ---- pointer -----------------------------------------------------------------------------
 
     protected override void OnPointerPressed(PointerPressedEventArgs e)

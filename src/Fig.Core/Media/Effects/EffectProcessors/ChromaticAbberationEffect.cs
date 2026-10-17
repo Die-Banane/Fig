@@ -14,15 +14,13 @@ namespace Fig.Core.Media
     [EffectParam("radial", "Radial", Default = 0, Kind = ParamKind.Bool)]
     [EffectParam("x_offset", "X Offset", Default = 0.01, Min = -0.05, Max = 0.05)]
     [EffectParam("y_offset", "Y Offset", Default = 0.01, Min = -0.05, Max = 0.05)]
-    internal sealed class ChromaticAberration : IEffectProcessor
+    internal sealed class ChromaticAberration : EffectProcessor
     {
-        public string TypeId => EffectCatalog.ChromaticAberration;
-
-        public DecodedFrame Apply(DecodedFrame frame, IReadOnlyDictionary<string, ParamValue> parameters, double localT)
+        protected override DecodedFrame Render(DecodedFrame frame, ParamSet p, double localT)
         {
-            var radial = parameters.TryGetValue("radial", out var r) && r.AsBool;
-            var xOffset = Math.Clamp(parameters.TryGetValue("x_offset", out var x) ? x.AsDouble : 0, -0.05, 0.05);
-            var yOffset = Math.Clamp(parameters.TryGetValue("y_offset", out var y) ? y.AsDouble : 0, -0.05, 0.05);
+            var radial = p.Bool("radial");
+            var xOffset = p.Number("x_offset");
+            var yOffset = p.Number("y_offset");
             if (Math.Abs(xOffset) < 1e-6 && Math.Abs(yOffset) < 1e-6)
                 return frame;
 

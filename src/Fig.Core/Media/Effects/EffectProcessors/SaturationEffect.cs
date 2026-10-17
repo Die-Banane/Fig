@@ -7,37 +7,23 @@ namespace Fig.Core.Media
     /// <summary>Adjusts color saturation (0 = grayscale, 2 = oversaturated).</summary>
     [Effect(EffectCatalog.Saturation, "Saturation", Category = "Color", Icon = "droplet", Description = "Adjust color saturation.")]
     [EffectParam("amount", "Amount", Default = 1, Min = 0, Max = 2)]
-    internal sealed class SaturationEffect : IEffectProcessor
+    internal sealed class SaturationEffect : EffectProcessor
     {
-        public string TypeId => EffectCatalog.Saturation;
-
-        public DecodedFrame Apply(DecodedFrame frame, IReadOnlyDictionary<string, ParamValue> parameters, double localT)
+        protected override DecodedFrame Render(DecodedFrame frame, ParamSet p, double localT)
         {
-            var amount = parameters.TryGetValue("amount", out var a) ? Math.Clamp(a.AsDouble, 0, 2) : 1;
+            var amount = p.Number("amount");
             if (Math.Abs(amount - 1) < 1e-6)
                 return frame;
+            return PixelOps.MapColor(frame, new Saturation(amount));
+        }
 
-            var src = frame.Pixels;
-            var w = frame.Width;
-            var h = frame.Height;
-            var px = FramePool.Rent(w * h * 4);
-            PixelOps.Rows(h, y =>
+        private readonly record struct Saturation(double Amount) : IColorMap
+        {
+            public void Map(ref double r, ref double g, ref double b)
             {
-                var row = y * w * 4;
-                for (var x = 0; x < w; x++)
-                {
-                    var i = row + x * 4;
-                    var b = src[i];
-                    var g = src[i + 1];
-                    var r = src[i + 2];
-                    var luma = 0.299 * r + 0.587 * g + 0.114 * b;
-                    px[i] = (byte)Math.Clamp((int)Math.Round(luma + (b - luma) * amount), 0, 255);
-                    px[i + 1] = (byte)Math.Clamp((int)Math.Round(luma + (g - luma) * amount), 0, 255);
-                    px[i + 2] = (byte)Math.Clamp((int)Math.Round(luma + (r - luma) * amount), 0, 255);
-                    px[i + 3] = src[i + 3];
-                }
-            });
-            return new DecodedFrame { Width = w, Height = h, Pixels = px };
+                var luma = 0.299 * r + 0.587 * g + 0.114 * b;
+                (r, g, b) = (luma + (r - luma) * Amount, luma + (g - luma) * Amount, luma + (b - luma) * Amount);
+            }
         }
     }
 }

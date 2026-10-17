@@ -16,13 +16,11 @@ namespace Fig.Core.Media
     [EffectParam("centerY", "Center Y", Default = 0.5, Min = 0, Max = 1)]
     [EffectParam("zoom", "Zoom", Default = 1, Min = 1, Max = 8)]
     [EffectParam("rotation", "Rotation", Default = 0, Min = -180, Max = 180)]
-    internal sealed class TransformEffect : IEffectProcessor
+    internal sealed class TransformEffect : EffectProcessor
     {
-        public string TypeId => EffectCatalog.Transform;
-
-        public DecodedFrame Apply(DecodedFrame frame, IReadOnlyDictionary<string, ParamValue> parameters, double localT)
+        protected override DecodedFrame Render(DecodedFrame frame, ParamSet p, double localT)
         {
-            var view = TransformMath.ViewFrom(parameters);
+            var view = TransformMath.ViewFrom(p);
             if (view.IsIdentity)
                 return frame;
 

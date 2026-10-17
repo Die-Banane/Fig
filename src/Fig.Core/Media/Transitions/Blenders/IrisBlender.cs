@@ -7,16 +7,11 @@ namespace Fig.Core.Media
     /// <summary>An expanding circle reveals the incoming clip from the center.</summary>
     [Transition(TransitionCatalog.Iris, "Iris", Category = "Wipe", Icon = "circle-dot", Description = "Expand a circle from the center.")]
     [TransitionParam("soft", "Soft edge", Default = 0.1, Min = 0, Max = 0.5)]
-    internal sealed class IrisBlender : ITransitionBlender
+    internal sealed class IrisBlender : TransitionBlender
     {
-        public string TypeId => TransitionCatalog.Iris;
-
-        public DecodedFrame Blend(DecodedFrame outgoing, DecodedFrame incoming, double t01, IReadOnlyDictionary<string, ParamValue> parameters)
+        protected override DecodedFrame Render(DecodedFrame outgoing, DecodedFrame incoming, double t01, ParamSet parameters)
         {
-            t01 = Math.Clamp(t01, 0, 1);
-            if (outgoing.Width != incoming.Width || outgoing.Height != incoming.Height)
-                return t01 < 0.5 ? outgoing : incoming;
-            var soft = parameters.TryGetValue("soft", out var s) ? Math.Clamp(s.AsDouble, 0, 0.5) : 0.1;
+            var soft = parameters.Number("soft");
 
             var a = outgoing.Pixels;
             var b = incoming.Pixels;

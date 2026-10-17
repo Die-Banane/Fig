@@ -1,32 +1,20 @@
+using System.Collections.ObjectModel;
 using Avalonia.Media;
 using CommunityToolkit.Mvvm.ComponentModel;
-using CommunityToolkit.Mvvm.Input;
 using Fig.Core.Timeline;
 
 namespace Fig.App.ViewModels;
 
-/// <summary>The Text and Position tabs: a title's words and look, and where a drawn layer sits in the frame.</summary>
+/// <summary>
+/// The clip properties in the inspector, built from <see cref="ClipProperties.All"/>: each tab gets the groups of
+/// properties its selection has, one editor per property, keyframe controls on the keyable ones. Nothing here is
+/// written per property; add one to the schema and it appears. Also the two text settings that aren't properties
+/// with a range: the words, and the font (whose choices are this machine's fonts).
+/// </summary>
 public partial class PropertiesViewModel
 {
-    // text
     [ObservableProperty] private string _textValue = "";
     [ObservableProperty] private string _fontFamilyValue = TextStyle.Default.FontFamily;
-    [ObservableProperty] private bool _textBold;
-    [ObservableProperty] private bool _textItalic;
-    [ObservableProperty] private double _textSizeValue = TextStyle.Default.SizePercent;
-    [ObservableProperty] private string _textColorHex = "#FFFFFFFF";
-    [ObservableProperty] private TextAlign _textAlignValue = TextAlign.Center;
-    [ObservableProperty] private bool _textShadow;
-    [ObservableProperty] private bool _textBackground;
-    [ObservableProperty] private string _textBackgroundHex = "#B0000000";
-
-    // position
-    [ObservableProperty] private double _layoutX = 0.5;
-    [ObservableProperty] private double _layoutY = 0.5;
-    [ObservableProperty] private double _layoutScale = 1;
-    [ObservableProperty] private double _layoutRotation;
-
-    public static IReadOnlyList<TextAlign> TextAligns { get; } = Enum.GetValues<TextAlign>();
 
     private IReadOnlyList<string>? _fontFamilies;
 
@@ -35,42 +23,75 @@ public partial class PropertiesViewModel
         .Select(f => f.Name).Append(TextStyle.Default.FontFamily)
         .Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase).ToList();
 
-    public IBrush TextColorBrush => Swatch(TextColorHex);
-    public IBrush TextBackgroundBrush => Swatch(TextBackgroundHex);
+    private readonly Dictionary<Facet, ObservableCollection<PropertyGroupViewModel>> _propertyGroups = new();
+    private string? _propertyContext;
 
-    /// <summary>Crop sits in the Picture tab, for pictures that can be cropped.</summary>
-    public bool HasCrop => Has(Facet.Crop);
+    public ObservableCollection<PropertyGroupViewModel> PictureGroups => GroupsFor(Facet.Picture);
+    public ObservableCollection<PropertyGroupViewModel> TextGroups => GroupsFor(Facet.Text);
+    public ObservableCollection<PropertyGroupViewModel> LayoutGroups => GroupsFor(Facet.Layout);
+    public ObservableCollection<PropertyGroupViewModel> SoundGroups => GroupsFor(Facet.Sound);
+    public ObservableCollection<PropertyGroupViewModel> RetimeGroups => GroupsFor(Facet.Retime);
+    public ObservableCollection<PropertyGroupViewModel> FadesGroups => GroupsFor(Facet.Fades);
 
-    private void ShowTextSizeAtPlayhead() {
-        if (_clipId is null || FindClip(_clipId) is not TextClip text) return; // clip doesn't exist
-        var localT = Math.Clamp(_editor.PlayheadTimeSec - text.StartSec,0, text.DurSec); // get param t
-        var was = _suppressApply;
-        _suppressApply = true;
-        TextSizeValue = ClipAutomation.Evaluate(text, AutomationKeys.TextSize, localT, text.Style.SizePercent);
-        _suppressApply = was;
+    /// <summary>The property groups shown in a tab (live: they follow the selection).</summary>
+    public ObservableCollection<PropertyGroupViewModel> GroupsFor(Facet tab)
+    {
+        if (!_propertyGroups.TryGetValue(tab, out var groups))
+            _propertyGroups[tab] = groups = new ObservableCollection<PropertyGroupViewModel>();
+        return groups;
     }
 
-    private void LoadLayer(Clip? clip)
+    /// <summary>
+    /// Builds the property editors for the selected clips (the properties every one of them has), or, when the
+    /// selection is the same, re-reads their values.
+    /// </summary>
+    private void LoadProperties(IReadOnlyList<Clip> clips)
     {
-        OnPropertyChanged(nameof(HasCrop));
-        if (clip is TextClip text)
+        var context = string.Join("|", clips.Select(c => c.Id));
+        if (context == _propertyContext)
         {
-            var style = text.Style;
-            TextValue = text.Text;
-            FontFamilyValue = style.FontFamily;
-            TextBold = style.Bold;
-            TextItalic = style.Italic;
-            TextSizeValue = style.SizePercent;
-            TextColorHex = Hex(style.Color);
-            TextAlignValue = style.Align;
-            TextShadow = style.Shadow;
-            TextBackground = style.Background;
-            TextBackgroundHex = Hex(style.BackgroundColor);
-            ShowTextSizeAtPlayhead();
+            RefreshProperties();
+            return;
         }
-        if (clip is ILayerClip layer)
-            (LayoutX, LayoutY, LayoutScale, LayoutRotation) =
-                (layer.Layout.CenterX, layer.Layout.CenterY, layer.Layout.Scale, layer.Layout.Rotation);
+        _propertyContext = context;
+        foreach (var groups in _propertyGroups.Values)
+            groups.Clear();
+        if (clips.Count == 0)
+            return;
+
+        var primaryId = clips[^1].Id;
+        foreach (var property in ClipProperties.All.Where(p => clips.All(p.Has)))
+        {
+            var groups = GroupsFor(property.ShownIn);
+            var group = groups.FirstOrDefault(g => g.Title == property.Group);
+            if (group is null)
+                groups.Add(group = new PropertyGroupViewModel(property.Group));
+            var p = property;
+            var target = new KeyedParamTarget(_editor, KeyframeHostRef.OfClip(primaryId), p.Key, p.Keyable,
+                readBase: () => FindClip(primaryId) is { } clip ? p.Get(clip) : p.Def.DefaultValue(),
+                writeBase: value => _editor.Editor.SetClipProperty(
+                    _editor.Editor.EditTargets(SelectedClipIds, p.Facet), p, value, _editor.PlayheadTimeSec),
+                writeHandlesKeys: true);
+            var editor = ParamEditorViewModel.For(p.Def, target, p.Icon);
+            if (p.Shown is { } shown)
+                editor.ShownWhen = () => FindClip(primaryId) is { } clip && shown(clip);
+            group.Editors.Add(editor);
+        }
+        RefreshProperties();
+    }
+
+    /// <summary>Re-reads every property editor at the playhead.</summary>
+    private void RefreshProperties()
+    {
+        foreach (var group in _propertyGroups.Values.SelectMany(g => g))
+            group.Refresh();
+    }
+
+    private void ClearProperties()
+    {
+        _propertyContext = null;
+        foreach (var groups in _propertyGroups.Values)
+            groups.Clear();
     }
 
     /// <summary>The clips selected on the timeline (the primary one last).</summary>
@@ -89,17 +110,13 @@ public partial class PropertiesViewModel
         _editor.Preview.RefreshFrame();
     }
 
-    private void SetStyle<T>(string property, Func<TextStyle, T> get, Func<TextStyle, T, TextStyle> with, T value)
-        => SetOnSelection(Facet.Text, property,
-            c => get(((TextClip)c).Style),
-            (c, v) => ((TextClip)c).Style = with(((TextClip)c).Style, v),
-            value);
-
-    private void SetLayout(string property, Func<LayerTransform, double> get, Func<LayerTransform, double, LayerTransform> with, double value)
-        => SetOnSelection(Facet.Layout, property,
-            c => get(((ILayerClip)c).Layout),
-            (c, v) => ((ILayerClip)c).Layout = with(((ILayerClip)c).Layout, v),
-            value);
+    private void LoadLayer(Clip? clip)
+    {
+        if (clip is not TextClip text)
+            return;
+        TextValue = text.Text;
+        FontFamilyValue = text.Style.FontFamily;
+    }
 
     partial void OnTextValueChanged(string value)
         => SetOnSelection(Facet.Text, "text", c => ((TextClip)c).Text, (c, v) => ((TextClip)c).Text = v, value);
@@ -107,61 +124,7 @@ public partial class PropertiesViewModel
     partial void OnFontFamilyValueChanged(string value)
     {
         if (!string.IsNullOrWhiteSpace(value))
-            SetStyle("font", s => s.FontFamily, (s, v) => s with { FontFamily = v }, value);
+            SetOnSelection(Facet.Text, "font", c => ((TextClip)c).Style.FontFamily,
+                (c, v) => ((TextClip)c).Style = ((TextClip)c).Style with { FontFamily = v }, value);
     }
-
-    partial void OnTextBoldChanged(bool value) => SetStyle("bold", s => s.Bold, (s, v) => s with { Bold = v }, value);
-    partial void OnTextItalicChanged(bool value) => SetStyle("italic", s => s.Italic, (s, v) => s with { Italic = v }, value);
-
-    partial void OnTextSizeValueChanged(double value)
-    {
-        var size = Math.Clamp(value, 1, 40);
-        if (!_suppressApply && _clipId is not null && FindClip(_clipId) is TextClip text
-            && text.Keyframes.TryGetValue(AutomationKeys.TextSize, out var keys) && keys.Count > 0)
-        {
-            var localT = Math.Clamp(_editor.PlayheadTimeSec - text.StartSec, 0, text.DurSec);
-            _editor.Editor.SetClipKeyframe(text.Id, AutomationKeys.TextSize, localT, size);   // adds or updates the one here
-            TextSizeAutomation.Refresh();
-            _editor.Preview.RefreshFrame();
-            return;
-        }
-        SetStyle("text size", s => s.SizePercent, (s, v) => s with { SizePercent = v }, size);
-    }
-    partial void OnTextAlignValueChanged(TextAlign value) => SetStyle("alignment", s => s.Align, (s, v) => s with { Align = v }, value);
-    partial void OnTextShadowChanged(bool value) => SetStyle("shadow", s => s.Shadow, (s, v) => s with { Shadow = v }, value);
-    partial void OnTextBackgroundChanged(bool value) => SetStyle("background", s => s.Background, (s, v) => s with { Background = v }, value);
-
-    partial void OnTextColorHexChanged(string value)
-    {
-        OnPropertyChanged(nameof(TextColorBrush));
-        if (TryParseColor(value) is { } color)
-            SetStyle("text colour", s => s.Color, (s, v) => s with { Color = v }, color);
-    }
-
-    partial void OnTextBackgroundHexChanged(string value)
-    {
-        OnPropertyChanged(nameof(TextBackgroundBrush));
-        if (TryParseColor(value) is { } color)
-            SetStyle("background colour", s => s.BackgroundColor, (s, v) => s with { BackgroundColor = v }, color);
-    }
-
-    partial void OnLayoutXChanged(double value) => SetLayout("horizontal position", l => l.CenterX, (l, v) => l with { CenterX = v }, value);
-    partial void OnLayoutYChanged(double value) => SetLayout("vertical position", l => l.CenterY, (l, v) => l with { CenterY = v }, value);
-    partial void OnLayoutScaleChanged(double value) => SetLayout("scale", l => l.Scale, (l, v) => l with { Scale = v }, Math.Max(0.05, value));
-    partial void OnLayoutRotationChanged(double value) => SetLayout("rotation", l => l.Rotation, (l, v) => l with { Rotation = v }, value);
-
-    /// <summary>Puts every selected layer back in the middle, unscaled and unrotated, as one undo step.</summary>
-    [RelayCommand]
-    private void ResetLayout()
-    {
-        SetOnSelection(Facet.Layout, "reset position", c => ((ILayerClip)c).Layout,
-            (c, v) => ((ILayerClip)c).Layout = v, LayerTransform.Default);
-        Refresh();
-    }
-
-    private static string Hex(uint argb) => $"#{argb:X8}";
-
-    private static uint? TryParseColor(string text) => Color.TryParse(text?.Trim(), out var color) ? color.ToUInt32() : null;
-
-    private static IBrush Swatch(string hex) => Color.TryParse(hex?.Trim(), out var color) ? new SolidColorBrush(color) : Brushes.Transparent;
 }

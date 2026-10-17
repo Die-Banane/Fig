@@ -71,14 +71,14 @@ namespace Fig.Core.Timeline
         /// <summary>Opacity × fade envelope (video / compositing). Opacity may be keyframed.</summary>
         public static double EffectiveOpacity(Clip clip, double localT)
         {
-            var opacity = ClipAutomation.Evaluate(clip, AutomationKeys.Opacity, localT, clip.Opacity);
+            var opacity = ClipProperties.Opacity.NumberAt(clip, localT);
             return Math.Clamp(opacity, 0, 1) * Envelope(clip, localT);
         }
 
         /// <summary>Volume × the sound's fade envelope (audio mixing). Volume may be keyframed.</summary>
         public static double EffectiveVolume(Clip clip, double localT)
         {
-            var volume = ClipAutomation.Evaluate(clip, AutomationKeys.Volume, localT, clip.Volume);
+            var volume = ClipProperties.Volume.NumberAt(clip, localT);
             var (fadeIn, fadeOut) = Get(clip, FadeOf.Sound);
             return Math.Clamp(volume, 0, 1) * Envelope(localT, clip.DurSec, fadeIn, fadeOut);
         }

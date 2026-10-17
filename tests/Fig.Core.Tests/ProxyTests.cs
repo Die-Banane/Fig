@@ -109,7 +109,6 @@ public class ProxyTests
         {
             var asset = manager.ImportMedia(AssetPath).Asset!;
             Assert.True(MediaService.ShouldGenerateProxy(asset.Width, asset.Height));
-            Assert.True(ProjectManager.NeedsProxyBackfill(asset));
 
             // FinalizeMediaArtifacts no longer auto-generates proxies — it is opt-in.
             manager.FinalizeMediaArtifacts(asset);
@@ -123,7 +122,6 @@ public class ProxyTests
             Assert.Equal(asset.ProxyUrl, asset.PlaybackVideoPath);
             Assert.False(string.IsNullOrEmpty(asset.Filmstrip), "filmstrip should still succeed");
             Assert.NotNull(asset.WaveformPeaks);
-            Assert.False(ProjectManager.NeedsProxyBackfill(asset));
             Assert.False(ProjectManager.NeedsPreviewBackfill(asset));
         }
         finally
@@ -153,7 +151,6 @@ public class ProxyTests
             Assert.Equal(ProxyStatus.None, asset.ProxyStatus);
             Assert.Null(asset.ProxyUrl);
             Assert.Equal(asset.Url, asset.PlaybackVideoPath);
-            Assert.False(ProjectManager.NeedsProxyBackfill(asset));
         }
         finally
         {
@@ -179,7 +176,6 @@ public class ProxyTests
             Assert.True(manager.RelinkMedia(asset.Id, AssetPath));
             Assert.Equal(ProxyStatus.None, asset.ProxyStatus);
             Assert.Null(asset.ProxyUrl);
-            Assert.True(ProjectManager.NeedsProxyBackfill(asset));
         }
         finally
         {

@@ -41,232 +41,180 @@ public partial class EffectItemViewModel : ViewModelBase
 }
 
 /// <summary>
-/// Base for schema-driven parameter editors. Each subclass exposes a typed property whose
-/// change writes through to the timeline editor; the "write" delegate decides whether to set
-/// a constant or a keyframe (keyframed params write keyframes at the playhead).
+/// What a parameter editor edits: one value that may be keyframed, wherever it lives (an effect's parameter, a clip
+/// property, a transition's setting). <see cref="KeyedParamTarget"/> is the one implementation for keyframable values.
+/// </summary>
+public interface IParamTarget
+{
+    /// <summary>The value as it is at the playhead.</summary>
+    ParamValue Read();
+
+    void Write(ParamValue value);
+
+    bool CanKey { get; }
+
+    /// <summary>A keyframe sits at the playhead.</summary>
+    bool IsOnKeyframe { get; }
+
+    int KeyframeCount { get; }
+
+    /// <summary>Adds a keyframe at the playhead holding the value there, or removes the one there.</summary>
+    void ToggleKeyframe();
+
+    /// <summary>Moves the playhead to the previous or next keyframe.</summary>
+    void StepKeyframe(bool forward);
+}
+
+/// <summary>A value with no keyframes (a transition's settings).</summary>
+public sealed class PlainParamTarget(Func<ParamValue> read, Action<ParamValue> write) : IParamTarget
+{
+    public ParamValue Read() => read();
+    public void Write(ParamValue value) => write(value);
+    public bool CanKey => false;
+    public bool IsOnKeyframe => false;
+    public int KeyframeCount => 0;
+    public void ToggleKeyframe() { }
+    public void StepKeyframe(bool forward) { }
+}
+
+/// <summary>
+/// One editor per parameter, made from its schema (<see cref="ParamDef"/>) for what it edits
+/// (<see cref="IParamTarget"/>). The same editors, and the same row in the inspector, serve effect parameters and
+/// clip properties, keyframe controls included.
 /// </summary>
 public abstract partial class ParamEditorViewModel : ViewModelBase
 {
-    private readonly Action<ParamValue> _write;
-    private readonly Action<string> _addKeyframe;
-    private readonly Action<string> _clearKeyframes;
-    private readonly Action<string, bool> _stepKeyframe;
-    protected bool _suppress;
+    private bool _showing;
 
-    public string Key { get; }
-    public string Label { get; }
-
-    /// <summary>Effect editors expose keyframe controls; transition editors hide them.</summary>
-    public bool ShowKeyframes { get; set; } = true;
-
-    [ObservableProperty]
-    private int _keyframeCount;
-
-    protected ParamEditorViewModel(string key, string label, Action<ParamValue> write,
-        Action<string> addKeyframe, Action<string> clearKeyframes, Action<string, bool> stepKeyframe)
+    protected ParamEditorViewModel(ParamDef def, IParamTarget target, string? icon)
     {
-        Key = key;
-        Label = label;
-        _write = write;
-        _addKeyframe = addKeyframe;
-        _clearKeyframes = clearKeyframes;
-        _stepKeyframe = stepKeyframe;
+        Def = def;
+        Target = target;
+        Icon = icon;
     }
 
-    [RelayCommand]
-    private void AddKeyframe() => _addKeyframe(Key);
+    public ParamDef Def { get; }
+    public IParamTarget Target { get; }
+    public string Key => Def.Key;
+    public string Label => Def.Label;
+
+    /// <summary>Shown as an icon toggle (bold, italic) instead of a labelled checkbox.</summary>
+    public string? Icon { get; }
+    public bool HasIcon => Icon is not null;
+
+    public bool ShowKeyframes => Target.CanKey;
+
+    [ObservableProperty] private bool _isOnKeyframe;
+
+    [ObservableProperty] [NotifyPropertyChangedFor(nameof(HasKeyframes))] private int _keyframeCount;
+
+    /// <summary>Hidden while it doesn't apply (a text box's colour when there is no box).</summary>
+    [ObservableProperty] private bool _isShown = true;
+
+    public bool HasKeyframes => KeyframeCount > 0;
+
+    /// <summary>When it is shown, if that depends on other values. Set by whoever built the editor.</summary>
+    public Func<bool>? ShownWhen { get; set; }
 
     [RelayCommand]
-    private void ClearKeyframes() => _clearKeyframes(Key);
+    private void ToggleKeyframe()
+    {
+        Target.ToggleKeyframe();
+        RefreshValue();
+    }
 
     [RelayCommand]
     private void StepKeyframes(object? forward)
-        => _stepKeyframe(Key, string.Equals(forward?.ToString(), "True", StringComparison.OrdinalIgnoreCase));
+        => Target.StepKeyframe(string.Equals(forward?.ToString(), "True", StringComparison.OrdinalIgnoreCase));
 
-    /// <summary>Re-reads the value (and keyframe count) from the clip — called on playhead moves.</summary>
-    public virtual void RefreshValue()
+    /// <summary>Re-reads the value at the playhead (and the keyframe state).</summary>
+    public void RefreshValue()
     {
+        _showing = true;
+        try
+        {
+            Show(Target.Read());
+        }
+        finally
+        {
+            _showing = false;
+        }
+        IsOnKeyframe = Target.IsOnKeyframe;
+        KeyframeCount = Target.KeyframeCount;
+        IsShown = ShownWhen?.Invoke() ?? true;
     }
 
-    protected void Write(ParamValue value) => _write(value);
+    /// <summary>Puts a value into the editor's own control property.</summary>
+    protected abstract void Show(ParamValue value);
 
-    public void SetSuppress(bool on) => _suppress = on;
+    /// <summary>The control changed the value: write it (unless the editor itself is showing a value).</summary>
+    protected void Write(ParamValue value)
+    {
+        if (_showing)
+            return;
+        Target.Write(value);
+        // what was written may have been held to a limit (a fade to the clip): show what it is now
+        RefreshValue();
+    }
+
+    /// <summary>The editor for a parameter of any kind.</summary>
+    public static ParamEditorViewModel For(ParamDef def, IParamTarget target, string? icon = null) => def.Kind switch
+    {
+        ParamKind.Bool => new BoolParamEditorViewModel(def, target, icon),
+        ParamKind.Color => new ColorParamEditorViewModel(def, target, icon),
+        ParamKind.List => new ChoiceParamEditorViewModel(def, target, icon),
+        _ => new DoubleParamEditorViewModel(def, target, icon),
+    };
 }
 
-public sealed partial class DoubleParamEditorViewModel : ParamEditorViewModel
+public sealed partial class DoubleParamEditorViewModel(ParamDef def, IParamTarget target, string? icon) : ParamEditorViewModel(def, target, icon)
 {
-    public double Min { get; }
-    public double Max { get; }
-    public bool IsInteger { get; }
+    public double Min => Def.Min;
+    public double Max => Def.Max;
+    public bool IsInteger => Def.Kind == ParamKind.Int;
 
-    [ObservableProperty]
-    private double _value;
+    [ObservableProperty] [NotifyPropertyChangedFor(nameof(ValueText))] private double _value;
 
-    public DoubleParamEditorViewModel(string key, string label, double min, double max, bool isInteger,
-        Action<ParamValue> write, Action<string> addKeyframe, Action<string> clearKeyframes, Action<string, bool> stepKeyframe)
-        : base(key, label, write, addKeyframe, clearKeyframes, stepKeyframe)
-    {
-        Min = min;
-        Max = max;
-        IsInteger = isInteger;
-    }
+    /// <summary>The value as it reads beside the slider (50%, 0.5 s, 90°...).</summary>
+    public string ValueText => string.Format(System.Globalization.CultureInfo.CurrentCulture, Def.Format, Value);
 
-    public override void RefreshValue()
-    {
-        var (value, count) = Evaluated();
-        SetSuppress(true);
-        Value = value;
-        SetSuppress(false);
-        KeyframeCount = count;
-    }
-
-    private (double Value, int Count) Evaluated()
-    {
-        // set by PropertiesViewModel via reflection-free delegate registration
-        if (Evaluate is not null)
-            return Evaluate();
-        return (Value, KeyframeCount);
-    }
-
-    /// <summary>Provided by the host: returns (evaluated value at playhead, keyframe count).</summary>
-    public Func<(double Value, int Count)>? Evaluate { get; set; }
+    protected override void Show(ParamValue value) => Value = value.AsNumber;
 
     partial void OnValueChanged(double value)
-    {
-        if (_suppress)
-            return;
-        Write(IsInteger ? ParamValue.OfInt((int)Math.Round(value)) : ParamValue.OfDouble(value));
-    }
+        => Write(IsInteger ? ParamValue.OfInt((int)Math.Round(value)) : ParamValue.OfDouble(value));
 }
 
-public sealed partial class BoolParamEditorViewModel : ParamEditorViewModel
+public sealed partial class BoolParamEditorViewModel(ParamDef def, IParamTarget target, string? icon) : ParamEditorViewModel(def, target, icon)
 {
-    [ObservableProperty]
-    private bool _value;
+    [ObservableProperty] private bool _value;
 
-    public BoolParamEditorViewModel(string key, string label,
-        Action<ParamValue> write, Action<string> addKeyframe, Action<string> clearKeyframes, Action<string, bool> stepKeyframe)
-        : base(key, label, write, addKeyframe, clearKeyframes, stepKeyframe)
-    {
-    }
+    protected override void Show(ParamValue value) => Value = value.AsBool;
 
-    public Func<(bool Value, int Count)>? Evaluate { get; set; }
-
-    public override void RefreshValue()
-    {
-        if (Evaluate is not null)
-        {
-            var (value, count) = Evaluate();
-            SetSuppress(true);
-            Value = value;
-            SetSuppress(false);
-            KeyframeCount = count;
-        }
-    }
-
-    partial void OnValueChanged(bool value)
-    {
-        if (_suppress)
-            return;
-        Write(ParamValue.OfBool(value));
-    }
+    partial void OnValueChanged(bool value) => Write(ParamValue.OfBool(value));
 }
 
-public sealed partial class ColorParamEditorViewModel : ParamEditorViewModel
+public sealed partial class ColorParamEditorViewModel(ParamDef def, IParamTarget target, string? icon) : ParamEditorViewModel(def, target, icon)
 {
-    [ObservableProperty]
-    private string _hex;
+    /// <summary>"#AARRGGBB", for the colour picker (through the hex converter).</summary>
+    [ObservableProperty] private string _hex = "#FFFFFFFF";
 
-    [ObservableProperty]
-    private IBrush _swatchBrush = Brushes.Transparent;
-
-    public ColorParamEditorViewModel(string key, string label,
-        Action<ParamValue> write, Action<string> addKeyframe, Action<string> clearKeyframes, Action<string, bool> stepKeyframe)
-        : base(key, label, write, addKeyframe, clearKeyframes, stepKeyframe)
-    {
-        _hex = "";
-    }
-
-    public Func<(uint Value, int Count)>? Evaluate { get; set; }
-
-    public override void RefreshValue()
-    {
-        if (Evaluate is not null)
-        {
-            var (value, count) = Evaluate();
-            SetSuppress(true);
-            Hex = value.ToString("X8");
-            UpdateSwatch(Hex);
-            SetSuppress(false);
-            KeyframeCount = count;
-        }
-    }
+    protected override void Show(ParamValue value) => Hex = $"#{value.AsColor:X8}";
 
     partial void OnHexChanged(string value)
     {
-        UpdateSwatch(value);
-        if (_suppress)
-            return;
         var cleaned = value.TrimStart('#');
         if (cleaned.Length is 6 or 8 && uint.TryParse(cleaned, System.Globalization.NumberStyles.HexNumber, null, out var argb))
-        {
-            if (cleaned.Length == 6)
-                argb |= 0xFF000000u;
-            Write(ParamValue.OfColor(argb));
-        }
-    }
-
-    private void UpdateSwatch(string value)
-    {
-        var cleaned = value.TrimStart('#');
-        if (cleaned.Length is 6 or 8 && uint.TryParse(cleaned, System.Globalization.NumberStyles.HexNumber, null, out var argb))
-        {
-            if (cleaned.Length == 6)
-                argb |= 0xFF000000u;
-            var a = (byte)((argb >> 24) & 0xFF);
-            var r = (byte)((argb >> 16) & 0xFF);
-            var g = (byte)((argb >> 8) & 0xFF);
-            var b = (byte)(argb & 0xFF);
-            SwatchBrush = new SolidColorBrush(Color.FromArgb(a, r, g, b));
-            return;
-        }
-
-        SwatchBrush = Brushes.Transparent;
+            Write(ParamValue.OfColor(cleaned.Length == 6 ? argb | 0xFF000000u : argb));
     }
 }
 
-public sealed partial class ChoiceParamEditorViewModel : ParamEditorViewModel
+public sealed partial class ChoiceParamEditorViewModel(ParamDef def, IParamTarget target, string? icon) : ParamEditorViewModel(def, target, icon)
 {
-    public IReadOnlyList<string> Choices { get; }
+    public IReadOnlyList<string> Choices => Def.Choices;
 
-    [ObservableProperty]
-    private int _index;
+    [ObservableProperty] private int _index;
 
-    public ChoiceParamEditorViewModel(string key, string label, IReadOnlyList<string> choices,
-        Action<ParamValue> write, Action<string> addKeyframe, Action<string> clearKeyframes, Action<string, bool> stepKeyframe)
-        : base(key, label, write, addKeyframe, clearKeyframes, stepKeyframe)
-    {
-        Choices = choices;
-    }
+    protected override void Show(ParamValue value) => Index = value.AsChoice;
 
-    public Func<(int Index, int Count)>? Evaluate { get; set; }
-
-    public override void RefreshValue()
-    {
-        if (Evaluate is not null)
-        {
-            var (value, count) = Evaluate();
-            SetSuppress(true);
-            Index = value;
-            SetSuppress(false);
-            KeyframeCount = count;
-        }
-    }
-
-    partial void OnIndexChanged(int value)
-    {
-        if (_suppress)
-            return;
-        Write(ParamValue.OfChoice(value));
-    }
+    partial void OnIndexChanged(int value) => Write(ParamValue.OfChoice(value));
 }

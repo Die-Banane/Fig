@@ -62,17 +62,7 @@ namespace Fig.Core.Media
                         .Select(a => new PortDef(a.Id, a.Label, a.Type, a.Required)).ToList(),
                     Outputs = type.GetCustomAttributes<PrimitiveOutputAttribute>()
                         .Select(a => new PortDef(a.Id, a.Label, a.Type)).ToList(),
-                    ParamSchema = type.GetCustomAttributes<PrimitiveParamAttribute>()
-                        .Select(p => new ParamDef
-                        {
-                            Key = p.Key,
-                            Label = p.Label,
-                            Kind = p.Kind,
-                            Default = p.Default,
-                            Min = p.Min,
-                            Max = p.Max,
-                            Choices = p.Choices,
-                        }).ToList(),
+                    ParamSchema = ParamSchema.Read<PrimitiveParamAttribute>(type),
                 };
                 map[attr.Id] = new Entry(descriptor, (IGraphPrimitive)Activator.CreateInstance(type)!);
             }

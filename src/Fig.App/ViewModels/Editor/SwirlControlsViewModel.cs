@@ -10,7 +10,7 @@ namespace Fig.App.ViewModels;
 /// The selected Swirl transition's center, radius and rotation, shared by the inspector and the
 /// handles drawn on the preview (dragging either updates the same transition parameters).
 /// </summary>
-public sealed partial class SwirlControlsViewModel : ViewModelBase
+public sealed partial class SwirlControlsViewModel : ViewModelBase, Fig.App.Controls.IPreviewOverlayModel
 {
     private readonly PropertiesViewModel _host;
     private readonly EditorViewModel _editor;

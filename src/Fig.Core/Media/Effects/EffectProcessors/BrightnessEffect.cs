@@ -7,14 +7,11 @@ namespace Fig.Core.Media
     /// <summary>Lifts or crushes midtones by adding a fixed delta to every channel.</summary>
     [Effect(EffectCatalog.Brightness, "Brightness", Category = "Color", Icon = "sun", Description = "Lift or crush midtones.")]
     [EffectParam("amount", "Amount", Default = 0.15, Min = -1, Max = 1)]
-    internal sealed class BrightnessEffect : IEffectProcessor
+    internal sealed class BrightnessEffect : EffectProcessor
     {
-        public string TypeId => EffectCatalog.Brightness;
-
-        public DecodedFrame Apply(DecodedFrame frame, IReadOnlyDictionary<string, ParamValue> parameters, double localT)
+        protected override DecodedFrame Render(DecodedFrame frame, ParamSet p, double localT)
         {
-            var amount = parameters.TryGetValue("amount", out var a) ? a.AsDouble : 0;
-            amount = Math.Clamp(amount, -1, 1);
+            var amount = p.Number("amount");
             if (Math.Abs(amount) < 1e-6)
                 return frame;
 

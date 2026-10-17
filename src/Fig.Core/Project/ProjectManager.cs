@@ -40,6 +40,9 @@ namespace Fig.Core.Project
             Project = project;
             _media = media;
             CacheDirectory = cacheDirectory;
+            // nothing is encoding when a project opens: a proxy saved mid-encode was interrupted, not in progress
+            foreach (var asset in project.Media.Where(m => m.ProxyStatus == ProxyStatus.Pending))
+                asset.ProxyStatus = ProxyStatus.None;
         }
 
         public ProbeResult ImportMedia(string path)
@@ -255,13 +258,6 @@ namespace Fig.Core.Project
             return true;
         }
 
-        public void RefreshOfflineStatus()
-        {
-            foreach (var asset in Project.Media)
-                asset.Offline = !File.Exists(asset.Url);
-            ProjectChanged?.Invoke();
-        }
-
         public bool RelinkMedia(string assetId, string newPath)
         {
             var asset = Project.Media.FirstOrDefault(m => m.Id == assetId);
@@ -275,11 +271,6 @@ namespace Fig.Core.Project
             asset.ProxyStatus = ProxyStatus.None;
             ProjectChanged?.Invoke();
             return true;
-        }
-
-        public MediaAsset? FindById(string assetId)
-        {
-            return Project.Media.FirstOrDefault(m => m.Id == assetId);
         }
 
         /// <summary>
@@ -461,24 +452,5 @@ namespace Fig.Core.Project
             return false;
         }
 
-        /// <summary>
-        /// True when a large video still needs a proxy (missing, pending, failed, or stale Ready).
-        /// </summary>
-        public static bool NeedsProxyBackfill(MediaAsset asset)
-        {
-            if (asset.Offline || asset.Kind != MediaKind.Video || string.IsNullOrEmpty(asset.Url))
-                return false;
-            if (!MediaService.ShouldGenerateProxy(asset.Width, asset.Height))
-                return false;
-            if (asset.ProxyStatus == ProxyStatus.Pending || asset.ProxyStatus == ProxyStatus.Failed)
-                return true;
-            if (asset.ProxyStatus == ProxyStatus.Ready
-                && (string.IsNullOrEmpty(asset.ProxyUrl) || !IsCurrentProxy(asset.ProxyUrl)
-                    || !Mp4Container.IsCompleteMp4(asset.ProxyUrl)))
-                return true;
-            if (asset.ProxyStatus == ProxyStatus.None)
-                return true;
-            return false;
-        }
     }
 }

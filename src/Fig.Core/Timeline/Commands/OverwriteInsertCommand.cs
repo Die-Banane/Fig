@@ -18,7 +18,6 @@ namespace Fig.Core.Timeline
         {
             public required Clip Original;
             public int Index;
-            public double StartSec, DurSec, SrcInSec, SrcOutSec;
             public required List<Clip> KeptPortions;
         }
 
@@ -57,37 +56,16 @@ namespace Fig.Core.Timeline
                 {
                     Original = clip,
                     Index = _track.Clips.IndexOf(clip),
-                    StartSec = clip.StartSec,
-                    DurSec = clip.DurSec,
-                    SrcInSec = clip.SourceIn,
-                    SrcOutSec = clip.SourceOut,
                     KeptPortions = new List<Clip>(),
                 };
 
-                var clipEnd = clip.StartSec + clip.DurSec;
-                var overlapStart = Math.Max(clip.StartSec, _snappedPos);
-                var overlapEnd = Math.Min(clipEnd, insertEnd);
-
-                var leftDur = overlapStart - clip.StartSec;
-                if (leftDur > 0.0001)
-                {
-                    var srcOut = ClipTime.SourceAt(clip, leftDur);
-                    var left = ClipFactory.CloneWithRange(clip, clip.StartSec, leftDur, clip.SourceIn, srcOut);
-                    ClipTime.KeepBefore(left, leftDur);
-                    ClipFade.ApplySplitLeft(left);
-                    affected.KeptPortions.Add(left);
-                }
-
-                var rightStart = overlapEnd;
-                var rightDur = clipEnd - overlapEnd;
-                if (rightDur > 0.0001)
-                {
-                    var srcIn = ClipTime.SourceAt(clip, rightStart - clip.StartSec);
-                    var right = ClipFactory.CloneWithRange(clip, rightStart, rightDur, srcIn, clip.SourceOut);
-                    ClipTime.KeepAfter(right, rightStart - clip.StartSec);
-                    ClipFade.ApplySplitRight(right);
-                    affected.KeptPortions.Add(right);
-                }
+                // the parts outside the inserted span stay, as new clips
+                var keepBefore = _snappedPos - clip.StartSec;
+                if (keepBefore > 0.0001)
+                    affected.KeptPortions.Add(ClipFactory.Before(clip, keepBefore));
+                var keepFrom = insertEnd - clip.StartSec;
+                if (clip.DurSec - keepFrom > 0.0001)
+                    affected.KeptPortions.Add(ClipFactory.After(clip, keepFrom));
 
                 _track.Clips.Remove(clip);
                 _affected.Add(affected);
@@ -107,15 +85,9 @@ namespace Fig.Core.Timeline
 
             _track.Clips.Remove(_clip);
 
-            foreach (var affected in _affected)
-            {
-                foreach (var portion in affected.KeptPortions)
-                    _track.Clips.Remove(portion);
-
-                affected.Original.StartSec = affected.StartSec;
-                affected.Original.DurSec = affected.DurSec;
-                ClipFactory.SetSourceRange(affected.Original, affected.SrcInSec, affected.SrcOutSec);
-            }
+            // the overwritten clips were only taken off the track, never changed
+            foreach (var portion in _affected.SelectMany(a => a.KeptPortions))
+                _track.Clips.Remove(portion);
 
             foreach (var affected in _affected.OrderBy(a => a.Index))
                 _track.Clips.Insert(Math.Min(affected.Index, _track.Clips.Count), affected.Original);
@@ -126,41 +98,12 @@ namespace Fig.Core.Timeline
             if (_track is null)
                 return;
 
-            foreach (var affected in _affected)
-                _track.Clips.Remove(affected.Original);
-
-            var insertEnd = _snappedPos + _clip.DurSec;
-
+            // the same kept portions as the first time, so a second undo removes them again
             foreach (var affected in _affected)
             {
+                _track.Clips.Remove(affected.Original);
                 foreach (var portion in affected.KeptPortions)
-                    _track.Clips.Remove(portion);
-
-                var clip = affected.Original;
-                var clipEnd = clip.StartSec + clip.DurSec;
-                var overlapStart = Math.Max(clip.StartSec, _snappedPos);
-                var overlapEnd = Math.Min(clipEnd, insertEnd);
-
-                var leftDur = overlapStart - clip.StartSec;
-                if (leftDur > 0.0001)
-                {
-                    var srcOut = ClipTime.SourceAt(clip, leftDur);
-                    var left = ClipFactory.CloneWithRange(clip, clip.StartSec, leftDur, clip.SourceIn, srcOut);
-                    ClipTime.KeepBefore(left, leftDur);
-                    ClipFade.ApplySplitLeft(left);
-                    _editor.InsertClip(_track, left);
-                }
-
-                var rightStart = overlapEnd;
-                var rightDur = clipEnd - overlapEnd;
-                if (rightDur > 0.0001)
-                {
-                    var srcIn = ClipTime.SourceAt(clip, rightStart - clip.StartSec);
-                    var right = ClipFactory.CloneWithRange(clip, rightStart, rightDur, srcIn, clip.SourceOut);
-                    ClipTime.KeepAfter(right, rightStart - clip.StartSec);
-                    ClipFade.ApplySplitRight(right);
-                    _editor.InsertClip(_track, right);
-                }
+                    _editor.InsertClip(_track, portion);
             }
 
             _editor.InsertClip(_track, _clip);

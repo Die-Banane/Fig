@@ -27,6 +27,21 @@ namespace Fig.App.Views
             return item;
         }
 
+        private ContextMenu? _openMenu;
+
+        /// <summary>Opens a timeline menu, closing the one already open: only one menu is ever showing.</summary>
+        private void ShowMenu(ContextMenu menu)
+        {
+            _openMenu?.Close();
+            _openMenu = menu;
+            menu.Closed += (_, _) =>
+            {
+                if (ReferenceEquals(_openMenu, menu))
+                    _openMenu = null;
+            };
+            menu.Open(this);
+        }
+
         /// <summary>Opens the right menu for whatever is at <paramref name="pos"/>.</summary>
         private void OpenContextMenu(Point pos)
         {
@@ -70,7 +85,7 @@ namespace Fig.App.Views
 
             InvalidateVisual();
             if (menu.Items.Count > 0)
-                menu.Open(this);
+                ShowMenu(menu);
         }
 
         // ---- clips -----------------------------------------------------------------------

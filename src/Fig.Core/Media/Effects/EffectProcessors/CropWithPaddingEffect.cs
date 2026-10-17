@@ -20,19 +20,17 @@ namespace Fig.Core.Media
     [EffectParam("top", "Crop top", Default = 0, Min = 0, Max = 0.5)]
     [EffectParam("bottom", "Crop bottom", Default = 0, Min = 0, Max = 0.5)]
     [EffectParam("color", "Padding color", Kind = ParamKind.Color, Default = 0xFF000000)]
-    internal sealed class CropWithPaddingEffect : IEffectProcessor
+    internal sealed class CropWithPaddingEffect : EffectProcessor
     {
-        public string TypeId => EffectCatalog.CropWithPadding;
-
-        public DecodedFrame Apply(DecodedFrame frame, IReadOnlyDictionary<string, ParamValue> parameters, double localT)
+        protected override DecodedFrame Render(DecodedFrame frame, ParamSet p, double localT)
         {
             var w = frame.Width;
             var h = frame.Height;
-            var left = parameters.TryGetValue("left", out var l) ? Math.Clamp(l.AsDouble, 0, 0.5) : 0;
-            var right = parameters.TryGetValue("right", out var r) ? Math.Clamp(r.AsDouble, 0, 0.5) : 0;
-            var top = parameters.TryGetValue("top", out var t) ? Math.Clamp(t.AsDouble, 0, 0.5) : 0;
-            var bottom = parameters.TryGetValue("bottom", out var b) ? Math.Clamp(b.AsDouble, 0, 0.5) : 0;
-            var color = parameters.TryGetValue("color", out var c) ? c.AsColor : 0xFF000000u;
+            var left = p.Number("left");
+            var right = p.Number("right");
+            var top = p.Number("top");
+            var bottom = p.Number("bottom");
+            var color = p.Color("color");
 
             // Crop rect in visual coordinates (row 0 = bottom of the image):
             // x0/x1 are the horizontal crop edges, y0/y1 the visual bottom/top edges.

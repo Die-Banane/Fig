@@ -65,16 +65,6 @@ namespace Fig.Core.Timeline
             return x / pxPerSec;
         }
 
-        public static double ClipX(Clip clip, double pxPerSec = DefaultPixelsPerSecond)
-        {
-            return TimeToX(clip.StartSec, pxPerSec);
-        }
-
-        public static double ClipWidth(Clip clip, double pxPerSec = DefaultPixelsPerSecond)
-        {
-            return clip.DurSec * pxPerSec;
-        }
-
         public static double TrackTop(int trackIndex, double trackHeight = TrackHeight)
         {
             return trackIndex * trackHeight;

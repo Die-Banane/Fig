@@ -14,7 +14,7 @@ public sealed record GizmoItem(string ClipId, LayerTransform Layout, LayerSize S
 /// The gizmo over the preview for drawn layers (text, images): picks a layer by clicking it, and moves, scales
 /// and turns every selected layer together. Each drag is one undo step.
 /// </summary>
-public sealed partial class LayerGizmoViewModel : ViewModelBase
+public sealed partial class LayerGizmoViewModel : ViewModelBase, Fig.App.Controls.IPreviewOverlayModel
 {
     /// <summary>Layers are measured at this frame height; sizes come back as shares of it, so any height would do.</summary>
     private const int MeasureHeight = 1080;

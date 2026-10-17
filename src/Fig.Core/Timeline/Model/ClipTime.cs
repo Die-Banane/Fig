@@ -147,19 +147,6 @@ namespace Fig.Core.Timeline
                 clip.SetSourceRange(clip.SourceIn, SourceAt(clip, clip.DurSec));
         }
 
-        /// <summary>
-        /// Divides the keyframes of a clip cut <paramref name="offset"/> seconds in: the left half keeps those before
-        /// the cut, the right half those after, moved to its own start. Each gets a key at the cut with the value
-        /// there. The right half's in point comes from <see cref="SourceAt"/> on the whole, so it starts on the right
-        /// frame; inside an eased segment the cut one is close to, not exactly, the original shape.
-        /// <paramref name="left"/> and <paramref name="right"/> start as copies of the whole.
-        /// </summary>
-        public static void SplitKeyframes(Clip left, Clip right, double offset)
-        {
-            KeepBefore(left, offset);
-            KeepAfter(right, offset);
-        }
-
         /// <summary>The left half of a cut: keyframes before <paramref name="offset"/>, and one at it with the value there.</summary>
         public static void KeepBefore(Clip clip, double offset)
         {

@@ -72,12 +72,5 @@ namespace Fig.Core.Project
             }
         }
 
-        public void SnapshotBackup(Project project)
-        {
-            var backup = $"{Path}.bak.{DateTime.Now:yyyyMMddHHmmssfff}";
-            var json = JsonSerializer.Serialize(project, Options);
-            File.WriteAllText(backup, json);
-            PruneBackups();
-        }
     }
 }

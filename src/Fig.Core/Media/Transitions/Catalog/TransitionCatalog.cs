@@ -73,18 +73,7 @@ namespace Fig.Core.Media
                     Description = descriptor.Description,
                     DefaultDurationSec = descriptor.DefaultDurationSec,
                     PreviewProgress = descriptor.PreviewProgress,
-                    ParamSchema = type.GetCustomAttributes<TransitionParamAttribute>()
-                        .Select(p => new ParamDef
-                        {
-                            Key = p.Key,
-                            Label = p.Label,
-                            Kind = p.Kind,
-                            Default = p.Default,
-                            Min = p.Min,
-                            Max = p.Max,
-                            Choices = p.Choices,
-                        })
-                        .ToList(),
+                    ParamSchema = ParamSchema.Read<TransitionParamAttribute>(type),
                 };
                 list.Add(new TransitionEntry(type, entry));
             }

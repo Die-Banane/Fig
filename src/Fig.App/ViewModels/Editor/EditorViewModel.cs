@@ -576,6 +576,39 @@ public partial class EditorViewModel : ViewModelBase
     /// Deletes whatever is selected (the Delete key). Each kind of thing knows how to be deleted; this only
     /// reports what happened. Returns false when there was nothing to delete.
     /// </summary>
+    /// <summary>
+    /// Picks a keyframe, of any kind, wherever its diamond was clicked (the timeline, the inspector's ruler): it and
+    /// the clip or effect it sits on become the selection, the inspector follows, and (unless <paramref name="seek"/>
+    /// is off) the playhead jumps to it.
+    /// </summary>
+    public void PickKeyframe(KeyframeRef keyframe, bool seek = true)
+    {
+        var host = keyframe.Host;
+        if (host.EffectId is { } effectId)
+        {
+            Properties.SelectEffect(host.OwnerId, effectId);
+            Editor.Selection.SelectKeyframe(new SelectionKey(SelectionGroup.Effect, effectId, host.OwnerId), keyframe);
+            Properties.SelectKeyframe(keyframe.TimeSec);
+        }
+        else
+            Editor.Selection.SelectKeyframe(new SelectionKey(SelectionGroup.Clip, host.OwnerId), keyframe);
+        if (seek && Editor.FindKeyframeHost(host) is { } found)
+            SeekFromUser(Editor.SnapTime(found.OriginSec + keyframe.TimeSec));
+        Properties.RefreshAutomation();
+    }
+
+    /// <summary>Deletes a keyframe, of any kind, and drops it from the selection.</summary>
+    public void DeleteKeyframe(KeyframeRef keyframe)
+    {
+        Editor.RemoveKeyframes(keyframe);
+        if (Editor.Selection.Keyframe is { } picked && picked.Host == keyframe.Host && Math.Abs(picked.TimeSec - keyframe.TimeSec) < 1e-4)
+            Editor.Selection.ClearKeyframe();
+        if (keyframe.Host.EffectId is not null)
+            Properties.SelectedKeyframeSec = null;
+        Properties.RefreshAutomation();
+        Preview.RefreshFrame();
+    }
+
     public bool DeleteSelection()
     {
         if (Editor.DeleteSelection() is not { } removed)
