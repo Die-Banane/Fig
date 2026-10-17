@@ -138,7 +138,7 @@ layer compositor are fragment shaders (SkSL, through Skia). Export uses the same
 git tag v2.0.0 && git push origin v2.0.0
 ```
 
-It runs the tests, then publishes Fig as one file per platform and attaches them to a GitHub release with generated notes and a `SHA256SUMS`:
+It publishes Fig as one file per platform and attaches them to a GitHub release with generated notes and a `SHA256SUMS`:
 
 | File | What it is |
 |---|---|

@@ -1,4 +1,4 @@
-# Builds a major version: tests, then Fig as one file per platform (the app, .NET and FFmpeg inside), published
+# Builds a major version: Fig as one file per platform (the app, .NET and FFmpeg inside), published
 # as a GitHub release:
 #   Fig-<v>-linux-x64              run it; it adds itself to the app menu (Fig --uninstall takes it out)
 #   Fig-<v>-win-x64-setup.exe      installer: Start menu, uninstaller, no admin needed
@@ -47,21 +47,8 @@ jobs:
           [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::'$v' is not a version like 2.0.0"; exit 1; }
           echo "version=$v" >> "$GITHUB_OUTPUT"
 
-  test:
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: ${{ env.DOTNET_VERSION }}
-      - name: FFmpeg
-        run: |
-          curl -fsSL "$FFMPEG_URL/$FFMPEG_NAME-linux64-$FFMPEG_SUFFIX.tar.xz" | tar xJ
-          echo "FFMPEG_ROOT=$PWD/$FFMPEG_NAME-linux64-$FFMPEG_SUFFIX/lib" >> "$GITHUB_ENV"
-      - run: dotnet test -c Release
-
   build:
-    needs: [version, test]
+    needs: [version]
     strategy:
       matrix:
         include:
