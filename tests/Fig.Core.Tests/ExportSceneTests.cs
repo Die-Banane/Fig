@@ -11,7 +11,7 @@ namespace Fig.Core.Tests;
 /// </summary>
 public class ExportSceneTests
 {
-    private const string AssetPath = "/home/neckles/projects/fig/tests/assets/3 seconds timer [fxqE27gIZcc].webm";
+    private static readonly string AssetPath = TestAssets.Timer;
 
     private sealed class RecordingRenderer : ISceneRenderer
     {

@@ -6,7 +6,7 @@ namespace Fig.Core.Tests;
 
 public class ProxyTests
 {
-    private const string AssetPath = "/home/neckles/projects/fig/tests/assets/3 seconds timer [fxqE27gIZcc].webm";
+    private static readonly string AssetPath = TestAssets.Timer;
 
     [Fact]
     public void ShouldGenerateProxy_Thresholds()

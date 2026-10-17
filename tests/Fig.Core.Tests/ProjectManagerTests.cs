@@ -8,7 +8,7 @@ namespace Fig.Core.Tests;
 
 public class ProjectManagerTests
 {
-    private const string AssetPath = "/home/neckles/projects/fig/tests/assets/3 seconds timer [fxqE27gIZcc].webm";
+    private static readonly string AssetPath = TestAssets.Timer;
 
     private static (ProjectManager Manager, ProjectModel Project, MediaService Media) Create()
     {
@@ -233,7 +233,7 @@ public class ProjectManagerTests
 
 public class SaveServiceTests
 {
-    private const string AssetPath = "/home/neckles/projects/fig/tests/assets/3 seconds timer [fxqE27gIZcc].webm";
+    private static readonly string AssetPath = TestAssets.Timer;
 
     [Fact]
     public void SaveLoad_RoundTripsProjectWithMedia()
@@ -298,7 +298,7 @@ public class SaveServiceTests
 
 public class ProjectThumbnailTests
 {
-    private const string AssetPath = "/home/neckles/projects/fig/tests/assets/3 seconds timer [fxqE27gIZcc].webm";
+    private static readonly string AssetPath = TestAssets.Timer;
 
     private static (ProjectManager Manager, ProjectModel Project) CreateWithTimeline()
     {

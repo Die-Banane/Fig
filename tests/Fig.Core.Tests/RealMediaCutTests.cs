@@ -6,7 +6,7 @@ namespace Fig.Core.Tests;
 
 public class RealMediaCutTests
 {
-    private const string AssetPath = "/home/neckles/projects/fig/tests/assets/3 seconds timer [fxqE27gIZcc].webm";
+    private static readonly string AssetPath = TestAssets.Timer;
 
     [Fact]
     public void Probe_ReadsRealMetadata_IntoMediaAsset()
@@ -73,7 +73,7 @@ public class RealMediaCutTests
     public void CutAtEachSecond_RendersSegmentsFromClipData()
     {
         var asset = new MediaService().Probe(AssetPath);
-        var outDir = "/home/neckles/projects/fig/tests/segments";
+        var outDir = Path.Combine(TestAssets.TestsDir, "segments");
         Directory.CreateDirectory(outDir);
 
         var track = new Track { Kind = TrackKind.Video, Index = 0 };
@@ -139,7 +139,7 @@ public class RealMediaCutTests
 
 public class DecodeFrameTests
 {
-    private const string AssetPath = "/home/neckles/projects/fig/tests/assets/3 seconds timer [fxqE27gIZcc].webm";
+    private static readonly string AssetPath = TestAssets.Timer;
 
     [Fact]
     public void DecodeFrameAt_ReturnsBgraPixels_WithContent()
@@ -174,7 +174,7 @@ public class DecodeFrameTests
 
 public class DecodeSamplesTests
 {
-    private const string AssetPath = "/home/neckles/projects/fig/tests/assets/3 seconds timer [fxqE27gIZcc].webm";
+    private static readonly string AssetPath = TestAssets.Timer;
 
     [Fact]
     public void DecodeSamples_ReturnsStereoFloat_WithContent()
@@ -235,7 +235,7 @@ public class DecodeSamplesTests
 
 public class VideoFrameSourceTests
 {
-    private const string AssetPath = "/home/neckles/projects/fig/tests/assets/3 seconds timer [fxqE27gIZcc].webm";
+    private static readonly string AssetPath = TestAssets.Timer;
 
     [Fact]
     public void DecodeForward_ReturnsAdvancingFrames_WithoutReseeking()

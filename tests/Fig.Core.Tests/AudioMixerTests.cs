@@ -7,7 +7,7 @@ namespace Fig.Core.Tests;
 
 public class AudioMixerTests
 {
-    private const string AssetPath = "/home/neckles/projects/fig/tests/assets/3 seconds timer [fxqE27gIZcc].webm";
+    private static readonly string AssetPath = TestAssets.Timer;
 
     private static TimelineModel TimelineWithAudioClip(double start, double dur, bool muted = false, double volume = 1.0)
     {
