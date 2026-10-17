@@ -16,11 +16,12 @@ namespace Fig.Core.Project
         /// <summary>
         /// What shape the saved timeline has, so a project from an earlier version is upgraded when it opens.
         /// 0: a video's sound is a linked audio clip. 1: it is part of the video clip (<see cref="EmbeddedAudioMigration"/>).
+        /// 2: clips play in real time, not retimed to the timeline's frame rate (<see cref="RealTimeMediaMigration"/>).
         /// A file without the field is 0.
         /// </summary>
         public int FormatVersion { get; set; }
 
-        public const int CurrentFormatVersion = EmbeddedAudioMigration.Version;
+        public const int CurrentFormatVersion = RealTimeMediaMigration.Version;
         public DateTime CreatedAt { get; set; } = DateTime.Now;
         public DateTime UpdatedAt { get; set; } = DateTime.Now;
 

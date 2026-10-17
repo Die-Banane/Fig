@@ -52,7 +52,7 @@ namespace Fig.Core.Media
         public double FilmstripFrameIntervalSec { get; set; }
         public bool HasAudio { get; set; }
 
-        /// <summary>The media's native frame rate (probe fps), used to conform clips to the timeline rate.</summary>
+        /// <summary>The media's native frame rate (probe fps), for information: clips play in real time whatever it is.</summary>
         public Fig.Core.Timeline.FrameRate? SourceRate { get; set; }
 
         /// <summary>

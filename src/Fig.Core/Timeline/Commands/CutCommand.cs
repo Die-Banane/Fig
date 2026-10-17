@@ -63,8 +63,7 @@ namespace Fig.Core.Timeline
             _snapTransitionIn = _first.TransitionIn?.Clone();
             _snapTransitionOut = _first.TransitionOut?.Clone();
             _snapMarkers = _first.Markers.Select(CopyMarker).ToList();
-            _sourceAdvance = (_first.Speed <= 0 ? 1 : _first.Speed)
-                * (_first.SourceRate is { } rate ? rate.Fps / _editor.Document.Rate.Fps : 1);
+            _sourceAdvance = _first.Speed <= 0 ? 1 : _first.Speed;
 
             _second = Split(_first, offset);
 

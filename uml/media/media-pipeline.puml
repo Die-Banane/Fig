@@ -68,7 +68,7 @@ package Media {
   class AudioMixer {
     {static} SampleRate = 48000
     + Mix(timeline, startSec, durSec) : float[]
-    - MixClip()          ' Volume x fade envelope, speed/conform resample
+    - MixClip()          ' Volume x fade envelope, speed resample
     - ResampleStereoLinear()
   }
 

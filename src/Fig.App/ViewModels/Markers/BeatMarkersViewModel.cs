@@ -19,7 +19,7 @@ public sealed partial class BeatMarkersViewModel : ViewModelBase
 
     // Everything the analysis depended on; if any of it changes the preview no longer matches the audio.
     private sealed record AnalyzedClip(TimelineEditor Editor, Clip Clip, string SourceId, double SrcIn,
-        double SrcOut, double Dur, double Speed, FrameRate? SourceRate, FrameRate TimelineRate, double PlayRate);
+        double SrcOut, double Dur, double Speed, double PlayRate);
 
     private AnalyzedClip? _session;
     private BeatAnalysis? _analysis;
@@ -81,11 +81,9 @@ public sealed partial class BeatMarkersViewModel : ViewModelBase
             return;
         }
 
-        // Match the source-time advance used by AudioMixer, including frame-rate conform.
-        var timelineRate = editor.Document.Rate;
+        // Match the source-time advance used by AudioMixer.
         double speed = clip.Speed;
-        double playRate = (speed <= 0 ? 1 : speed)
-            * (clip.SourceRate is { } rate ? rate.Fps / timelineRate.Fps : 1);
+        double playRate = speed <= 0 ? 1 : speed;
         double sourceDuration = Math.Min(clip.DurSec * playRate,
             Math.Min(clip.SourceOut, asset.DurationSec) - clip.SourceIn);
         if (!double.IsFinite(playRate) || playRate <= 0 || sourceDuration <= 0)
@@ -95,7 +93,7 @@ public sealed partial class BeatMarkersViewModel : ViewModelBase
         }
 
         var session = new AnalyzedClip(editor, clip, clip.MediaId!, clip.SourceIn, clip.SourceOut, clip.DurSec,
-            speed, clip.SourceRate, timelineRate, playRate);
+            speed, playRate);
         Discard();
         int generation = ++_generation;
         IsAnalyzing = true;
@@ -190,8 +188,7 @@ public sealed partial class BeatMarkersViewModel : ViewModelBase
             && s.Editor.Document.Tracks.SelectMany(track => track.Clips).Contains(s.Clip)
             && s.Clip.MediaId == s.SourceId && s.Clip is AudioClip or VideoClip { PlaysAudio: true }
             && s.Clip.SourceIn == s.SrcIn && s.Clip.SourceOut == s.SrcOut
-            && s.Clip.DurSec == s.Dur && s.Clip.Speed == s.Speed
-            && Nullable.Equals(s.Clip.SourceRate, s.SourceRate) && s.Editor.Document.Rate.Equals(s.TimelineRate);
+            && s.Clip.DurSec == s.Dur && s.Clip.Speed == s.Speed;
 
     /// <summary>Re-selects markers from the cached analysis; cheap enough to run on every slider tick.</summary>
     private void RefreshPreview()

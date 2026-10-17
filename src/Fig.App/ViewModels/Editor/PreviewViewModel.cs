@@ -1063,9 +1063,7 @@ public partial class PreviewViewModel : ViewModelBase
             || string.IsNullOrEmpty(asset.Url) || asset.Offline)
             return false;
 
-        var timelineRate = _editor.Editor.Document.Rate.Fps;
-        var ratio = clip.SourceRate is { } r ? r.Fps / timelineRate : 1.0;
-        var srcTime = clip.SrcInSec + localT * clip.Speed * ratio;
+        var srcTime = clip.SrcInSec + localT * clip.Speed;
         var sourceStart = asset.SourceStartSec;
         var sourceEnd = sourceStart + Math.Max(0, asset.DurationSec - 1e-4);
         srcTime = Math.Clamp(srcTime, sourceStart, Math.Max(sourceStart, sourceEnd));

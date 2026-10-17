@@ -51,11 +51,7 @@ namespace Fig.Core.Media
                         fpsDen = stream->avg_frame_rate.den;
                     }
 
-                    double duration = inCtx->duration > 0
-                        ? inCtx->duration * ffmpeg.av_q2d(ffmpeg.av_get_time_base_q())
-                        : stream->duration * ffmpeg.av_q2d(stream->time_base);
-
-                    probe.DurationSec = duration;
+                    probe.DurationSec = DurationSec(path, inCtx, stream);
                     probe.Width = codec->width;
                     probe.Height = codec->height;
                     probe.Kind = MediaKind.Video;
@@ -87,9 +83,7 @@ namespace Fig.Core.Media
                     throw new InvalidOperationException("No video or audio stream found");
 
                 var aStream = inCtx->streams[aIdx];
-                probe.DurationSec = inCtx->duration > 0
-                    ? inCtx->duration * ffmpeg.av_q2d(ffmpeg.av_get_time_base_q())
-                    : aStream->duration * ffmpeg.av_q2d(aStream->time_base);
+                probe.DurationSec = DurationSec(path, inCtx, aStream);
                 probe.Kind = MediaKind.Audio;
                 probe.HasAudio = true;
                 return probe;
@@ -123,6 +117,51 @@ namespace Fig.Core.Media
         private static unsafe bool IsAnimatedImage(AVFormatContext* ctx)
             => ctx->iformat is not null
                && System.Runtime.InteropServices.Marshal.PtrToStringAnsi((IntPtr)ctx->iformat->name) == "gif";
+
+        /// <summary>
+        /// How long the file plays: from its header, else its stream's, else measured from its last packet. A WebM
+        /// written by a screen recorder (MediaRecorder) has no length in its header at all.
+        /// </summary>
+        private static unsafe double DurationSec(string path, AVFormatContext* ctx, AVStream* stream)
+        {
+            if (ctx->duration > 0)
+                return ctx->duration * ffmpeg.av_q2d(ffmpeg.av_get_time_base_q());
+            if (stream->duration > 0)
+                return stream->duration * ffmpeg.av_q2d(stream->time_base);
+            return MeasureDurationSec(path);
+        }
+
+        /// <summary>Reads every packet (without decoding) to find where the last one ends. 0 if it can't.</summary>
+        private static unsafe double MeasureDurationSec(string path)
+        {
+            AVFormatContext* ctx = null;
+            var packet = ffmpeg.av_packet_alloc();
+            try
+            {
+                if (ffmpeg.avformat_open_input(&ctx, path, null, null) < 0
+                    || ffmpeg.avformat_find_stream_info(ctx, null) < 0)
+                    return 0;
+                double first = double.MaxValue, end = 0;
+                while (ffmpeg.av_read_frame(ctx, packet) >= 0)
+                {
+                    var ts = packet->pts != ffmpeg.AV_NOPTS_VALUE ? packet->pts : packet->dts;
+                    if (ts != ffmpeg.AV_NOPTS_VALUE)
+                    {
+                        var tb = ffmpeg.av_q2d(ctx->streams[packet->stream_index]->time_base);
+                        first = Math.Min(first, ts * tb);
+                        end = Math.Max(end, (ts + Math.Max(0, packet->duration)) * tb);
+                    }
+                    ffmpeg.av_packet_unref(packet);
+                }
+                return first == double.MaxValue ? 0 : Math.Max(0, end - Math.Max(0, first));
+            }
+            finally
+            {
+                ffmpeg.av_packet_free(&packet);
+                if (ctx != null)
+                    ffmpeg.avformat_close_input(&ctx);
+            }
+        }
 
         private static unsafe bool HasAudioStream(AVFormatContext* ctx)
         {
@@ -774,9 +813,7 @@ namespace Fig.Core.Media
                 ThrowIfError(ffmpeg.swr_init(swr), "swr_init");
                 ffmpeg.av_channel_layout_uninit(&monoLayout);
 
-                var duration = inCtx->duration > 0
-                    ? inCtx->duration * ffmpeg.av_q2d(ffmpeg.av_get_time_base_q())
-                    : inStream->duration * ffmpeg.av_q2d(inStream->time_base);
+                var duration = DurationSec(sourcePath, inCtx, inStream);
                 if (duration <= 0)
                     throw new InvalidOperationException("Cannot determine duration");
 

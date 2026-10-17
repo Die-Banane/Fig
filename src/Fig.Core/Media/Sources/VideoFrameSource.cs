@@ -41,7 +41,17 @@ namespace Fig.Core.Media
         private readonly int _offX, _offY;
         private readonly AVRational _timeBase;
 
+        /// <summary>
+        /// Half a source frame. A frame is shown for a time when it is the nearest one: a frame up to this much
+        /// before the time counts. Containers round frame times (WebM to the millisecond, so 29.97 fps frames sit
+        /// at 0.033, 0.067...), and asking for exactly 0.0334 must still get the 0.033 frame, not skip to the
+        /// next one and then show that one twice.
+        /// </summary>
+        private readonly double _halfFrameSec;
+
         private AVFrame* _pendingFrame;
+        // a packet the decoder refused (EAGAIN: it still holds decoded frames); sent again before reading on
+        private AVPacket* _heldPacket;
         private AVFrame* _tailFrame;   // the newest frame seen, kept so the picture can hold at the end of the media
         private AVFrame* _rgbFrame;
         private SwsContext* _sws;
@@ -131,6 +141,12 @@ namespace Fig.Core.Media
                 // where the final frame starts: asking for later holds that frame instead of seeking off the end
                 var fpsRational = stream->avg_frame_rate.num > 0 && stream->avg_frame_rate.den > 0
                     ? ffmpeg.av_q2d(stream->avg_frame_rate) : 30.0;
+                var reported = stream->avg_frame_rate.num > 0 && stream->avg_frame_rate.den > 0 ? stream->avg_frame_rate : stream->r_frame_rate;
+                var plausible = reported.num > 0 && reported.den > 0
+                    ? Fig.Core.Timeline.FrameRate.Plausible(new Fig.Core.Timeline.FrameRate(reported.num, reported.den))
+                    : null;
+                // a junk rate (a recording's 1000/1): assume frames no closer than 60 fps
+                _halfFrameSec = 0.5 / (plausible?.Fps ?? 60);
                 if (inCtx->duration > 0)
                 {
                     var startSec = inCtx->start_time != ffmpeg.AV_NOPTS_VALUE ? inCtx->start_time / 1_000_000.0 : 0;
@@ -145,6 +161,7 @@ namespace Fig.Core.Media
                 _offY = (height - _fitH) / 2;
 
                 _pendingFrame = ffmpeg.av_frame_alloc();
+                _heldPacket = ffmpeg.av_packet_alloc();
                 _tailFrame = ffmpeg.av_frame_alloc();
                 EnsureRgbFrame();
                 ApplySkipPolicy();
@@ -214,6 +231,7 @@ namespace Fig.Core.Media
             if (ret < 0)
                 ffmpeg.av_seek_frame(ctx, _vIdx, 0, ffmpeg.AVSEEK_FLAG_BACKWARD);
             ffmpeg.avcodec_flush_buffers(dec);
+            ffmpeg.av_packet_unref(_heldPacket);
             _lastPresentedSec = -1;
             _seekedSinceFrame = true;
             _atKeyframeAfterSeek = false;
@@ -233,7 +251,8 @@ namespace Fig.Core.Media
             try
             {
                 timeSec = Math.Min(timeSec, _lastFrameSec);
-                if (_lastPresentedSec >= 0 && timeSec <= _lastPresentedSec + 1e-4)
+                // still nearest the frame on screen
+                if (_lastPresentedSec >= 0 && timeSec < _lastPresentedSec + _halfFrameSec)
                     return _lastFrame;
 
                 _lastApproximate = false;
@@ -263,7 +282,7 @@ namespace Fig.Core.Media
         /// </summary>
         private DecodedFrame? DecodeScrub(AVPacket* packet, double timeSec)
         {
-            if (_lastPresentedSec >= 0 && timeSec > _lastPresentedSec && timeSec - _lastPresentedSec <= ScrubContinueSec)
+            if (_lastPresentedSec >= 0 && timeSec >= _lastPresentedSec + _halfFrameSec && timeSec - _lastPresentedSec <= ScrubContinueSec)
                 return DecodeSequential(packet, timeSec, catchUp: false);
 
             if (!_seekedSinceFrame)
@@ -272,9 +291,9 @@ namespace Fig.Core.Media
             var ctx = _inCtx;
             var dec = _decCtx;
             int ret;
-            while ((ret = ffmpeg.av_read_frame(ctx, packet)) >= 0)
+            while ((ret = ReadPacket(packet)) >= 0)
             {
-                if (packet->stream_index == _vIdx && ffmpeg.avcodec_send_packet(dec, packet) >= 0
+                if (packet->stream_index == _vIdx && SendPacket(packet)
                     && ffmpeg.avcodec_receive_frame(dec, _pendingFrame) == 0)
                 {
                     ffmpeg.av_packet_unref(packet);
@@ -304,28 +323,29 @@ namespace Fig.Core.Media
             try
             {
                 int ret;
-                while ((ret = ffmpeg.av_read_frame(ctx, packet)) >= 0)
+                while ((ret = ReadPacket(packet)) >= 0)
                 {
                     if (Aborted())
                     {
-                        // a newer position arrived: stop here and force a fresh seek next time
-                        ffmpeg.av_packet_unref(packet);
+                        // a newer position arrived: stop here, keeping the packet for the decode that carries on
+                        ffmpeg.av_packet_move_ref(_heldPacket, packet);
                         _lastPresentedSec = -1;
                         _lastApproximate = true;
                         return _lastFrame;
                     }
-                    if (packet->stream_index == _vIdx && ffmpeg.avcodec_send_packet(dec, packet) >= 0)
+                    if (packet->stream_index == _vIdx && SendPacket(packet))
                     {
                         while (ffmpeg.avcodec_receive_frame(dec, _pendingFrame) == 0)
                         {
                             var sec = _pendingFrame->best_effort_timestamp * ffmpeg.av_q2d(_timeBase);
-                            if (sec < targetSec)
+                            var nearest = sec > targetSec - _halfFrameSec;
+                            if (!nearest)
                             {
                                 lastSeenSec = sec;
                                 ffmpeg.av_frame_unref(_tailFrame);
                                 ffmpeg.av_frame_ref(_tailFrame, _pendingFrame);
                             }
-                            if (sec >= targetSec)
+                            else
                             {
                                 _lastPresentedSec = sec;
                                 _seekedSinceFrame = false;
@@ -349,7 +369,7 @@ namespace Fig.Core.Media
                 while (ffmpeg.avcodec_receive_frame(dec, _pendingFrame) == 0)
                 {
                     var sec = _pendingFrame->best_effort_timestamp * ffmpeg.av_q2d(_timeBase);
-                    if (sec >= targetSec)
+                    if (sec > targetSec - _halfFrameSec)
                     {
                         _lastPresentedSec = sec;
                         return ScalePendingToLastFrame();
@@ -428,11 +448,44 @@ namespace Fig.Core.Media
                 throw new InvalidOperationException($"{what} failed: {ret}");
         }
 
+        /// <summary>The packet the decoder refused last time, if any, else the next one from the file.</summary>
+        private int ReadPacket(AVPacket* packet)
+        {
+            if (_heldPacket->size > 0 || _heldPacket->data != null)
+            {
+                ffmpeg.av_packet_move_ref(packet, _heldPacket);
+                return 0;
+            }
+            return ffmpeg.av_read_frame(_inCtx, packet);
+        }
+
+        /// <summary>
+        /// Sends a packet to the decoder. True when there may be frames to take: it was accepted, or the decoder is
+        /// full (EAGAIN) and must give up its frames first; then the packet is held and sent again next.
+        /// Dropping it instead would starve every frame that refers to it, and a threaded VP9 decoder is full often.
+        /// </summary>
+        private bool SendPacket(AVPacket* packet)
+        {
+            var ret = ffmpeg.avcodec_send_packet(_decCtx, packet);
+            if (ret == ffmpeg.AVERROR(ffmpeg.EAGAIN))
+            {
+                ffmpeg.av_packet_move_ref(_heldPacket, packet);
+                return true;
+            }
+            return ret >= 0;
+        }
+
         public void Dispose()
         {
             if (_disposed)
                 return;
             _disposed = true;
+            if (_heldPacket != null)
+            {
+                var hp = _heldPacket;
+                ffmpeg.av_packet_free(&hp);
+                _heldPacket = null;
+            }
             if (_sws != null)
             {
                 ffmpeg.sws_freeContext(_sws);

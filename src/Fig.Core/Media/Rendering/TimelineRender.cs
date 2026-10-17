@@ -352,8 +352,7 @@ namespace Fig.Core.Media
                 return false;
 
             localT = timelineSec - clip.StartSec;
-            var ratio = clip.SourceRate is { } r ? r.Fps / timeline.Rate.Fps : 1.0;
-            var srcTime = clip.SrcInSec + localT * clip.Speed * ratio;
+            var srcTime = clip.SrcInSec + localT * clip.Speed;
             var sourceStart = asset.SourceStartSec;
             var sourceEnd = sourceStart + Math.Max(0, asset.DurationSec - 1e-4);
             srcTime = Math.Clamp(srcTime, sourceStart, Math.Max(sourceStart, sourceEnd));

@@ -591,6 +591,7 @@ public partial class EditorViewModel : ViewModelBase
         Beats.OnTimelineChanged();
         IsDirty = true;
         OnPropertyChanged(nameof(SequenceEndSec));
+        NotifyProjectRate();
         Properties.Refresh();
         Markers.Refresh();
         // property edits (opacity/crop) need an immediate preview redraw
@@ -634,6 +635,33 @@ public partial class EditorViewModel : ViewModelBase
     }
 
     public double FrameDurationSec => 1.0 / Math.Max(Editor.Document.Rate.Fps, 1);
+
+    /// <summary>The project frame rates on offer: the standard ones, and the timeline's own if it is another.</summary>
+    private IReadOnlyList<FrameRate> ProjectRates
+        => FrameRate.Standard.Contains(Editor.Document.Rate)
+            ? FrameRate.Standard
+            : [.. FrameRate.Standard, Editor.Document.Rate];
+
+    public IReadOnlyList<string> ProjectRateLabels => ProjectRates.Select(r => r.Label).ToList();
+
+    /// <summary>The project frame rate, as an index into <see cref="ProjectRateLabels"/>. Setting it is one undo step.</summary>
+    public int ProjectRateIndex
+    {
+        get => ProjectRates.ToList().IndexOf(Editor.Document.Rate);
+        set
+        {
+            var rates = ProjectRates;
+            if (value >= 0 && value < rates.Count)
+                Editor.SetRate(rates[value]);
+        }
+    }
+
+    private void NotifyProjectRate()
+    {
+        OnPropertyChanged(nameof(ProjectRateLabels));
+        OnPropertyChanged(nameof(ProjectRateIndex));
+        OnPropertyChanged(nameof(FrameDurationSec));
+    }
 
     /// <summary>Timeline scrub or transport seek (not driven by playback clock).</summary>
     public void SeekFromUser(double sec)
@@ -723,8 +751,7 @@ public partial class EditorViewModel : ViewModelBase
                 if (!MediaById.TryGetValue(vc.SourceId, out var asset) || string.IsNullOrEmpty(asset.Url) || asset.Offline)
                     continue;
 
-                var ratio = vc.SourceRate is { } r ? r.Fps / document.Rate.Fps : 1.0;
-                var srcTime = vc.SrcInSec + (timeSec - clip.StartSec) * vc.Speed * ratio;
+                var srcTime = vc.SrcInSec + (timeSec - clip.StartSec) * vc.Speed;
                 var localT = timeSec - clip.StartSec;
                 var opacity = ClipFade.EffectiveOpacity(vc, localT);
                 layers.Add(new PreviewLayer(asset.PlaybackVideoPath, srcTime, opacity, vc, i));
@@ -929,6 +956,7 @@ public partial class EditorViewModel : ViewModelBase
         EffectMigration.Migrate(project);
         EffectMigration.MoveClipEffectsToTracks(project);
         EmbeddedAudioMigration.Migrate(project);
+        RealTimeMediaMigration.Migrate(project);
         Project = project;
         GraphEditor = null;
         EffectGraphs.Attach(project.EffectGraphs);
@@ -955,7 +983,7 @@ public partial class EditorViewModel : ViewModelBase
         WireEditorEvents(Editor);
         OnPropertyChanged(nameof(Editor));
         OnPropertyChanged(nameof(SequenceEndSec));
-        OnPropertyChanged(nameof(FrameDurationSec));
+        NotifyProjectRate();
 
         SelectedMedia = null;
         InitializePlaybackForCurrentEditor();

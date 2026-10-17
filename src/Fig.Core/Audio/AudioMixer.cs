@@ -81,7 +81,7 @@ namespace Fig.Core.Audio
                     if (asset is null || string.IsNullOrEmpty(asset.Url) || asset.Offline || (clip is VideoClip && !asset.HasAudio))
                         continue;
 
-                    MixClip(mixed, timelineStart, frames, clipStart, clipEnd, clip, asset, timeline.Rate.Fps);
+                    MixClip(mixed, timelineStart, frames, clipStart, clipEnd, clip, asset);
                 }
             }
 
@@ -89,11 +89,10 @@ namespace Fig.Core.Audio
         }
 
         private void MixClip(float[] mixed, double winStart, int winFrames, double clipStart, double clipEnd,
-            Clip clip, MediaAsset asset, double timelineRateFps)
+            Clip clip, MediaAsset asset)
         {
-            var speed = clip.Speed <= 0 ? 1.0 : clip.Speed;
-            // conform: source time advances by speed × (source rate / timeline rate)
-            var playRate = speed * (clip.SourceRate is { } r ? r.Fps / timelineRateFps : 1.0);
+            // real time: source time advances by speed, whatever the file's frame rate
+            var playRate = clip.Speed <= 0 ? 1.0 : clip.Speed;
             var winEnd = winStart + winFrames / (double)SampleRate;
 
             var overlapStart = Math.Max(winStart, clipStart);

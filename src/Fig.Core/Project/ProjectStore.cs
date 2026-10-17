@@ -129,6 +129,7 @@ namespace Fig.Core.Project
                 EffectMigration.Migrate(project);
                 EffectMigration.MoveClipEffectsToTracks(project);
                 EmbeddedAudioMigration.Migrate(project);
+                RealTimeMediaMigration.Migrate(project);
             }
             return project;
         }

@@ -40,9 +40,8 @@ namespace Fig.Core.Timeline
         public bool Enabled { get; set; } = true;
 
         /// <summary>
-        /// The source media's frame rate. When it differs from the timeline rate the clip is
-        /// conformed: its source time advances by <c>speed × (sourceRate / timelineRate)</c>,
-        /// so a 25fps clip on a 30fps timeline plays at the correct speed and duration.
+        /// The source media's frame rate, for information. A clip plays in real time whatever it is:
+        /// its source time advances by <c>speed</c> alone.
         /// </summary>
         public FrameRate? SourceRate { get; set; }
 

@@ -33,7 +33,7 @@ Out of scope for the current build: collaborative editing, cloud storage, mobile
 | **Timeline** | The ordered set of tracks and clips that constitute an edit. |
 | **Playhead** | The current position on the timeline. |
 | **Frame rate (FPS)** | The playback rate expressed as a rational number (e.g., 24000/1001). |
-| **Conform** | Adjusting clip playback to reconcile the source frame rate with the timeline frame rate. |
+| **Project frame rate** | The timeline's frame rate: the frame grid for snapping, timecode and frame steps, and the export rate. Clips play in real time whatever their own rate. |
 | **Proxy** | A low-resolution re-encode of a source used for smooth scrubbing/playback. |
 | **OTIO** | OpenTimelineIO, an open interchange format for editorial timelines. |
 | **Filmstrip** | A horizontally tiled sprite-sheet of aspect-correct frames for a clip. |
@@ -77,7 +77,7 @@ The core owns all timeline behavior, media decoding, compositing, audio mixing, 
 2. Edit a multi-track timeline with full undo/redo.
 3. Preview composited video and audio synchronously.
 4. Apply effects, fades, and between-clip transitions.
-5. Mark, annotate, enable/disable, and conform clips.
+5. Mark, annotate, and enable/disable clips.
 6. Import OTIO projects and preserve editorial metadata.
 7. Export the timeline to an MP4 (H.264/AAC).
 
@@ -144,7 +144,9 @@ The primary user is a solo creator (hobbyist to semi-professional) who edits sho
 | FR-040 | The application SHALL snap to the frame grid, and SHALL support magnetic snapping to nearby clip boundaries. | P0 | X |
 | FR-041 | The user SHALL be able to disable a clip so it is ignored by playback, mixing, compositing, and transitions. | P0 | X |
 | FR-042 | Linked video+audio clips SHALL move, trim, cut, and ripple together. | P0 | X |
-| FR-043 | The timeline rate SHALL adopt the first dropped media's frame rate when the timeline is empty; clips with a different source rate SHALL be conformed (duration and source mapping scaled by the rate ratio). | P1 | X |
+| FR-043 | Clips SHALL play in real time whatever their source frame rate: a clip is as long as its media, and its source time advances by its speed alone. An empty timeline whose rate the user hasn't chosen SHALL adopt the first dropped media's frame rate, snapped to the nearest standard rate; an implausible reported rate (outside 10–120 fps and no standard rate within 1%) SHALL be ignored. | P1 | X |
+| FR-043a | The user SHALL be able to set the project frame rate (23.976, 24, 25, 29.97, 30, 50, 59.94, 60 fps) from the timeline header as one undoable step; clips keep their place and length. A project saved when clips were retimed to the timeline rate SHALL open with that factor moved into each clip's speed, so it plays as before. | P1 | X |
+| FR-043b | Import SHALL measure a file whose container reports no duration (such as a recorded WebM) from its last packet. | P1 | X |
 
 ### 3.4 Timeline rendering
 | ID | Requirement | Priority | Status |
@@ -216,7 +218,7 @@ The primary user is a solo creator (hobbyist to semi-professional) who edits sho
 ### 3.10 Export
 | ID | Requirement | Priority | Status |
 | --- | --- | --- | --- |
-| FR-110 | The application SHALL export the full timeline to MP4 (H.264 video + AAC audio) at the timeline frame rate, honoring effects, transitions, fades, speed, conform, and layering. | P0 | X |
+| FR-110 | The application SHALL export the full timeline to MP4 (H.264 video + AAC audio) at the timeline frame rate, honoring effects, transitions, fades, speed, and layering. | P0 | X |
 | FR-111 | An export dialog SHALL let the user choose resolution (presets or custom), quality (CRF), and output path. | P0 | X |
 | FR-112 | Exports SHALL run as background jobs with live progress visible in a jobs popup; failures SHALL be reported and partial output removed. | P0 | X |
 | FR-113 | The software encoder SHALL use all available cores and expose Fast/Medium/Best quality presets. | P1 | O |
@@ -245,7 +247,7 @@ The primary user is a solo creator (hobbyist to semi-professional) who edits sho
 ### 3.13 Beat markers
 | ID | Requirement | Priority | Status |
 | --- | --- | --- | --- |
-| FR-150 | The application SHALL analyze the selected audio clip's source range for beats and kick-like bass attacks in the background without blocking the UI, honoring the clip's trim, speed, and frame-rate conform. | P1 | X |
+| FR-150 | The application SHALL analyze the selected audio clip's source range for beats and kick-like bass attacks in the background without blocking the UI, honoring the clip's trim and speed. | P1 | X |
 | FR-151 | Analysis SHALL run once per request; changing sensitivity or kick focus SHALL re-select markers from the cached analysis without re-decoding the audio. | P1 | X |
 | FR-152 | Candidate markers SHALL be previewed on the clip before they are committed, outside the document (no undo entry, autosave, or change notification per adjustment), with the clip's existing generated markers hidden while previewed. | P1 | O |
 | FR-153 | Apply SHALL replace the clip's previously generated beat markers with the previewed set as one undo step and leave manually placed markers alone; Cancel SHALL leave the document untouched. | P1 | X |

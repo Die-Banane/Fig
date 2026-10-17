@@ -211,9 +211,9 @@ package Timeline {
   note bottom of TimelineEditor
     Facade for every edit operation. Linked groups
     (video + audio sharing a LinkGroupId) are edited
-    together; rate conform (SourceRate vs timeline
-    rate) is applied at placement and in playback
-    mapping. Raises TimelineChanged so the UI and
+    together; clips play in real time whatever
+    their SourceRate, and SetRate changes the
+    project frame rate (undoable). Raises TimelineChanged so the UI and
     preview refresh.
   end note
 }

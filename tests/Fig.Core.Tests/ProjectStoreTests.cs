@@ -127,7 +127,24 @@ public class ProjectStoreTests
         Assert.Equal("g2", apart.LinkGroupId);
         Assert.DoesNotContain(a1, tracks);                 // only held the merged sound
         Assert.Contains(a2, tracks);
-        Assert.Equal(FigProject.CurrentFormatVersion, project.FormatVersion);
+        Assert.Equal(EmbeddedAudioMigration.Version, project.FormatVersion);
         Assert.Equal(0, EmbeddedAudioMigration.Migrate(project));
+    }
+
+    [Fact]
+    public void An_older_project_keeps_retimed_clips_playing_as_they_did()
+    {
+        var fast = new VideoClip { SourceId = "m", DurSec = 4, SrcOutSec = 8, Speed = 1, SourceRate = new FrameRate(60, 1) };
+        var same = new VideoClip { SourceId = "m", DurSec = 4, SrcOutSec = 4, Speed = 1, SourceRate = new FrameRate(30, 1) };
+        var timeline = new Fig.Core.Timeline.Timeline { Rate = new FrameRate(30, 1), Tracks = { new Track { Kind = TrackKind.Video, Clips = { fast, same } } } };
+        var project = new FigProject { FormatVersion = EmbeddedAudioMigration.Version, Timelines = { timeline } };
+
+        Assert.Equal(1, RealTimeMediaMigration.Migrate(project));
+
+        Assert.Equal(2, fast.Speed, 6);                    // 60fps on 30fps played twice as fast; now it says so
+        Assert.Equal(4, fast.DurSec);
+        Assert.Equal(1, same.Speed);
+        Assert.Equal(FigProject.CurrentFormatVersion, project.FormatVersion);
+        Assert.Equal(0, RealTimeMediaMigration.Migrate(project));
     }
 }

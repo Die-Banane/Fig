@@ -93,7 +93,7 @@ note bottom of TimelineRender
   Reuses the preview pipeline so the export
   matches what the editor shows: aspect-correct
   letterbox decode at the canvas size, effects,
-  transitions, fades, speed, conform, and the
+  transitions, fades, speed, and the
   last-track-on-top compositing order. Video is
   H.264 at the timeline rate (CRF quality);
   audio is AAC 48kHz mixed by AudioMixer in

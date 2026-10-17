@@ -80,7 +80,7 @@ public class MarkerCutTests
     }
 
     [Fact]
-    public void Cuts_RespectSpeedAndSourceFrameRateConform()
+    public void Cuts_RespectSpeed_WhateverTheSourceFrameRate()
     {
         var (editor, track) = TimelineFixtures.Create(30);
         var clip = TimelineFixtures.Video("video", 0, 6, 10);
@@ -91,8 +91,8 @@ public class MarkerCutTests
         var marker = editor.AddMarker(editor.Document, 3);
         editor.Selection.SelectMarker(marker.Id);
         Assert.Equal(1, editor.SplitVideoAtSelectedMarkers());
-        Assert.Equal(15, track.Clips[0].SourceOut, 6);
-        Assert.Equal(15, track.Clips[1].SourceIn, 6);
+        Assert.Equal(16, track.Clips[0].SourceOut, 6);
+        Assert.Equal(16, track.Clips[1].SourceIn, 6);
         editor.Undo();
         Assert.Equal(10, clip.SourceIn);
         Assert.Equal(20, clip.SourceOut);

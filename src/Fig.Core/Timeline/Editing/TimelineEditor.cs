@@ -244,20 +244,25 @@ namespace Fig.Core.Timeline
         }
 
         /// <summary>
-        /// Applies placement-time conform for a newly created clip: the timeline adopts the
-        /// media's frame rate when it is still empty, and the clip's timeline duration is
-        /// scaled by the source↔timeline rate ratio so mixed-rate footage plays at the right
-        /// speed. Source range stays in source time.
+        /// Readies a newly created clip for the timeline. An empty timeline whose rate the user hasn't chosen takes
+        /// the media's frame rate, if it reports a sensible one. The clip plays in real time, as long as its file,
+        /// whatever its frame rate.
         /// </summary>
         private Clip PreparePlacement(Clip clip, MediaAsset asset)
         {
             clip.SourceRate = asset.SourceRate;
-            if (clip.SourceRate is { } rate && HasNoClips())
+            if (!Document.RateChosen && HasNoClips() && FrameRate.Plausible(asset.SourceRate) is { } rate)
                 Document.Rate = rate;
-            var ratio = clip.SourceRate is { } r ? r.Fps / Document.Rate.Fps : 1.0;
-            if (Math.Abs(ratio - 1.0) > 1e-6)
-                clip.DurSec = asset.DurationSec / ratio;
             return clip;
+        }
+
+        /// <summary>Sets the project frame rate, one undo step. Clips keep their place and length.</summary>
+        public void SetRate(FrameRate rate)
+        {
+            if (rate.Equals(Document.Rate) && Document.RateChosen)
+                return;
+            History.Execute(new SetTimelineRateCommand(this, rate));
+            RaiseChanged();
         }
 
         private bool HasNoClips()

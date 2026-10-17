@@ -23,7 +23,7 @@ entity MediaAsset {
   durationSec : float
   width : int
   height : int
-  sourceRate : FrameRate?   ' native fps (probe), used to conform clips
+  sourceRate : FrameRate?   ' native fps (probe), for information
   sourceStartSec : float    ' available-range offset
   thumbnail : string        ' local path ref, null = not generated
   filmstrip : string
@@ -83,7 +83,7 @@ abstract class Clip {
   startSec : float
   durSec : float
   speed : float
-  sourceRate : FrameRate?   ' source fps; rate-ratio conform
+  sourceRate : FrameRate?   ' source fps, for information
   volume : float
   opacity : float
   fadeInSec : float
@@ -180,9 +180,9 @@ note right of Clip
   enabled=false hides it from playback, mixing,
   compositing, and transitions. Markers on a
   clip are stored as offsets from clip start.
-  sourceRate drives conform: source time maps
-  at speed x (sourceRate / timelineRate), and
-  placement duration scales by the inverse ratio.
+  Clips play in real time: source time maps at
+  speed alone, whatever sourceRate is
+  (see project-frame-rate-schema.puml).
 end note
 
 note right of Marker
@@ -196,6 +196,8 @@ end note
 note right of Timeline
   rate is rational (FrameRate num/den) so
   23.976/29.97 timelines stay frame-accurate.
+  It is the project frame rate: the frame grid
+  and export rate; rateChosen once the user sets it.
 end note
 
 note right of SaveService

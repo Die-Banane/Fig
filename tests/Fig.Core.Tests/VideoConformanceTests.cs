@@ -31,6 +31,16 @@ public class FrameRateTests
         Assert.Equal(new FrameRate(25, 1), FrameRate.FromFps(25));
         Assert.Equal(new FrameRate(30000, 1001), FrameRate.FromFps(29.97));
     }
+
+    [Fact]
+    public void Plausible_SnapsToStandard_AndRejectsJunk()
+    {
+        Assert.Equal(new FrameRate(30000, 1001), FrameRate.Plausible(new FrameRate(13698, 457)));
+        Assert.Equal(new FrameRate(60, 1), FrameRate.Plausible(new FrameRate(60, 1)));
+        Assert.Equal(new FrameRate(15, 1), FrameRate.Plausible(new FrameRate(15, 1)));
+        Assert.Null(FrameRate.Plausible(new FrameRate(1000, 1)));
+        Assert.Null(FrameRate.Plausible(null));
+    }
 }
 
 public class ClipConformanceTests
@@ -54,7 +64,7 @@ public class ClipConformanceTests
     }
 
     [Fact]
-    public void AddMedia_ConformsDuration_WhenRatesDiffer()
+    public void AddMedia_PlaysInRealTime_WhenRatesDiffer()
     {
         var timeline = new TimelineModel { Rate = FrameRate.Common(30) };
         var editor = new TimelineEditor(timeline);
@@ -64,10 +74,35 @@ public class ClipConformanceTests
 
         var clip = editor.AddMediaLinked(Video("m", 10, new FrameRate(25, 1)), track.Id, 5);
 
-        // 10s of 25fps source on a 30fps timeline plays longer (ratio 25/30)
         Assert.NotNull(clip);
-        Assert.Equal(10 * 30.0 / 25.0, clip!.DurSec, 3);
+        Assert.Equal(10.0, clip!.DurSec, 3);
+        Assert.Equal(1.0, clip.Speed);
         Assert.Equal(30, timeline.Rate.Num);
+    }
+
+    [Fact]
+    public void AddMedia_IgnoresJunkRate_AndLeavesAChosenRate()
+    {
+        var timeline = new TimelineModel { Rate = FrameRate.Common(30) };
+        var editor = new TimelineEditor(timeline);
+        var track = editor.AddTrack(TrackKind.Video);
+
+        // a recorded WebM reports 1000/1
+        var clip = editor.AddMediaLinked(Video("rec", 60, new FrameRate(1000, 1)), track.Id, 0);
+        Assert.Equal(60.0, clip!.DurSec, 3);
+        Assert.Equal(new FrameRate(30, 1), timeline.Rate);
+
+        var chosen = new TimelineModel { Rate = FrameRate.Common(30) };
+        var chosenEditor = new TimelineEditor(chosen);
+        var chosenTrack = chosenEditor.AddTrack(TrackKind.Video);
+        chosenEditor.SetRate(new FrameRate(25, 1));
+        chosenEditor.AddMediaLinked(Video("m", 10, new FrameRate(60, 1)), chosenTrack.Id, 0);
+        Assert.Equal(new FrameRate(25, 1), chosen.Rate);
+
+        chosenEditor.Undo();
+        chosenEditor.Undo();
+        Assert.Equal(new FrameRate(30, 1), chosen.Rate);
+        Assert.False(chosen.RateChosen);
     }
 
     [Fact]

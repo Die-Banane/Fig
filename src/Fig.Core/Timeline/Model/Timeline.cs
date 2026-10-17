@@ -50,6 +50,30 @@ namespace Fig.Core.Timeline
                  : new FrameRate((int)Math.Round(fps), 1);
         }
 
+        /// <summary>The rates a project can be set to, slowest first.</summary>
+        public static IReadOnlyList<FrameRate> Standard { get; } =
+        [
+            new(24000, 1001), new(24, 1), new(25, 1), new(30000, 1001), new(30, 1),
+            new(50, 1), new(60000, 1001), new(60, 1),
+        ];
+
+        /// <summary>
+        /// A rate fit to edit at, from what a file reports: the nearest standard rate within 1%, else a whole rate
+        /// from 10 to 120 fps, else null. Files often report junk (a recorded WebM says 1000/1, a VFR one 13698/457).
+        /// </summary>
+        public static FrameRate? Plausible(FrameRate? reported)
+        {
+            if (reported is not { Den: > 0 } r || !double.IsFinite(r.Fps) || r.Fps <= 0)
+                return null;
+            var nearest = Standard.MinBy(s => Math.Abs(s.Fps - r.Fps));
+            if (Math.Abs(nearest.Fps - r.Fps) / nearest.Fps < 0.01)
+                return nearest;
+            return r.Fps is >= 10 and <= 120 ? new FrameRate((int)Math.Round(r.Fps), 1) : null;
+        }
+
+        /// <summary>"29.97 fps", "25 fps".</summary>
+        [JsonIgnore] public string Label => $"{Math.Round(Fps, 3):0.###} fps";
+
         private static int Gcd(int a, int b)
         {
             while (b != 0)
@@ -67,7 +91,14 @@ namespace Fig.Core.Timeline
     public class Timeline
     {
         public string Id { get; set; } = Guid.NewGuid().ToString();
+        /// <summary>
+        /// The project frame rate: the frame grid (snapping, timecode, frame steps) and the export rate.
+        /// Clips play in real time whatever it is.
+        /// </summary>
         public FrameRate Rate { get; set; }
+
+        /// <summary>The user set <see cref="Rate"/>, so importing media no longer picks it.</summary>
+        public bool RateChosen { get; set; }
         public int Revision { get; set; }
         public bool IsAutosave { get; set; }
         public List<Track> Tracks { get; set; } = new();
