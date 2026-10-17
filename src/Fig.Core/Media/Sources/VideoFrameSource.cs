@@ -197,7 +197,7 @@ namespace Fig.Core.Media
             _rgbFrame->format = (int)AVPixelFormat.AV_PIX_FMT_BGRA;
             _rgbFrame->width = _fitW;
             _rgbFrame->height = _fitH;
-            ThrowIfError(ffmpeg.av_frame_get_buffer(_rgbFrame, 32), "av_frame_get_buffer");
+            FfmpegOpen.Check(ffmpeg.av_frame_get_buffer(_rgbFrame, 32), "av_frame_get_buffer");
         }
 
         private void EnsureSws(AVPixelFormat srcFmt)
@@ -450,12 +450,6 @@ namespace Fig.Core.Media
 
             _lastFrame = new DecodedFrame { Width = _outW, Height = _outH, Pixels = canvas };
             return _lastFrame;
-        }
-
-        private static void ThrowIfError(int ret, string what)
-        {
-            if (ret < 0)
-                throw new InvalidOperationException($"{what} failed: {ret}");
         }
 
         /// <summary>

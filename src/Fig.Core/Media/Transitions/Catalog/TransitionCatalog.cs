@@ -49,6 +49,10 @@ namespace Fig.Core.Media
             return null;
         }
 
+        /// <summary>The transition's parameters read through its schema (for code that renders it without its class, the GPU renderer).</summary>
+        public static ParamSet ParamsOf(string typeId, IReadOnlyDictionary<string, ParamValue> values)
+            => new(Find(typeId)?.ParamSchema ?? Array.Empty<ParamDef>(), values);
+
         public static ITransitionBlender? Resolve(string typeId)
             => Blenders.Value.TryGetValue(typeId, out var blender) ? blender : null;
 

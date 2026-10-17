@@ -58,7 +58,7 @@ namespace Fig.Core.Media
                 rgb->format = (int)AVPixelFormat.AV_PIX_FMT_RGB24;
                 rgb->width = tileW;
                 rgb->height = height;
-                ThrowIfError(ffmpeg.av_frame_get_buffer(rgb, 32), "av_frame_get_buffer");
+                FfmpegOpen.Check(ffmpeg.av_frame_get_buffer(rgb, 32), "av_frame_get_buffer");
 
                 frame = ffmpeg.av_frame_alloc();
                 packet = ffmpeg.av_packet_alloc();
@@ -261,7 +261,7 @@ namespace Fig.Core.Media
             strip->format = (int)AVPixelFormat.AV_PIX_FMT_RGB24;
             strip->width = width;
             strip->height = height;
-            ThrowIfError(ffmpeg.av_frame_get_buffer(strip, 32), "av_frame_get_buffer(strip)");
+            FfmpegOpen.Check(ffmpeg.av_frame_get_buffer(strip, 32), "av_frame_get_buffer(strip)");
 
             var stripLinesize = strip->linesize[0];
             for (var y = 0; y < height; y++)
@@ -281,7 +281,7 @@ namespace Fig.Core.Media
             encCtx->time_base = new AVRational { num = 1, den = 30 };
             encCtx->qmin = 5;
             encCtx->qmax = 8;
-            ThrowIfError(ffmpeg.avcodec_open2(encCtx, enc, null), "avcodec_open2");
+            FfmpegOpen.Check(ffmpeg.avcodec_open2(encCtx, enc, null), "avcodec_open2");
 
             var sws2 = ffmpeg.sws_getContext(width, height, AVPixelFormat.AV_PIX_FMT_RGB24,
                 width, height, AVPixelFormat.AV_PIX_FMT_YUV420P, SWS_BILINEAR, null, null, null);
@@ -297,10 +297,10 @@ namespace Fig.Core.Media
                 yuv->color_range = AVColorRange.AVCOL_RANGE_JPEG;
                 yuv->width = width;
                 yuv->height = height;
-                ThrowIfError(ffmpeg.av_frame_get_buffer(yuv, 32), "av_frame_get_buffer(yuv)");
+                FfmpegOpen.Check(ffmpeg.av_frame_get_buffer(yuv, 32), "av_frame_get_buffer(yuv)");
                 ffmpeg.sws_scale(sws2, strip->data, strip->linesize, 0, height, yuv->data, yuv->linesize);
                 yuv->pts = 0;
-                ThrowIfError(ffmpeg.avcodec_send_frame(encCtx, yuv), "avcodec_send_frame");
+                FfmpegOpen.Check(ffmpeg.avcodec_send_frame(encCtx, yuv), "avcodec_send_frame");
 
                 var dir = Path.GetDirectoryName(outputPath);
                 if (!string.IsNullOrEmpty(dir))

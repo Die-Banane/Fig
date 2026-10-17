@@ -10,21 +10,22 @@ namespace Fig.Core.Media
     /// <summary>
     /// The parameters an effect or a transition runs with, read through the schema its class declares: a missing value
     /// is the declared default, a number is held to the declared range, a choice to the declared choices. Declaring a
-    /// parameter is the only place its default and range are written.
+    /// parameter is the only place its default and range are written: effects, transitions, graph primitives and the
+    /// GPU renderer all read parameters this way.
     /// </summary>
     public readonly struct ParamSet
     {
-        private readonly IReadOnlyDictionary<string, ParamDef> _schema;
+        private readonly IReadOnlyList<ParamDef> _schema;
         private readonly IReadOnlyDictionary<string, ParamValue> _values;
 
-        public ParamSet(IReadOnlyDictionary<string, ParamDef> schema, IReadOnlyDictionary<string, ParamValue> values)
+        public ParamSet(IReadOnlyList<ParamDef> schema, IReadOnlyDictionary<string, ParamValue> values)
         {
             _schema = schema;
             _values = values;
         }
 
         /// <summary>Whether the class declares <paramref name="key"/> (for code shared by several that declare different ones).</summary>
-        public bool Declares(string key) => _schema.ContainsKey(key);
+        public bool Declares(string key) => Find(key) is not null;
 
         public double Number(string key)
         {
@@ -52,20 +53,28 @@ namespace Fig.Core.Media
         }
 
         private ParamDef Def(string key)
-            => _schema.TryGetValue(key, out var def) ? def
-                : throw new InvalidOperationException($"Parameter '{key}' is read but not declared");
+            => Find(key) ?? throw new InvalidOperationException($"Parameter '{key}' is read but not declared");
+
+        // a handful of parameters each: a scan beats hashing
+        private ParamDef? Find(string key)
+        {
+            for (var i = 0; i < _schema.Count; i++)
+                if (_schema[i].Key == key)
+                    return _schema[i];
+            return null;
+        }
     }
 
     /// <summary>The parameters a class declares, by key (read once per class).</summary>
     public static class ParamSchema
     {
-        private static readonly ConcurrentDictionary<Type, IReadOnlyDictionary<string, ParamDef>> Cache = new();
+        private static readonly ConcurrentDictionary<Type, IReadOnlyList<ParamDef>> Cache = new();
 
         public static IReadOnlyList<ParamDef> Read<TAttribute>(Type type) where TAttribute : ParamAttribute
             => type.GetCustomAttributes<TAttribute>().Select(a => a.ToDef()).ToList();
 
-        public static IReadOnlyDictionary<string, ParamDef> Of<TAttribute>(Type type) where TAttribute : ParamAttribute
-            => Cache.GetOrAdd(type, t => Read<TAttribute>(t).ToDictionary(d => d.Key));
+        public static IReadOnlyList<ParamDef> Of<TAttribute>(Type type) where TAttribute : ParamAttribute
+            => Cache.GetOrAdd(type, Read<TAttribute>);
     }
 
     /// <summary>
@@ -75,7 +84,7 @@ namespace Fig.Core.Media
     /// </summary>
     internal abstract class EffectProcessor : IEffectProcessor
     {
-        private readonly IReadOnlyDictionary<string, ParamDef> _schema;
+        private readonly IReadOnlyList<ParamDef> _schema;
 
         protected EffectProcessor() => _schema = ParamSchema.Of<EffectParamAttribute>(GetType());
 
@@ -93,7 +102,7 @@ namespace Fig.Core.Media
     /// </summary>
     internal abstract class TransitionBlender : ITransitionBlender
     {
-        private readonly IReadOnlyDictionary<string, ParamDef> _schema;
+        private readonly IReadOnlyList<ParamDef> _schema;
 
         protected TransitionBlender() => _schema = ParamSchema.Of<TransitionParamAttribute>(GetType());
 

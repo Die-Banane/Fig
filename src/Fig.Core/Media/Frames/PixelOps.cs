@@ -1,4 +1,5 @@
 using System;
+using System.Runtime.InteropServices;
 using System.Runtime.Intrinsics;
 using System.Runtime.Intrinsics.X86;
 
@@ -51,6 +52,26 @@ namespace Fig.Core.Media
                     px[i + 2] = ToByte(r);
                     px[i + 3] = src[i + 3];
                 }
+            });
+            return new DecodedFrame { Width = w, Height = h, Pixels = px };
+        }
+
+        /// <summary>
+        /// A picture rearranged: each pixel of the new frame is the source pixel at column
+        /// <paramref name="sourceX"/>[x] of row <paramref name="sourceY"/>(y). (A flip, a mosaic...)
+        /// </summary>
+        public static DecodedFrame Remap(DecodedFrame frame, int[] sourceX, Func<int, int> sourceY)
+        {
+            var w = frame.Width;
+            var h = frame.Height;
+            var src = frame.Pixels;
+            var px = FramePool.Rent(w * h * 4);
+            Rows(h, y =>
+            {
+                var from = MemoryMarshal.Cast<byte, uint>(src.AsSpan(sourceY(y) * w * 4, w * 4));
+                var to = MemoryMarshal.Cast<byte, uint>(px.AsSpan(y * w * 4, w * 4));
+                for (var x = 0; x < w; x++)
+                    to[x] = from[sourceX[x]];
             });
             return new DecodedFrame { Width = w, Height = h, Pixels = px };
         }

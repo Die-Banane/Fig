@@ -49,8 +49,11 @@ namespace Fig.Core.Timeline
 
         public abstract string Description { get; }
 
-        /// <summary>Makes the change to the cut's two clips (at least one of them has its edge of the transition).</summary>
+        /// <summary>Makes the change to the cut's two clips.</summary>
         protected abstract void Change(Clip left, Clip right);
+
+        /// <summary>Whether there is anything to change: by default, a transition on the cut.</summary>
+        protected virtual bool Applies(Clip left, Clip right) => left.TransitionOut is not null || right.TransitionIn is not null;
 
         /// <summary>Runs <paramref name="change"/> on each edge of the transition the two clips have.</summary>
         protected static void EachEdge(Clip left, Clip right, Action<TransitionRef> change)
@@ -63,7 +66,7 @@ namespace Fig.Core.Timeline
 
         public void Execute()
         {
-            if (Find() is not var (left, right) || (left.TransitionOut is null && right.TransitionIn is null))
+            if (Find() is not var (left, right) || !Applies(left, right))
                 return;
             _oldOut = left.TransitionOut?.Clone();
             _oldIn = right.TransitionIn?.Clone();
@@ -87,6 +90,23 @@ namespace Fig.Core.Timeline
 
         private (Clip Left, Clip Right)? Find()
             => _editor.FindClip(LeftClipId) is { } left && _editor.FindClip(RightClipId) is { } right ? (left, right) : null;
+    }
+
+    /// <summary>Puts a catalog transition across an abutting cut: the same one on both clip edges.</summary>
+    public sealed class ApplyTransitionAtCutCommand(TimelineEditor editor, string outgoingClipId, string incomingClipId, TransitionRef transition)
+        : CutTransitionEdit(editor, outgoingClipId, incomingClipId)
+    {
+        private readonly TransitionRef _transition = transition.Clone();
+
+        public override string Description => $"Apply {_transition.TypeId} at cut";
+
+        protected override bool Applies(Clip left, Clip right) => true;
+
+        protected override void Change(Clip left, Clip right)
+        {
+            left.TransitionOut = _transition.Clone();
+            right.TransitionIn = _transition.Clone();
+        }
     }
 
     /// <summary>Removes the transition across an abutting cut (clears both clip edges).</summary>

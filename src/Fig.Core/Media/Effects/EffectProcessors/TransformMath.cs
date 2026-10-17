@@ -19,7 +19,7 @@ namespace Fig.Core.Media
         public static TransformView ViewFrom(IReadOnlyDictionary<string, ParamValue> values)
             => ViewFrom(new ParamSet(ParamSchema.Of<EffectParamAttribute>(typeof(TransformEffect)), values));
 
-        internal static TransformView ViewFrom(ParamSet p)
+        public static TransformView ViewFrom(ParamSet p)
         {
             var zoom = p.Number("zoom");
             var half = 0.5 / zoom;

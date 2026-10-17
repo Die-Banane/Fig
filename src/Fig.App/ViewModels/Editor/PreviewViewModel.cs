@@ -721,6 +721,53 @@ public partial class PreviewViewModel : ViewModelBase
     }
 
     /// <summary>
+    /// What composing one time starts from, whichever renderer draws it: how to decode, the layers there, and the
+    /// transition running on each track (whose two clips the transition draws, not their layers).
+    /// </summary>
+    private sealed record ComposeRequest(
+        bool NeedsSeek,
+        PreviewDecodeMode DecodeMode,
+        Timeline? Document,
+        IReadOnlyList<PreviewLayer> Layers,
+        Dictionary<int, ActiveTransition> Transitions)
+    {
+        public bool InTransition(PreviewLayer layer)
+            => Transitions.TryGetValue(layer.TrackIndex, out var active)
+               && (layer.Clip.Id == active.Outgoing.Id || layer.Clip.Id == active.Incoming.Id);
+    }
+
+    /// <summary>The layers and transitions at <paramref name="target"/>, or null when there is nothing there.</summary>
+    private ComposeRequest? BeginCompose(double target, bool fast)
+    {
+        var needsSeek = target < _lastRequestSec - 0.05;
+        var decodeMode = IsScrubbing && fast ? PreviewDecodeMode.Scrub : PreviewDecodeMode.Playback;
+        _lastRequestSec = target;
+
+        var document = _editor?.Editor.Document;
+        var layers = _resolver(target);
+        if ((document is null || document.Tracks.Count == 0) && layers.Count == 0)
+            return null;
+
+        var transitions = new Dictionary<int, ActiveTransition>();
+        for (var i = 0; i < (document?.Tracks.Count ?? 0); i++)
+            if (TransitionResolver.FindActive(document!.Tracks[i], target) is { } active)
+                transitions[i] = active;
+        return new ComposeRequest(needsSeek, decodeMode, document, layers, transitions);
+    }
+
+    private bool IsScrubbing => _editor is not { IsPlaying: true };
+
+    /// <summary>The preview's status line for a composed picture.</summary>
+    private string ComposeStatus(int drawn, int layers, int transitions, int cacheHits)
+    {
+        var mode = IsScrubbing ? "scrub" : "play";
+        var tx = transitions > 0 ? $" · {transitions} transition(s)" : "";
+        var cache = cacheHits > 0 ? $" · cache {cacheHits}/{layers}" : "";
+        var drops = _playbackDrops > 30 ? " · dropping" : "";
+        return $"{_targetWidth}x{_targetHeight} · {drawn} layer(s) · {mode}{tx}{cache}{drops}";
+    }
+
+    /// <summary>
     /// Decodes the layers at a timeline time and describes how to draw them (effects, crops, transitions,
     /// opacity) as a <see cref="GpuScene"/>; the GPU does the actual compositing. Returns false and sets a
     /// status when there is nothing to show. Counterpart of <see cref="ComposeFrame"/>.
@@ -733,35 +780,18 @@ public partial class PreviewViewModel : ViewModelBase
         var ordered = new List<(int TrackIndex, GpuLayer? Layer)>();
         try
         {
-            var needsSeek = target < _lastRequestSec - 0.05;
-            var scrubbing = _editor is not { IsPlaying: true };
-            var decodeMode = scrubbing && fast ? PreviewDecodeMode.Scrub : PreviewDecodeMode.Playback;
-            _lastRequestSec = target;
-
-            var document = _editor?.Editor.Document;
-            var layers = _resolver(target);
-            if ((document is null || document.Tracks.Count == 0) && layers.Count == 0)
+            if (BeginCompose(target, fast) is not { } request)
             {
                 status = "No video at playhead";
                 return false;
             }
-
-            var activeByTrack = new Dictionary<int, ActiveTransition>();
-            if (document is not null)
-            {
-                for (var i = 0; i < document.Tracks.Count; i++)
-                {
-                    if (TransitionResolver.FindActive(document.Tracks[i], target) is { } active)
-                        activeByTrack[i] = active;
-                }
-            }
+            var (needsSeek, decodeMode, document, layers, activeByTrack) = request;
 
             var cacheHits = 0;
             var transitionCount = 0;
             foreach (var layer in layers)
             {
-                if (activeByTrack.TryGetValue(layer.TrackIndex, out var active)
-                    && (layer.Clip.Id == active.Outgoing.Id || layer.Clip.Id == active.Incoming.Id))
+                if (request.InTransition(layer))
                     continue;
 
                 GpuLayer? built = null;
@@ -813,11 +843,7 @@ public partial class PreviewViewModel : ViewModelBase
                 .ToList();
             scene = new GpuScene { Width = _targetWidth, Height = _targetHeight, Layers = paintOrder };
 
-            var modeTag = scrubbing ? "scrub" : "play";
-            var cacheTag = cacheHits > 0 ? $" · cache {cacheHits}/{layers.Count}" : "";
-            var dropsTag = _playbackDrops > 30 ? " · dropping" : "";
-            var txTag = transitionCount > 0 ? $" · {transitionCount} transition(s)" : "";
-            status = $"{_targetWidth}x{_targetHeight} · {ordered.Count} layer(s) · {modeTag}{txTag}{cacheTag}{dropsTag} · GPU";
+            status = ComposeStatus(ordered.Count, layers.Count, transitionCount, cacheHits) + " · GPU";
             return true;
         }
         catch (Exception)
@@ -901,28 +927,12 @@ public partial class PreviewViewModel : ViewModelBase
         try
         {
             // Runs on the decode worker's thread pool thread.
-            var needsSeek = target < _lastRequestSec - 0.05;
-            var scrubbing = _editor is not { IsPlaying: true };
-            var decodeMode = scrubbing && fast ? PreviewDecodeMode.Scrub : PreviewDecodeMode.Playback;
-            _lastRequestSec = target;
-
-            var document = _editor?.Editor.Document;
-            var layers = _resolver(target);
-            if ((document is null || document.Tracks.Count == 0) && layers.Count == 0)
+            if (BeginCompose(target, fast) is not { } request)
             {
                 status = "No video at playhead";
                 return false;
             }
-
-            var activeByTrack = new Dictionary<int, ActiveTransition>();
-            if (document is not null)
-            {
-                for (var i = 0; i < document.Tracks.Count; i++)
-                {
-                    if (TransitionResolver.FindActive(document.Tracks[i], target) is { } active)
-                        activeByTrack[i] = active;
-                }
-            }
+            var (needsSeek, decodeMode, document, layers, activeByTrack) = request;
 
             var ordered = new List<(int TrackIndex, CompositeLayer Layer)>();
             var cacheHits = 0;
@@ -933,8 +943,7 @@ public partial class PreviewViewModel : ViewModelBase
             {
                 foreach (var layer in layers)
                 {
-                    if (activeByTrack.TryGetValue(layer.TrackIndex, out var active)
-                        && (layer.Clip.Id == active.Outgoing.Id || layer.Clip.Id == active.Incoming.Id))
+                    if (request.InTransition(layer))
                         continue;
 
                     DecodedFrame? frame = null;
@@ -992,11 +1001,7 @@ public partial class PreviewViewModel : ViewModelBase
                     composites.Add(item.Layer);
                 FrameCompositor.ComposeInto(composites, _targetWidth, _targetHeight, pixels, ref _cropScratch);
 
-                var modeTag = scrubbing ? "scrub" : "play";
-                var cacheTag = cacheHits > 0 ? $" · cache {cacheHits}/{layers.Count}" : "";
-                var dropsTag = _playbackDrops > 30 ? " · dropping" : "";
-                var txTag = transitionCount > 0 ? $" · {transitionCount} transition(s)" : "";
-                status = $"{_targetWidth}x{_targetHeight} · {ordered.Count} layer(s) · {modeTag}{txTag}{cacheTag}{dropsTag}";
+                status = ComposeStatus(ordered.Count, layers.Count, transitionCount, cacheHits);
 
                 return true;
             }

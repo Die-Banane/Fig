@@ -77,6 +77,10 @@ namespace Fig.Core.Media
             return null;
         }
 
+        /// <summary>The effect's parameters read through its schema (for code that renders it without its class, the GPU renderer).</summary>
+        public static ParamSet ParamsOf(string typeId, IReadOnlyDictionary<string, ParamValue> values)
+            => new(Find(typeId)?.ParamSchema ?? Array.Empty<ParamDef>(), values);
+
         public static IEffectProcessor? Resolve(string typeId)
         {
             if (Processors.Value.TryGetValue(typeId, out var processor))

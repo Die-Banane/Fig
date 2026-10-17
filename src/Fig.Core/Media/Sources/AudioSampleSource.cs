@@ -52,15 +52,7 @@ namespace Fig.Core.Media
 
                 decCtx = FfmpegOpen.Decoder(stream);
 
-                swr = ffmpeg.swr_alloc();
-                AVChannelLayout stereo = default;
-                ffmpeg.av_channel_layout_default(&stereo, 2);
-                ffmpeg.swr_alloc_set_opts2(&swr,
-                    &stereo, AVSampleFormat.AV_SAMPLE_FMT_FLT, sampleRate,
-                    &par->ch_layout, (AVSampleFormat)par->format, par->sample_rate,
-                    0, null);
-                ThrowIfError(ffmpeg.swr_init(swr), "swr_init");
-                ffmpeg.av_channel_layout_uninit(&stereo);
+                swr = FfmpegOpen.Resampler(par, 2, AVSampleFormat.AV_SAMPLE_FMT_FLT, sampleRate);
 
                 _inCtx = inCtx;
                 _decCtx = decCtx;
@@ -246,12 +238,6 @@ namespace Fig.Core.Media
                 _carryOffset = 0;
             }
             return written;
-        }
-
-        private static void ThrowIfError(int ret, string what)
-        {
-            if (ret < 0)
-                throw new InvalidOperationException($"{what} failed: {ret}");
         }
 
         public void Dispose()

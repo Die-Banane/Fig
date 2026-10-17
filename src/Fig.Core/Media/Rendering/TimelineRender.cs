@@ -59,7 +59,7 @@ namespace Fig.Core.Media
                 SwsContext* sws = null;
                 try
                 {
-                    ThrowIfError(ffmpeg.avformat_alloc_output_context2(&outCtx, null, null, outputPath),
+                    FfmpegOpen.Check(ffmpeg.avformat_alloc_output_context2(&outCtx, null, null, outputPath),
                         "avformat_alloc_output_context2");
                     if (outCtx == null)
                         throw new InvalidOperationException("Could not create output context");
@@ -70,7 +70,7 @@ namespace Fig.Core.Media
                     encoderUsed?.Invoke(opened.Label);
                     vEnc = opened.Context;
                     vStream = ffmpeg.avformat_new_stream(outCtx, opened.Codec);
-                    ThrowIfError(ffmpeg.avcodec_parameters_from_context(vStream->codecpar, vEnc), "avcodec_parameters_from_context (video)");
+                    FfmpegOpen.Check(ffmpeg.avcodec_parameters_from_context(vStream->codecpar, vEnc), "avcodec_parameters_from_context (video)");
                     vStream->time_base = vEnc->time_base;
 
                     // ---- audio stream: AAC @ 48 kHz stereo ----
@@ -85,27 +85,27 @@ namespace Fig.Core.Media
                     aEnc->ch_layout = stereo;
                     aEnc->sample_fmt = AVSampleFormat.AV_SAMPLE_FMT_FLTP;
                     aEnc->time_base = new AVRational { num = 1, den = AudioMixer.SampleRate };
-                    ThrowIfError(ffmpeg.avcodec_open2(aEnc, acodec, null), "avcodec_open2 (audio)");
+                    FfmpegOpen.Check(ffmpeg.avcodec_open2(aEnc, acodec, null), "avcodec_open2 (audio)");
                     aStream = ffmpeg.avformat_new_stream(outCtx, acodec);
-                    ThrowIfError(ffmpeg.avcodec_parameters_from_context(aStream->codecpar, aEnc), "avcodec_parameters_from_context (audio)");
+                    FfmpegOpen.Check(ffmpeg.avcodec_parameters_from_context(aStream->codecpar, aEnc), "avcodec_parameters_from_context (audio)");
                     aStream->time_base = aEnc->time_base;
                     ffmpeg.av_channel_layout_uninit(&stereo);
 
-                    ThrowIfError(ffmpeg.avio_open(&outCtx->pb, outputPath, ffmpeg.AVIO_FLAG_WRITE), "avio_open");
-                    ThrowIfError(ffmpeg.avformat_write_header(outCtx, null), "avformat_write_header");
+                    FfmpegOpen.Check(ffmpeg.avio_open(&outCtx->pb, outputPath, ffmpeg.AVIO_FLAG_WRITE), "avio_open");
+                    FfmpegOpen.Check(ffmpeg.avformat_write_header(outCtx, null), "avformat_write_header");
 
                     // ---- scratch frames: compose to BGRA, convert to YUV420 ----
                     bgra = ffmpeg.av_frame_alloc();
                     bgra->format = (int)AVPixelFormat.AV_PIX_FMT_BGRA;
                     bgra->width = width;
                     bgra->height = height;
-                    ThrowIfError(ffmpeg.av_frame_get_buffer(bgra, 32), "av_frame_get_buffer (bgra)");
+                    FfmpegOpen.Check(ffmpeg.av_frame_get_buffer(bgra, 32), "av_frame_get_buffer (bgra)");
 
                     yuv = ffmpeg.av_frame_alloc();
                     yuv->format = (int)opened.InputFormat;
                     yuv->width = width;
                     yuv->height = height;
-                    ThrowIfError(ffmpeg.av_frame_get_buffer(yuv, 32), "av_frame_get_buffer (yuv)");
+                    FfmpegOpen.Check(ffmpeg.av_frame_get_buffer(yuv, 32), "av_frame_get_buffer (yuv)");
 
                     sws = ffmpeg.sws_getContext(width, height, AVPixelFormat.AV_PIX_FMT_BGRA,
                         width, height, opened.InputFormat, SWS_BILINEAR, null, null, null);
@@ -186,7 +186,7 @@ namespace Fig.Core.Media
             AVChannelLayout stereo = default;
             ffmpeg.av_channel_layout_default(&stereo, 2);
             frame->ch_layout = stereo;
-            ThrowIfError(ffmpeg.av_frame_get_buffer(frame, 32), "av_frame_get_buffer (audio)");
+            FfmpegOpen.Check(ffmpeg.av_frame_get_buffer(frame, 32), "av_frame_get_buffer (audio)");
             ffmpeg.av_channel_layout_uninit(&stereo);
 
             for (var c = 0; c < 2; c++)
@@ -249,8 +249,8 @@ namespace Fig.Core.Media
             var gpu = ffmpeg.av_frame_alloc();
             try
             {
-                ThrowIfError(ffmpeg.av_hwframe_get_buffer(encoder.HwFrames, gpu, 0), "av_hwframe_get_buffer");
-                ThrowIfError(ffmpeg.av_hwframe_transfer_data(gpu, yuv, 0), "av_hwframe_transfer_data");
+                FfmpegOpen.Check(ffmpeg.av_hwframe_get_buffer(encoder.HwFrames, gpu, 0), "av_hwframe_get_buffer");
+                FfmpegOpen.Check(ffmpeg.av_hwframe_transfer_data(gpu, yuv, 0), "av_hwframe_transfer_data");
                 EncodeFrame(vEnc, outCtx, vStream, gpu, index);
             }
             finally

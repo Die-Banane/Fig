@@ -17,6 +17,14 @@
         <SolidColorBrush x:Key="CardBorder" Color="Transparent"/>
         <SolidColorBrush x:Key="Hairline" Color="#2a2d34"/>
         <SolidColorBrush x:Key="Danger" Color="#ff7a7a"/>
+        <!-- one menu for a project, right-clicked or from its ⋯ button, in either view (it takes the project it opens on) -->
+        <MenuFlyout x:Key="ProjectActions" x:DataType="vm:ProjectItemViewModel" Placement="BottomEdgeAlignedRight">
+            <MenuItem Header="Open project" Command="{Binding OpenCommand}"/>
+            <MenuItem Header="Rename" Command="{Binding RenameCommand}"/>
+            <MenuItem Header="Show in folder" Command="{Binding ShowInFolderCommand}"/>
+            <Separator/>
+            <MenuItem Header="Delete project…" Foreground="{StaticResource Danger}" Command="{Binding DeleteCommand}"/>
+        </MenuFlyout>
     </UserControl.Resources>
 
     <UserControl.KeyBindings>
@@ -136,16 +144,7 @@
                         <ItemsControl.ItemTemplate>
                             <DataTemplate x:DataType="vm:ProjectItemViewModel">
                                 <StackPanel Width="228" Margin="0,0,16,20">
-                                    <Button Classes="card" Command="{Binding OpenCommand}" AutomationProperties.Name="{Binding Name}">
-                                        <Button.ContextMenu>
-                                            <ContextMenu>
-                                                <MenuItem Header="Open project" Command="{Binding OpenCommand}"/>
-                                                <MenuItem Header="Rename" Command="{Binding RenameCommand}"/>
-                                                <MenuItem Header="Show in folder" Command="{Binding ShowInFolderCommand}"/>
-                                                <Separator/>
-                                                <MenuItem Header="Delete project…" Foreground="{StaticResource Danger}" Command="{Binding DeleteCommand}"/>
-                                            </ContextMenu>
-                                        </Button.ContextMenu>
+                                    <Button Classes="card" Command="{Binding OpenCommand}" AutomationProperties.Name="{Binding Name}" ContextFlyout="{StaticResource ProjectActions}">
                                         <Border Classes="thumb" Height="128" Background="{StaticResource CardBg}" CornerRadius="14"
                                                 BorderBrush="Transparent" BorderThickness="2" ClipToBounds="True">
                                             <Grid>
@@ -160,17 +159,7 @@
                                     <Grid ColumnDefinitions="*,Auto" Margin="4,10,0,2">
                                         <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="13" VerticalAlignment="Center"
                                                    TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Name}"/>
-                                        <Button Grid.Column="1" Classes="fig more" Content="⋯" AutomationProperties.Name="Project actions">
-                                            <Button.Flyout>
-                                            <MenuFlyout Placement="BottomEdgeAlignedRight">
-                                                <MenuItem Header="Open project" Command="{Binding OpenCommand}"/>
-                                                <MenuItem Header="Rename" Command="{Binding RenameCommand}"/>
-                                                <MenuItem Header="Show in folder" Command="{Binding ShowInFolderCommand}"/>
-                                                <Separator/>
-                                                <MenuItem Header="Delete project…" Foreground="{StaticResource Danger}" Command="{Binding DeleteCommand}"/>
-                                            </MenuFlyout>
-                                        </Button.Flyout>
-                                        </Button>
+                                        <Button Grid.Column="1" Classes="fig more" Content="⋯" AutomationProperties.Name="Project actions" Flyout="{StaticResource ProjectActions}"/>
                                     </Grid>
                                     <TextBlock Classes="meta" Margin="4,0,0,0" Text="{Binding LastEditedText, StringFormat='Last edited · {0}'}"/>
                                     <TextBlock Classes="meta" Margin="4,4,0,0" Text="{Binding DurationText, StringFormat='Duration · {0}'}"/>
@@ -190,16 +179,7 @@
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate x:DataType="vm:ProjectItemViewModel">
                                     <Grid Margin="0,0,0,8">
-                                        <Button Classes="row" Height="60" Command="{Binding OpenCommand}" AutomationProperties.Name="{Binding Name}">
-                                            <Button.ContextMenu>
-                                            <ContextMenu>
-                                                <MenuItem Header="Open project" Command="{Binding OpenCommand}"/>
-                                                <MenuItem Header="Rename" Command="{Binding RenameCommand}"/>
-                                                <MenuItem Header="Show in folder" Command="{Binding ShowInFolderCommand}"/>
-                                                <Separator/>
-                                                <MenuItem Header="Delete project…" Foreground="{StaticResource Danger}" Command="{Binding DeleteCommand}"/>
-                                            </ContextMenu>
-                                        </Button.ContextMenu>
+                                        <Button Classes="row" Height="60" Command="{Binding OpenCommand}" AutomationProperties.Name="{Binding Name}" ContextFlyout="{StaticResource ProjectActions}">
                                             <Grid ColumnDefinitions="*,200,120,40" Margin="16,0">
                                                 <StackPanel Orientation="Horizontal" Spacing="14" VerticalAlignment="Center">
                                                     <local:StrokeIcon Icon="clapperboard" Width="20" Height="20" IconBrush="{StaticResource Muted}"/>
@@ -209,17 +189,7 @@
                                                 <TextBlock Classes="meta" Grid.Column="2" VerticalAlignment="Center" Text="{Binding DurationText}"/>
                                             </Grid>
                                         </Button>
-                                        <Button Classes="fig more" HorizontalAlignment="Right" Margin="0,0,16,0" Content="⋯" AutomationProperties.Name="Project actions">
-                                            <Button.Flyout>
-                                            <MenuFlyout Placement="BottomEdgeAlignedRight">
-                                                <MenuItem Header="Open project" Command="{Binding OpenCommand}"/>
-                                                <MenuItem Header="Rename" Command="{Binding RenameCommand}"/>
-                                                <MenuItem Header="Show in folder" Command="{Binding ShowInFolderCommand}"/>
-                                                <Separator/>
-                                                <MenuItem Header="Delete project…" Foreground="{StaticResource Danger}" Command="{Binding DeleteCommand}"/>
-                                            </MenuFlyout>
-                                        </Button.Flyout>
-                                        </Button>
+                                        <Button Classes="fig more" HorizontalAlignment="Right" Margin="0,0,16,0" Content="⋯" AutomationProperties.Name="Project actions" Flyout="{StaticResource ProjectActions}"/>
                                     </Grid>
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>

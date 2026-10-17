@@ -199,7 +199,7 @@ namespace Fig.Core.Media
                 decCtx = FfmpegOpen.Decoder(inStream);
 
                 // ---- open output ----
-                ThrowIfError(ffmpeg.avformat_alloc_output_context2(&outCtx, null, null, outputPath), "avformat_alloc_output_context2");
+                FfmpegOpen.Check(ffmpeg.avformat_alloc_output_context2(&outCtx, null, null, outputPath), "avformat_alloc_output_context2");
 
                 var enc = ffmpeg.avcodec_find_encoder_by_name("libx264");
                 if (enc == null)
@@ -210,14 +210,14 @@ namespace Fig.Core.Media
                 encCtx->time_base = new AVRational { num = 1, den = 30 };
                 encCtx->framerate = new AVRational { num = 30, den = 1 };
                 encCtx->pix_fmt = AVPixelFormat.AV_PIX_FMT_YUV420P;
-                ThrowIfError(ffmpeg.avcodec_open2(encCtx, enc, null), "avcodec_open2");
+                FfmpegOpen.Check(ffmpeg.avcodec_open2(encCtx, enc, null), "avcodec_open2");
 
                 var outStream = ffmpeg.avformat_new_stream(outCtx, enc);
-                ThrowIfError(ffmpeg.avcodec_parameters_from_context(outStream->codecpar, encCtx), "avcodec_parameters_from_context");
+                FfmpegOpen.Check(ffmpeg.avcodec_parameters_from_context(outStream->codecpar, encCtx), "avcodec_parameters_from_context");
                 outStream->time_base = encCtx->time_base;
 
-                ThrowIfError(ffmpeg.avio_open(&outCtx->pb, outputPath, ffmpeg.AVIO_FLAG_WRITE), "avio_open");
-                ThrowIfError(ffmpeg.avformat_write_header(outCtx, null), "avformat_write_header");
+                FfmpegOpen.Check(ffmpeg.avio_open(&outCtx->pb, outputPath, ffmpeg.AVIO_FLAG_WRITE), "avio_open");
+                FfmpegOpen.Check(ffmpeg.avformat_write_header(outCtx, null), "avformat_write_header");
 
                 // ---- pixel conversion ----
                 sws = ffmpeg.sws_getContext(
@@ -230,7 +230,7 @@ namespace Fig.Core.Media
                 outFrame->format = (int)AVPixelFormat.AV_PIX_FMT_YUV420P;
                 outFrame->width = width;
                 outFrame->height = height;
-                ThrowIfError(ffmpeg.av_frame_get_buffer(outFrame, 32), "av_frame_get_buffer");
+                FfmpegOpen.Check(ffmpeg.av_frame_get_buffer(outFrame, 32), "av_frame_get_buffer");
 
                 packet = ffmpeg.av_packet_alloc();
 
@@ -424,7 +424,7 @@ namespace Fig.Core.Media
                             outFrame->color_range = AVColorRange.AVCOL_RANGE_JPEG;
                             outFrame->width = width;
                             outFrame->height = th;
-                            ThrowIfError(ffmpeg.av_frame_get_buffer(outFrame, 32), "av_frame_get_buffer");
+                            FfmpegOpen.Check(ffmpeg.av_frame_get_buffer(outFrame, 32), "av_frame_get_buffer");
 
                             sws = ffmpeg.sws_getContext(w, h, decCtx->pix_fmt, width, th, AVPixelFormat.AV_PIX_FMT_YUV420P, SWS_BILINEAR, null, null, null);
                             ffmpeg.sws_scale(sws, frame->data, frame->linesize, 0, h, outFrame->data, outFrame->linesize);
@@ -441,10 +441,10 @@ namespace Fig.Core.Media
                             encCtx->time_base = new AVRational { num = 1, den = 30 };
                             encCtx->qmin = 3;
                             encCtx->qmax = 5;
-                            ThrowIfError(ffmpeg.avcodec_open2(encCtx, enc, null), "avcodec_open2");
+                            FfmpegOpen.Check(ffmpeg.avcodec_open2(encCtx, enc, null), "avcodec_open2");
 
                             outFrame->pts = 0;
-                            ThrowIfError(ffmpeg.avcodec_send_frame(encCtx, outFrame), "avcodec_send_frame");
+                            FfmpegOpen.Check(ffmpeg.avcodec_send_frame(encCtx, outFrame), "avcodec_send_frame");
 
                             var outPkt = ffmpeg.av_packet_alloc();
                             while (ffmpeg.avcodec_receive_packet(encCtx, outPkt) == 0)
@@ -525,7 +525,7 @@ namespace Fig.Core.Media
                 rgb->format = (int)AVPixelFormat.AV_PIX_FMT_BGRA;
                 rgb->width = width;
                 rgb->height = height;
-                ThrowIfError(ffmpeg.av_frame_get_buffer(rgb, 32), "av_frame_get_buffer");
+                FfmpegOpen.Check(ffmpeg.av_frame_get_buffer(rgb, 32), "av_frame_get_buffer");
 
                 sws = ffmpeg.sws_getContext(
                     inCodecPar->width, inCodecPar->height, decCtx->pix_fmt,
@@ -608,7 +608,7 @@ namespace Fig.Core.Media
                 bgra->format = (int)AVPixelFormat.AV_PIX_FMT_BGRA;
                 bgra->width = w;
                 bgra->height = h;
-                ThrowIfError(ffmpeg.av_frame_get_buffer(bgra, 32), "av_frame_get_buffer");
+                FfmpegOpen.Check(ffmpeg.av_frame_get_buffer(bgra, 32), "av_frame_get_buffer");
                 var linesize = bgra->linesize[0];
                 var srcStride = frame.Width * 4;
                 for (var y = 0; y < h; y++)
@@ -630,14 +630,14 @@ namespace Fig.Core.Media
                 encCtx->time_base = new AVRational { num = 1, den = 30 };
                 encCtx->qmin = 3;
                 encCtx->qmax = 5;
-                ThrowIfError(ffmpeg.avcodec_open2(encCtx, enc, null), "avcodec_open2");
+                FfmpegOpen.Check(ffmpeg.avcodec_open2(encCtx, enc, null), "avcodec_open2");
 
                 yuv = ffmpeg.av_frame_alloc();
                 yuv->format = (int)AVPixelFormat.AV_PIX_FMT_YUV420P;
                 yuv->color_range = AVColorRange.AVCOL_RANGE_JPEG;
                 yuv->width = w;
                 yuv->height = h;
-                ThrowIfError(ffmpeg.av_frame_get_buffer(yuv, 32), "av_frame_get_buffer");
+                FfmpegOpen.Check(ffmpeg.av_frame_get_buffer(yuv, 32), "av_frame_get_buffer");
 
                 sws = ffmpeg.sws_getContext(w, h, AVPixelFormat.AV_PIX_FMT_BGRA, w, h, AVPixelFormat.AV_PIX_FMT_YUV420P, SWS_BILINEAR, null, null, null);
                 if (sws == null)
@@ -645,7 +645,7 @@ namespace Fig.Core.Media
                 ffmpeg.sws_scale(sws, bgra->data, bgra->linesize, 0, h, yuv->data, yuv->linesize);
 
                 yuv->pts = 0;
-                ThrowIfError(ffmpeg.avcodec_send_frame(encCtx, yuv), "avcodec_send_frame");
+                FfmpegOpen.Check(ffmpeg.avcodec_send_frame(encCtx, yuv), "avcodec_send_frame");
 
                 var outPkt = ffmpeg.av_packet_alloc();
                 try
@@ -725,12 +725,6 @@ namespace Fig.Core.Media
             return outPts;
         }
 
-        private static void ThrowIfError(int ret, string what)
-        {
-            if (ret < 0)
-                throw new InvalidOperationException($"{what} failed: {ret}");
-        }
-
         public unsafe float[] ExtractPeaks(string sourcePath, int buckets)
         {
             AVFormatContext* inCtx = null;
@@ -750,15 +744,7 @@ namespace Fig.Core.Media
                 decCtx = FfmpegOpen.Decoder(inStream);
 
                 // resample everything to mono S16 so peak math is uniform
-                swr = ffmpeg.swr_alloc();
-                AVChannelLayout monoLayout = default;
-                ffmpeg.av_channel_layout_default(&monoLayout, 1);
-                ffmpeg.swr_alloc_set_opts2(&swr,
-                    &monoLayout, AVSampleFormat.AV_SAMPLE_FMT_S16, 44100,
-                    &inCodecPar->ch_layout, (AVSampleFormat)inCodecPar->format, inCodecPar->sample_rate,
-                    0, null);
-                ThrowIfError(ffmpeg.swr_init(swr), "swr_init");
-                ffmpeg.av_channel_layout_uninit(&monoLayout);
+                swr = FfmpegOpen.Resampler(inCodecPar, 1, AVSampleFormat.AV_SAMPLE_FMT_S16, 44100);
 
                 var duration = DurationSec(sourcePath, inCtx, inStream);
                 if (duration <= 0)

@@ -60,7 +60,35 @@ namespace Fig.Core.Media
             }
         }
 
-        private static void Check(int ret, string what)
+        /// <summary>
+        /// A resampler from <paramref name="from"/>'s audio to <paramref name="channels"/> channels of
+        /// <paramref name="format"/> at <paramref name="sampleRate"/>.
+        /// </summary>
+        public static SwrContext* Resampler(AVCodecParameters* from, int channels, AVSampleFormat format, int sampleRate)
+        {
+            var swr = ffmpeg.swr_alloc();
+            AVChannelLayout layout = default;
+            ffmpeg.av_channel_layout_default(&layout, channels);
+            try
+            {
+                ffmpeg.swr_alloc_set_opts2(&swr, &layout, format, sampleRate,
+                    &from->ch_layout, (AVSampleFormat)from->format, from->sample_rate, 0, null);
+                Check(ffmpeg.swr_init(swr), "swr_init");
+                return swr;
+            }
+            catch
+            {
+                ffmpeg.swr_free(&swr);
+                throw;
+            }
+            finally
+            {
+                ffmpeg.av_channel_layout_uninit(&layout);
+            }
+        }
+
+        /// <summary>Throws with what failed when an FFmpeg call returns an error.</summary>
+        public static void Check(int ret, string what)
         {
             if (ret < 0)
                 throw new InvalidOperationException($"{what} failed: {ret}");

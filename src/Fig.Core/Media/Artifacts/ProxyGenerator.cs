@@ -67,7 +67,7 @@ namespace Fig.Core.Media
                 TryDelete(partialPath);
                 TryDelete(outputPath);
 
-                ThrowIfError(ffmpeg.avformat_alloc_output_context2(&outCtx, null, "mp4", partialPath),
+                FfmpegOpen.Check(ffmpeg.avformat_alloc_output_context2(&outCtx, null, "mp4", partialPath),
                     "avformat_alloc_output_context2");
 
                 var enc = ffmpeg.avcodec_find_encoder_by_name("libx264");
@@ -96,25 +96,25 @@ namespace Fig.Core.Media
                 ffmpeg.av_dict_set(&opts, "crf", "23", 0);
                 var openRet = ffmpeg.avcodec_open2(encCtx, enc, &opts);
                 ffmpeg.av_dict_free(&opts);
-                ThrowIfError(openRet, "avcodec_open2(libx264)");
+                FfmpegOpen.Check(openRet, "avcodec_open2(libx264)");
 
                 var outStream = ffmpeg.avformat_new_stream(outCtx, null);
                 if (outStream == null)
                     throw new InvalidOperationException("avformat_new_stream failed");
-                ThrowIfError(ffmpeg.avcodec_parameters_from_context(outStream->codecpar, encCtx),
+                FfmpegOpen.Check(ffmpeg.avcodec_parameters_from_context(outStream->codecpar, encCtx),
                     "avcodec_parameters_from_context");
                 outStream->time_base = encCtx->time_base;
 
-                ThrowIfError(ffmpeg.avio_open(&outCtx->pb, partialPath, ffmpeg.AVIO_FLAG_WRITE), "avio_open");
+                FfmpegOpen.Check(ffmpeg.avio_open(&outCtx->pb, partialPath, ffmpeg.AVIO_FLAG_WRITE), "avio_open");
                 wroteFile = true;
-                ThrowIfError(ffmpeg.avformat_write_header(outCtx, null), "avformat_write_header");
+                FfmpegOpen.Check(ffmpeg.avformat_write_header(outCtx, null), "avformat_write_header");
 
                 inFrame = ffmpeg.av_frame_alloc();
                 outFrame = ffmpeg.av_frame_alloc();
                 outFrame->format = (int)AVPixelFormat.AV_PIX_FMT_YUV420P;
                 outFrame->width = outW;
                 outFrame->height = outH;
-                ThrowIfError(ffmpeg.av_frame_get_buffer(outFrame, 32), "av_frame_get_buffer");
+                FfmpegOpen.Check(ffmpeg.av_frame_get_buffer(outFrame, 32), "av_frame_get_buffer");
                 packet = ffmpeg.av_packet_alloc();
 
                 long outPts = 0;

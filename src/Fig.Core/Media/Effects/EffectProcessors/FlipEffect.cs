@@ -19,23 +19,10 @@ namespace Fig.Core.Media
 
             var w = frame.Width;
             var h = frame.Height;
-            var src = frame.Pixels;
-            var px = FramePool.Rent(w * h * 4);
-            PixelOps.Rows(h, y =>
-            {
-                var sy = flipY ? h - 1 - y : y;
-                for (var x = 0; x < w; x++)
-                {
-                    var sx = flipX ? w - 1 - x : x;
-                    var s = (sy * w + sx) * 4;
-                    var i = (y * w + x) * 4;
-                    px[i] = src[s];
-                    px[i + 1] = src[s + 1];
-                    px[i + 2] = src[s + 2];
-                    px[i + 3] = src[s + 3];
-                }
-            });
-            return new DecodedFrame { Width = w, Height = h, Pixels = px };
+            var columns = new int[w];
+            for (var x = 0; x < w; x++)
+                columns[x] = flipX ? w - 1 - x : x;
+            return PixelOps.Remap(frame, columns, y => flipY ? h - 1 - y : y);
         }
     }
 }

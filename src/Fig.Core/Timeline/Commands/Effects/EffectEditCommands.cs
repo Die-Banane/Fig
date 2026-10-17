@@ -4,14 +4,16 @@ using System.Linq;
 
 namespace Fig.Core.Timeline
 {
-    /// <summary>The parts of an effect that editing keyframes and its bar can change, for undo.</summary>
+    /// <summary>The parts of an effect an edit can change (its bar, keyframes, parameters, on/off), for undo.</summary>
     internal sealed record EffectState(
+        bool Enabled,
         double? StartSec,
         double? DurSec,
         Dictionary<string, List<KeyframePoint>> Keyframes,
         Dictionary<string, ParamValue> Params)
     {
         public static EffectState Capture(EffectInstance fx) => new(
+            fx.Enabled,
             fx.StartSec,
             fx.DurSec,
             fx.Keyframes.ToDictionary(kv => kv.Key, kv => new List<KeyframePoint>(kv.Value)),
@@ -19,6 +21,7 @@ namespace Fig.Core.Timeline
 
         public void RestoreTo(EffectInstance fx)
         {
+            fx.Enabled = Enabled;
             fx.StartSec = StartSec;
             fx.DurSec = DurSec;
             fx.Keyframes = Keyframes.ToDictionary(kv => kv.Key, kv => new List<KeyframePoint>(kv.Value));

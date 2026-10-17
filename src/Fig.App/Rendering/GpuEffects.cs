@@ -61,17 +61,6 @@ internal static partial class GpuEffects
             Sources[key] = source;
     }
 
-    // ---- parameter helpers (the CPU processors clamp the same way) ----
-
-    private static double Num(IReadOnlyDictionary<string, ParamValue> p, string key, double fallback)
-        => p.TryGetValue(key, out var v) && v.Kind is ParamKind.Double or ParamKind.Int ? v.AsNumber : fallback;
-
-    private static int Choice(IReadOnlyDictionary<string, ParamValue> p, string key, int fallback)
-        => p.TryGetValue(key, out var v) && v.Kind == ParamKind.List ? v.AsChoice : fallback;
-
-    private static uint ColorOf(IReadOnlyDictionary<string, ParamValue> p, string key, uint fallback)
-        => p.TryGetValue(key, out var v) && v.Kind == ParamKind.Color ? v.AsColor : fallback;
-
     private static float[] Rgb(uint argb) =>
         [((argb >> 16) & 0xFF) / 255f, ((argb >> 8) & 0xFF) / 255f, (argb & 0xFF) / 255f];
 
@@ -96,13 +85,13 @@ internal static partial class GpuEffects
     /// <summary>Applies one effect to a shader. Returns the input unchanged when the effect is a no-op.</summary>
     public static SKShader Apply(SKShader input, EffectCall call, int width, int height, ShaderScope scope)
     {
-        var p = call.Params;
+        var p = EffectCatalog.ParamsOf(call.TypeId, call.Params);
         var size = new[] { (float)width, (float)height };
         switch (call.TypeId)
         {
             case EffectCatalog.Brightness:
             {
-                var amount = Math.Clamp(Num(p, "amount", 0), -1, 1);
+                var amount = p.Number("amount");
                 if (Math.Abs(amount) < 1e-6)
                     return input;
                 var delta = (float)(Math.Round(amount * 255) / 255.0);
@@ -110,42 +99,42 @@ internal static partial class GpuEffects
             }
             case EffectCatalog.Contrast:
             {
-                var amount = Math.Clamp(Num(p, "amount", 1), 0, 2);
+                var amount = p.Number("amount");
                 if (Math.Abs(amount - 1) < 1e-6)
                     return input;
                 return Run(Get("contrast", Sources["contrast"]), scope, u => u["amount"] = (float)amount, ("src", input));
             }
             case EffectCatalog.Grayscale:
             {
-                var amount = Math.Clamp(Num(p, "amount", 1), 0, 1);
+                var amount = p.Number("amount");
                 if (amount < 1e-6)
                     return input;
                 return Run(Get("grayscale", Sources["grayscale"]), scope, u => u["amount"] = (float)amount, ("src", input));
             }
             case EffectCatalog.Saturation:
             {
-                var amount = Math.Clamp(Num(p, "amount", 1), 0, 2);
+                var amount = p.Number("amount");
                 if (Math.Abs(amount - 1) < 1e-6)
                     return input;
                 return Run(Get("saturation", Sources["saturation"]), scope, u => u["amount"] = (float)amount, ("src", input));
             }
             case EffectCatalog.Sepia:
             {
-                var amount = Math.Clamp(Num(p, "amount", 1), 0, 1);
+                var amount = p.Number("amount");
                 if (amount < 1e-6)
                     return input;
                 return Run(Get("sepia", Sources["sepia"]), scope, u => u["amount"] = (float)amount, ("src", input));
             }
             case EffectCatalog.Invert:
             {
-                var amount = Math.Clamp(Num(p, "amount", 1), 0, 1);
+                var amount = p.Number("amount");
                 if (amount < 1e-6)
                     return input;
                 return Run(Get("invert", Sources["invert"]), scope, u => u["amount"] = (float)amount, ("src", input));
             }
             case EffectCatalog.Hue:
             {
-                var degrees = ((Num(p, "degrees", 0) % 360) + 360) % 360;
+                var degrees = ((p.Number("degrees") % 360) + 360) % 360;
                 if (degrees < 1e-6 || degrees > 359.999)
                     return input;
                 var rad = degrees * Math.PI / 180.0;
@@ -163,11 +152,11 @@ internal static partial class GpuEffects
             }
             case EffectCatalog.Tint:
             {
-                var strength = Math.Clamp(Num(p, "strength", 0), 0, 1);
+                var strength = p.Number("strength");
                 if (strength < 1e-6)
                     return input;
-                var tint = Rgb(ColorOf(p, "color", 0xFF0080FFu));
-                var preserve = p.TryGetValue("preserve_luma", out var pl) && pl.Kind == ParamKind.Bool && pl.AsBool;
+                var tint = Rgb(p.Color("color"));
+                var preserve = p.Bool("preserve_luma");
                 return Run(Get("tint", Sources["tint"]), scope, u =>
                 {
                     u["tint"] = tint;
@@ -177,10 +166,10 @@ internal static partial class GpuEffects
             }
             case EffectCatalog.Vignette:
             {
-                var strength = Math.Clamp(Num(p, "strength", 0.35), 0, 1);
+                var strength = p.Number("strength");
                 if (strength < 1e-6)
                     return input;
-                var color = Rgb(ColorOf(p, "color", 0xFF000000u));
+                var color = Rgb(p.Color("color"));
                 return Run(Get("vignette", Sources["vignette"]), scope, u =>
                 {
                     u["size"] = size;
@@ -190,20 +179,20 @@ internal static partial class GpuEffects
             }
             case EffectCatalog.Posterize:
             {
-                var levels = Math.Max(2, (int)Math.Round(Num(p, "levels", 4)));
+                var levels = p.Int("levels");
                 var step = (float)(255.0 / (levels - 1));
                 return Run(Get("posterize", Sources["posterize"]), scope, u => u["levelStep"] = step, ("src", input));
             }
             case EffectCatalog.Pixelate:
             {
-                var block = Math.Max(1, (int)Math.Round(Num(p, "block", 8)));
+                var block = p.Int("block");
                 if (block == 1)
                     return input;
                 return Run(Get("pixelate", Sources["pixelate"]), scope, u => u["block"] = (float)block, ("src", input));
             }
             case EffectCatalog.Flip:
             {
-                var axis = Choice(p, "axis", 0);
+                var axis = p.Choice("axis");
                 var flipX = axis is 0 or 2;
                 var flipY = axis is 1 or 2;
                 if (!flipX && !flipY)
@@ -217,7 +206,7 @@ internal static partial class GpuEffects
             }
             case EffectCatalog.Sharpen:
             {
-                var amount = Math.Clamp(Num(p, "amount", 0.5), 0, 2);
+                var amount = p.Number("amount");
                 if (amount < 1e-6)
                     return input;
                 return Run(Get("sharpen", Sources["sharpen"]), scope, u => u["amount"] = (float)amount, ("src", input));
@@ -233,13 +222,13 @@ internal static partial class GpuEffects
         }
     }
 
-    private static SKShader CropWithPadding(SKShader input, IReadOnlyDictionary<string, ParamValue> p, int w, int h, ShaderScope scope)
+    private static SKShader CropWithPadding(SKShader input, ParamSet p, int w, int h, ShaderScope scope)
     {
-        var left = Math.Clamp(Num(p, "left", 0), 0, 0.5);
-        var right = Math.Clamp(Num(p, "right", 0), 0, 0.5);
-        var top = Math.Clamp(Num(p, "top", 0), 0, 0.5);
-        var bottom = Math.Clamp(Num(p, "bottom", 0), 0, 0.5);
-        var pad = Rgb(ColorOf(p, "color", 0xFF000000u));
+        var left = p.Number("left");
+        var right = p.Number("right");
+        var top = p.Number("top");
+        var bottom = p.Number("bottom");
+        var pad = Rgb(p.Color("color"));
 
         // visual coordinates: y counts up from the bottom edge, exactly like the CPU processor
         var x0 = (int)Math.Round(w * left);
@@ -267,7 +256,7 @@ internal static partial class GpuEffects
         }, ("src", input));
     }
 
-    private static SKShader Transform(SKShader input, IReadOnlyDictionary<string, ParamValue> p, int w, int h, ShaderScope scope)
+    private static SKShader Transform(SKShader input, ParamSet p, int w, int h, ShaderScope scope)
     {
         var view = TransformMath.ViewFrom(p);
         if (view.IsIdentity)
@@ -308,9 +297,10 @@ internal static partial class GpuEffects
 
     /// <summary>Blends two shaders with a catalog transition at progress <paramref name="t01"/>.</summary>
     public static SKShader Transition(SKShader a, SKShader b, string typeId, double t01,
-        IReadOnlyDictionary<string, ParamValue> p, int width, int height, ShaderScope scope)
+        IReadOnlyDictionary<string, ParamValue> values, int width, int height, ShaderScope scope)
     {
         t01 = Math.Clamp(t01, 0, 1);
+        var p = TransitionCatalog.ParamsOf(typeId, values);
         var size = new[] { (float)width, (float)height };
         void Common(SKRuntimeEffectUniforms u)
         {
@@ -326,42 +316,42 @@ internal static partial class GpuEffects
                 return Run(Get("tx.fade", Sources["tx.fade"]), scope, Common, ("a", a), ("b", b));
             case TransitionCatalog.Wipe:
             {
-                var soft = (float)Math.Clamp(Num(p, "soft", 0.1), 0, 0.5);
+                var soft = (float)p.Number("soft");
                 return Run(Get("tx.wipe", Sources["tx.wipe"]), scope, u => { Common(u); u["soft"] = soft; }, ("a", a), ("b", b));
             }
             case TransitionCatalog.Curtain:
             {
-                var panels = (float)Math.Max(2, (int)Math.Round(Num(p, "panels", 6)));
-                var soft = (float)Math.Clamp(Num(p, "soft", 0.1), 0, 0.5);
+                var panels = (float)p.Int("panels");
+                var soft = (float)p.Number("soft");
                 return Run(Get("tx.curtain", Sources["tx.curtain"]), scope,
                     u => { Common(u); u["panels"] = panels; u["soft"] = soft; }, ("a", a), ("b", b));
             }
             case TransitionCatalog.Iris:
             {
-                var soft = (float)Math.Clamp(Num(p, "soft", 0.1), 0, 0.5);
+                var soft = (float)p.Number("soft");
                 return Run(Get("tx.iris", Sources["tx.iris"]), scope, u => { Common(u); u["soft"] = soft; }, ("a", a), ("b", b));
             }
             case TransitionCatalog.Push:
             {
-                var dir = (float)Choice(p, "direction", 0);
+                var dir = (float)p.Choice("direction");
                 return Run(Get("tx.push", Sources["tx.push"]), scope, u => { Common(u); u["dir"] = dir; }, ("a", a), ("b", b));
             }
             case TransitionCatalog.Slide:
             {
-                var dir = (float)Choice(p, "direction", 0);
+                var dir = (float)p.Choice("direction");
                 return Run(Get("tx.slide", Sources["tx.slide"]), scope, u => { Common(u); u["dir"] = dir; }, ("a", a), ("b", b));
             }
             case TransitionCatalog.Swirl:
             {
                 var center = new[]
                 {
-                    (float)(Math.Clamp(Num(p, "centerX", 0.5), 0, 1) * width),
-                    (float)(Math.Clamp(Num(p, "centerY", 0.5), 0, 1) * height),
+                    (float)(p.Number("centerX") * width),
+                    (float)(p.Number("centerY") * height),
                 };
-                var radius = (float)(Math.Clamp(Num(p, "radius", 0.42), 0.05, 1) * Math.Min(width, height));
-                var rotation = (float)(Num(p, "rotation", 90) * Math.PI / 180.0);
-                var direction = Choice(p, "direction", 0) == 1 ? -1f : 1f;
-                var easing = (float)Choice(p, "easing", 3);
+                var radius = (float)(p.Number("radius") * Math.Min(width, height));
+                var rotation = (float)(p.Number("rotation") * Math.PI / 180.0);
+                var direction = p.Choice("direction") == 1 ? -1f : 1f;
+                var easing = (float)p.Choice("easing");
                 return Run(Get("tx.swirl", Sources["tx.swirl"]), scope, u =>
                 {
                     Common(u);

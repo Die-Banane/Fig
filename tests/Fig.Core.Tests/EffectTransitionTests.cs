@@ -6,28 +6,36 @@ namespace Fig.Core.Tests;
 
 public class EffectTransitionTests
 {
+    /// <summary>
+    /// Every built-in effect runs on its declared defaults alone: a parameter read but not declared throws, and a
+    /// missing value is the declared default rather than a second, hard-coded one.
+    /// </summary>
     [Fact]
-    public void EffectCatalog_HasBuiltIns()
+    public void EveryEffect_RunsOnItsDeclaredDefaults()
     {
-        Assert.Contains(EffectCatalog.All, e => e.TypeId == EffectCatalog.Brightness);
-        Assert.Contains(EffectCatalog.All, e => e.TypeId == EffectCatalog.Grayscale);
-        Assert.NotNull(EffectCatalog.Resolve(EffectCatalog.Brightness));
-        Assert.NotNull(EffectCatalog.Resolve(EffectCatalog.Grayscale));
+        var frame = MakeFrame(16, 8, 90, 120, 150);
+        var none = new Dictionary<string, ParamValue>();
+        foreach (var entry in EffectCatalog.All)
+        {
+            var defaults = EffectCatalog.Resolve(entry.TypeId)!.Apply(frame, entry.DefaultParams(), 0.5);
+            var empty = EffectCatalog.Resolve(entry.TypeId)!.Apply(frame, none, 0.5);
+            Assert.True(defaults.Pixels.AsSpan(0, 16 * 8 * 4).SequenceEqual(empty.Pixels.AsSpan(0, 16 * 8 * 4)), entry.TypeId);
+        }
     }
 
     [Fact]
-    public void TransitionCatalog_HasCrossDissolve()
+    public void EveryTransition_RunsOnItsDeclaredDefaults()
     {
+        var a = MakeFrame(16, 8, 0, 0, 0);
+        var b = MakeFrame(16, 8, 200, 200, 200);
+        var none = new Dictionary<string, ParamValue>();
         Assert.Contains(TransitionCatalog.All, e => e.TypeId == TransitionCatalog.CrossDissolve);
-        Assert.NotNull(TransitionCatalog.Resolve(TransitionCatalog.CrossDissolve));
-    }
-
-    [Fact]
-    public void TransitionCatalog_HasWipe()
-    {
-        Assert.Contains(TransitionCatalog.All, e => e.TypeId == TransitionCatalog.Wipe);
-        Assert.NotNull(TransitionCatalog.Resolve(TransitionCatalog.Wipe));
-        Assert.Equal("arrow-right-left", TransitionCatalog.Find(TransitionCatalog.Wipe)!.Icon);
+        foreach (var entry in TransitionCatalog.All)
+        {
+            var defaults = TransitionCatalog.Resolve(entry.TypeId)!.Blend(a, b, 0.4, entry.DefaultParams());
+            var empty = TransitionCatalog.Resolve(entry.TypeId)!.Blend(a, b, 0.4, none);
+            Assert.True(defaults.Pixels.AsSpan(0, 16 * 8 * 4).SequenceEqual(empty.Pixels.AsSpan(0, 16 * 8 * 4)), entry.TypeId);
+        }
     }
 
     [Fact]

@@ -29,16 +29,6 @@ internal static partial class GpuEffects
         "pixel-dissolve", "luma-dissolve", "radial-wipe", "blinds", "card-flip",
     ];
 
-    /// <summary>A parameter clamped like the CPU <c>CreativeFrameOps.Number</c>.</summary>
-    private static double N(IReadOnlyDictionary<string, ParamValue> p, string key, double fallback, double min = 0, double max = 1)
-    {
-        var value = p.TryGetValue(key, out var v) ? v.AsNumber : fallback;
-        return double.IsFinite(value) ? Math.Clamp(value, min, max) : fallback;
-    }
-
-    private static int Pick(IReadOnlyDictionary<string, ParamValue> p, string key)
-        => p.TryGetValue(key, out var v) ? v.AsChoice : 0;
-
     private static float[] Pair(double a, double b) => [(float)a, (float)b];
 
     private static readonly int[] BlurBounds = [4, 8, 16, 32, 64, MaxBlurRadius];
@@ -82,39 +72,39 @@ internal static partial class GpuEffects
 
     private static SKShader? ApplyCreative(SKShader input, EffectCall call, int w, int h, ShaderScope scope)
     {
-        var p = call.Params;
+        var p = EffectCatalog.ParamsOf(call.TypeId, call.Params);
         var t = call.LocalT;
         var size = Pair(w, h);
         switch (call.TypeId)
         {
             case "soft-blur":
             {
-                var amount = N(p, "amount", 0.012, 0, 0.08);
+                var amount = p.Number("amount");
                 return amount == 0 ? input : BoxBlur(input, Math.Max(1, (int)Math.Round(amount * Math.Min(w, h))), w, h, scope);
             }
             case "directional-blur":
             {
-                var distance = N(p, "amount", 0.025, 0, 0.15) * w;
+                var distance = p.Number("amount") * w;
                 if (distance == 0)
                     return input;
-                var angle = N(p, "angle", 0, -180, 180) * Math.PI / 180;
+                var angle = p.Number("angle") * Math.PI / 180;
                 var step = Pair(Math.Cos(angle) * distance / 4, Math.Sin(angle) * distance / 4);
                 return Run(Get("dirBlur", Sources["dirBlur"]), scope, u => { u["size"] = size; u["stepv"] = step; }, ("src", input));
             }
             case "zoom-blur":
             {
-                var amount = N(p, "amount", 0.15, 0, 0.7);
+                var amount = p.Number("amount");
                 if (amount == 0)
                     return input;
                 return Run(Get("zoomBlur", Sources["zoomBlur"]), scope, u => { u["size"] = size; u["amount"] = (float)amount; }, ("src", input));
             }
             case "glow":
             {
-                var amount = N(p, "amount", 0.6, 0, 2);
+                var amount = p.Number("amount");
                 if (amount == 0)
                     return input;
-                var threshold = N(p, "threshold", 0.65);
-                var radius = Math.Max(1, (int)(N(p, "radius", 0.025, 0.002, 0.1) * Math.Min(w, h)));
+                var threshold = p.Number("threshold");
+                var radius = Math.Max(1, (int)(p.Number("radius") * Math.Min(w, h)));
                 var highlights = scope.Materialize(
                     Run(Get("glowHigh", Sources["glowHigh"]), scope, u => u["threshold"] = (float)threshold, ("src", input)), w, h);
                 var halo = BoxBlur(highlights, radius, w, h, scope);
@@ -122,10 +112,10 @@ internal static partial class GpuEffects
             }
             case "film-grain":
             {
-                var amount = N(p, "amount", 0.15) * 100;
+                var amount = p.Number("amount") * 100;
                 if (amount == 0)
                     return input;
-                var cell = (float)(int)N(p, "size", 1, 1, 6);
+                var cell = (float)(int)p.Number("size");
                 var seed = (float)Math.Floor(t * 24);
                 return Run(Get("grain", Sources["grain"]), scope, u =>
                 {
@@ -136,8 +126,8 @@ internal static partial class GpuEffects
             }
             case "vhs":
             {
-                var amount = N(p, "amount", 0.45);
-                var speed = N(p, "speed", 1, 0.1, 4);
+                var amount = p.Number("amount");
+                var speed = p.Number("speed");
                 if (amount == 0)
                     return input;
                 var seed = (float)Math.Floor(t * 30);
@@ -151,10 +141,10 @@ internal static partial class GpuEffects
             }
             case "digital-glitch":
             {
-                var amount = N(p, "amount", 0.4);
+                var amount = p.Number("amount");
                 if (amount == 0)
                     return input;
-                var seed = (float)Math.Floor(t * N(p, "speed", 12, 1, 30));
+                var seed = (float)Math.Floor(t * p.Number("speed"));
                 return Run(Get("glitch", Sources["glitch"]), scope, u =>
                 {
                     u["size"] = size;
@@ -164,8 +154,8 @@ internal static partial class GpuEffects
             }
             case "camera-shake":
             {
-                var amount = N(p, "amount", 0.025, 0, 0.12);
-                var speed = N(p, "speed", 8, 0.5, 25);
+                var amount = p.Number("amount");
+                var speed = p.Number("speed");
                 if (amount == 0)
                     return input;
                 var dx = amount * (Math.Sin(t * speed * 6.28) + 0.4 * Math.Sin(t * speed * 13.7)) / 1.4;
@@ -174,19 +164,19 @@ internal static partial class GpuEffects
             }
             case "pulse-zoom":
             {
-                var amount = N(p, "amount", 0.12, 0, 0.8);
+                var amount = p.Number("amount");
                 if (amount == 0)
                     return input;
-                var pulse = Math.Pow(0.5 + 0.5 * Math.Cos(t * N(p, "bpm", 120, 30, 240) / 60 * Math.PI * 2), 4);
+                var pulse = Math.Pow(0.5 + 0.5 * Math.Cos(t * p.Number("bpm") / 60 * Math.PI * 2), 4);
                 return Zoomed(input, 1 + amount * pulse, 0, 0, size, scope);
             }
             case "strobe":
             {
-                var phase = t * N(p, "frequency", 2, 0.25, 12);
-                var flash = Math.Max(0, 1 - (phase - Math.Floor(phase)) / 0.2) * N(p, "amount", 0.7);
+                var phase = t * p.Number("frequency");
+                var flash = Math.Max(0, 1 - (phase - Math.Floor(phase)) / 0.2) * p.Number("amount");
                 if (flash <= 0)
                     return input;
-                var dark = p.TryGetValue("dark", out var d) && d.AsBool;
+                var dark = p.Bool("dark");
                 return Run(Get("strobe", Sources["strobe"]), scope, u =>
                 {
                     u["flash"] = (float)flash;
@@ -195,7 +185,7 @@ internal static partial class GpuEffects
             }
             case "lens-distortion":
             {
-                var amount = N(p, "amount", 0.3, -0.6, 0.6);
+                var amount = p.Number("amount");
                 if (amount == 0)
                     return input;
                 return Run(Get("lens", Sources["lens"]), scope, u =>
@@ -209,12 +199,12 @@ internal static partial class GpuEffects
                 return Run(Get("mirror", Sources["mirror"]), scope, u =>
                 {
                     u["size"] = size;
-                    u["axis"] = (float)Pick(p, "axis");
+                    u["axis"] = (float)p.Choice("axis");
                 }, ("src", input));
             case "light-leak":
             {
-                var amount = N(p, "amount", 0.5);
-                var speed = N(p, "speed", 0.5, 0, 3);
+                var amount = p.Number("amount");
+                var speed = p.Number("speed");
                 if (amount == 0)
                     return input;
                 return Run(Get("leak", Sources["leak"]), scope, u =>
@@ -226,11 +216,11 @@ internal static partial class GpuEffects
             }
             case "duotone":
             {
-                var amount = N(p, "amount", 1);
+                var amount = p.Number("amount");
                 if (amount == 0)
                     return input;
-                var low = Rgb(ColorOf(p, "shadows", 0xFF14284Du));
-                var high = Rgb(ColorOf(p, "highlights", 0xFFFFC857u));
+                var low = Rgb(p.Color("shadows"));
+                var high = Rgb(p.Color("highlights"));
                 return Run(Get("duotone", Sources["duotone"]), scope, u =>
                 {
                     u["amount"] = (float)amount;
@@ -254,11 +244,11 @@ internal static partial class GpuEffects
             u["shiftv"] = Pair(dx, dy);
         }, ("src", input));
 
-    private static SKShader Chromatic(SKShader input, IReadOnlyDictionary<string, ParamValue> p, int w, int h, ShaderScope scope)
+    private static SKShader Chromatic(SKShader input, ParamSet p, int w, int h, ShaderScope scope)
     {
-        var radial = p.TryGetValue("radial", out var r) && r.AsBool;
-        var xOffset = Math.Clamp(p.TryGetValue("x_offset", out var x) ? x.AsDouble : 0, -0.05, 0.05);
-        var yOffset = Math.Clamp(p.TryGetValue("y_offset", out var y) ? y.AsDouble : 0, -0.05, 0.05);
+        var radial = p.Bool("radial");
+        var xOffset = p.Number("x_offset");
+        var yOffset = p.Number("y_offset");
         if (Math.Abs(xOffset) < 1e-6 && Math.Abs(yOffset) < 1e-6)
             return input;
         // both axes are scaled by the width, like the CPU effect
@@ -278,7 +268,7 @@ internal static partial class GpuEffects
     // ------------------------------------------------------------------ transitions
 
     private static SKShader? CreativeTransition(SKShader a, SKShader b, string typeId, double t01,
-        IReadOnlyDictionary<string, ParamValue> p, int w, int h, ShaderScope scope)
+        ParamSet p, int w, int h, ShaderScope scope)
     {
         if (!CreativeTransitionIds.Contains(typeId))
             return null;
@@ -286,16 +276,10 @@ internal static partial class GpuEffects
         var size = Pair(w, h);
         var progress = t * t * (3 - 2 * t);
         var peak = Math.Sin(Math.PI * t);
-        var defaultAmount = typeId switch
-        {
-            "white-flash" => 1.0,
-            "zoom-in" or "zoom-out" => 0.55,
-            "glitch-cut" => 0.65,
-            _ => 0.5,
-        };
-        var amount = N(p, "amount", defaultAmount);
-        var softness = N(p, "softness", 0.08, 0.001, 0.4);
-        var direction = p.TryGetValue("direction", out var dir) && dir.AsChoice == 1 ? -1.0 : 1.0;
+        // the kinds share this code but not their parameters, as on the CPU
+        var amount = p.Declares("amount") ? p.Number("amount") : 0;
+        var softness = p.Declares("softness") ? p.Number("softness") : 0.08;
+        var direction = p.Declares("direction") && p.Choice("direction") == 1 ? -1.0 : 1.0;
 
         void Pair2(SKRuntimeEffectUniforms u)
         {
@@ -355,7 +339,7 @@ internal static partial class GpuEffects
             {
                 // pixel / luma / radial / blinds: a per-pixel reveal threshold
                 var kind = typeId switch { "pixel-dissolve" => 0f, "luma-dissolve" => 1f, "radial-wipe" => 2f, _ => 3f };
-                var columns = (int)N(p, "tiles", 24, 4, 100);
+                var columns = p.Declares("tiles") ? p.Int("tiles") : 1;
                 var rows = Math.Max(1, (int)Math.Round(columns * (double)h / w));
                 return Run(Get("tx.reveal", Sources["tx.reveal"]), scope, u =>
                 {
@@ -364,7 +348,7 @@ internal static partial class GpuEffects
                     u["soft"] = (float)softness;
                     u["reveal"] = (float)(progress * (1 + softness) - softness / 2);
                     u["tiles"] = Pair(columns, rows);
-                    u["stripes"] = (float)N(p, "stripes", 10, 2, 40);
+                    u["stripes"] = p.Declares("stripes") ? (float)p.Number("stripes") : 1f;
                     u["dirv"] = (float)direction;
                 }, ("a", a), ("b", b));
             }

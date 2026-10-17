@@ -73,34 +73,13 @@ namespace Fig.Core.Media
         public DecodedFrame Input(string port) => _inputs[port];
         public DecodedFrame? OptionalInput(string port) => _inputs.TryGetValue(port, out var f) ? f : null;
 
-        public double Number(string key)
-        {
-            var def = _descriptor.Param(key);
-            var fallback = def?.Default ?? 0;
-            var value = _params.TryGetValue(key, out var v) && v.Kind is ParamKind.Double or ParamKind.Int ? v.AsNumber : fallback;
-            if (!double.IsFinite(value))
-                value = fallback;
-            return def is not null && def.Max > def.Min ? Math.Clamp(value, def.Min, def.Max) : value;
-        }
+        /// <summary>The parameters read through the primitive's schema (defaulted and clamped).</summary>
+        private ParamSet Read => new(_descriptor.ParamSchema, _params);
 
-        public int Int(string key) => (int)Math.Round(Number(key));
-
-        public bool Bool(string key)
-            => _params.TryGetValue(key, out var v) && v.Kind == ParamKind.Bool
-                ? v.AsBool
-                : (_descriptor.Param(key)?.Default ?? 0) != 0;
-
-        public int Choice(string key)
-        {
-            var def = _descriptor.Param(key);
-            var value = _params.TryGetValue(key, out var v) && v.Kind == ParamKind.List ? v.AsChoice : (int)Math.Round(def?.Default ?? 0);
-            var count = def?.Choices.Count ?? 0;
-            return count > 0 ? Math.Clamp(value, 0, count - 1) : value;
-        }
-
-        public uint Color(string key)
-            => _params.TryGetValue(key, out var v) && v.Kind == ParamKind.Color
-                ? v.AsColor
-                : (uint)(_descriptor.Param(key)?.Default ?? 0);
+        public double Number(string key) => Read.Number(key);
+        public int Int(string key) => Read.Int(key);
+        public bool Bool(string key) => Read.Bool(key);
+        public int Choice(string key) => Read.Choice(key);
+        public uint Color(string key) => Read.Color(key);
     }
 }
