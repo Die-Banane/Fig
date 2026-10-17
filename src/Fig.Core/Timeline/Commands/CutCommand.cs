@@ -27,7 +27,9 @@ namespace Fig.Core.Timeline
         private double _snapFadeIn, _snapFadeOut;
         // a video clip's own sound fades apart from its picture (the same as above for any other clip)
         private double _snapSoundIn, _snapSoundOut;
-        private double _sourceAdvance;
+        // where in the file the cut falls, and the keyframes of the whole clip (both halves are cut from them)
+        private double _snapCutSrc;
+        private Dictionary<string, List<KeyframePoint>> _snapKeyframes = new();
         private TransitionRef? _snapTransitionIn, _snapTransitionOut;
         private List<Marker> _snapMarkers = new();
 
@@ -63,7 +65,8 @@ namespace Fig.Core.Timeline
             _snapTransitionIn = _first.TransitionIn?.Clone();
             _snapTransitionOut = _first.TransitionOut?.Clone();
             _snapMarkers = _first.Markers.Select(CopyMarker).ToList();
-            _sourceAdvance = _first.Speed <= 0 ? 1 : _first.Speed;
+            _snapCutSrc = ClipTime.SourceAt(_first, offset);
+            _snapKeyframes = ClipTime.CopyKeyframes(_first);
 
             _second = Split(_first, offset);
 
@@ -90,7 +93,11 @@ namespace Fig.Core.Timeline
             _first.TransitionIn = _snapTransitionIn?.Clone();
             _first.TransitionOut = _snapTransitionOut?.Clone();
             _first.Markers = _snapMarkers.Select(CopyMarker).ToList();
+            _first.Keyframes = CopyKeys(_snapKeyframes);
         }
+
+        private static Dictionary<string, List<KeyframePoint>> CopyKeys(Dictionary<string, List<KeyframePoint>> keys)
+            => keys.ToDictionary(kv => kv.Key, kv => kv.Value.ToList());
 
         public void Redo()
         {
@@ -113,7 +120,9 @@ namespace Fig.Core.Timeline
         private void ApplyFirstHalf(Clip clip, double offset)
         {
             clip.DurSec = offset;
-            SetSourceRange(clip, _snapSrcIn, _snapSrcIn + offset * _sourceAdvance);
+            SetSourceRange(clip, _snapSrcIn, _snapCutSrc);
+            clip.Keyframes = CopyKeys(_snapKeyframes);
+            ClipTime.KeepBefore(clip, offset);
             clip.FadeInSec = _snapFadeIn;
             if (clip is VideoClip)
                 ClipFade.Set(clip, FadeOf.Sound, _snapSoundIn, _snapSoundOut);
@@ -135,7 +144,9 @@ namespace Fig.Core.Timeline
             result.FadeOutSec = _snapFadeOut;
             if (result is VideoClip)
                 ClipFade.Set(result, FadeOf.Sound, 0, _snapSoundOut);
-            ClipFactory.SetSourceRange(result, _snapSrcIn + offset * _sourceAdvance, _snapSrcOut);
+            ClipFactory.SetSourceRange(result, _snapCutSrc, _snapSrcOut);
+            result.Keyframes = CopyKeys(_snapKeyframes);
+            ClipTime.KeepAfter(result, offset);
             ClipFade.ApplySplitRight(result);
             // right keeps transition-out; clears transition-in
             result.TransitionIn = null;

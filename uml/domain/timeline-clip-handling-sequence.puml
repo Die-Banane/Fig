@@ -1,0 +1,55 @@
+@startuml
+title Timeline: rolling trims, copying effects between clips, drag ghost and auto-scroll, muting a video track
+
+actor User
+participant TimelineView
+participant TimelineEditor
+participant "History" as H
+
+== trim a cut between two clips (rolling edit) ==
+User -> TimelineView : drag the edge where two clips touch
+TimelineView -> TimelineView : BeginRoll: the touching neighbour, and how far the cut can go\n(the neighbour keeps 0.1 s and stays inside its file)
+loop pointer moves
+  TimelineView -> TimelineView : the trimmed clip's edge moves (clamped)
+  TimelineView -> TimelineView : ApplyRoll: the neighbour's edge follows, its in/out point with it
+end
+note right of TimelineView
+  nothing moves on the timeline; an edge with a gap after it
+  just trims, up to the next clip (it never pushes)
+end note
+TimelineView -> TimelineEditor : CommitClipGeometry(both clips): one undo step
+
+== copy and paste effects ==
+User -> TimelineView : clip menu, Copy effects\n(or Ctrl+C with effect bars selected)
+TimelineView -> TimelineEditor : CopyEffects(clipId) / CopySelected()
+note right of TimelineEditor
+  effect clipboard: the effect regions over the clip on its track,
+  each with its offset from the clip start (or from the earliest bar).
+  Kept apart from the clip clipboard; Ctrl+V pastes whichever was copied last.
+end note
+User -> TimelineView : select other video clips, Paste effects (Ctrl+V)
+TimelineView -> TimelineEditor : PasteEffects(clipIds)
+loop each target clip
+  TimelineEditor -> TimelineEditor : copy each region onto the clip's track at\nclip start + offset, cut to the clip, keyframes moved with it
+end
+TimelineEditor -> H : one undo step
+
+== drag ghost ==
+User -> TimelineView : drag clips
+TimelineView -> TimelineView : remember where each clip started
+loop pointer moves
+  TimelineView -> TimelineView : ghost of every dragged clip where the pointer puts it\n(red when it would land on another clip and can't go)
+  TimelineView -> TimelineView : faint outline where they came from
+end
+
+== auto-scroll ==
+loop every 16 ms while any drag is on and the pointer is near an edge
+  TimelineView -> TimelineView : scroll toward that edge, faster the closer it is\n(left/right: time; top/bottom: tracks)
+  TimelineView -> TimelineView : replay the last pointer position, so the drag follows
+end
+
+== mute a video track ==
+User -> TimelineView : speaker button in a video track's header
+TimelineView -> TimelineEditor : SetTrackMuted(track, !Muted)
+note right : the mixer already skips muted tracks of any kind;\nthe eye still hides the picture
+@enduml

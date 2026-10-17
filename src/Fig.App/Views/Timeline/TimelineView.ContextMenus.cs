@@ -99,12 +99,25 @@ namespace Fig.App.Views
             menu.Items.Add(Item($"Duplicate {noun}", () => vm.DuplicateSelectedCommand.Execute(null)));
             menu.Items.Add(new Separator());
 
+            menu.Items.Add(Item("Copy effects", () => vm.CopyEffects(clip.Id), ed.EffectsOver(clip.Id).Count > 0,
+                "Copy the effects on this clip, to paste onto other clips"));
+            menu.Items.Add(Item(many ? $"Paste effects onto {noun}" : "Paste effects", () => { vm.PasteEffects(); InvalidateMeasure(); InvalidateVisual(); },
+                ed.HasEffectClipboard, "Put the copied effects on the selected clips"));
+            menu.Items.Add(new Separator());
+
             menu.Items.Add(Item($"Delete {noun}", () => vm.LiftSelectedCommand.Execute(null), hint: "Remove it and leave a gap"));
             menu.Items.Add(Item($"Ripple delete {noun}", () => vm.RippleDeleteSelectedCommand.Execute(null),
                 hint: "Remove it and close the gap"));
             menu.Items.Add(new Separator());
 
             menu.Items.Add(Item(clip.Enabled ? "Disable clip" : "Enable clip", () => vm.ToggleClipEnabledSelectedCommand.Execute(null)));
+
+            if (ed.CanHaveSpeedCurve(clip.Id))
+                menu.Items.Add(ClipTime.HasCurve(clip)
+                    ? Item("Remove speed curve", () => { ed.RemoveSpeedCurve(clip.Id); InvalidateVisual(); },
+                        hint: "Play at one speed again")
+                    : Item("Add speed curve", () => { ed.AddSpeedCurve(clip.Id); InvalidateVisual(); },
+                        hint: "Ramp the speed through the clip (a velocity edit): drag the line's points up and down"));
 
             if (ed.CanDetachAudio(selected))
                 menu.Items.Add(Item("Detach audio", () => { ed.DetachAudio(selected); InvalidateVisual(); },

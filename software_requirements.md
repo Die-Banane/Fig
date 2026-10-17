@@ -178,6 +178,8 @@ The primary user is a solo creator (hobbyist to semi-professional) who edits sho
 | FR-070 | The mixer SHALL sum audible clips (audio clips and video clips playing embedded audio) into interleaved stereo at 48 kHz, honoring track mute, clip volume, and fade envelopes. | P0 | X |
 | FR-071 | Clip speed ≠ 1 SHALL resample the decoded audio so pitch and duration match the timeline (no truncation). | P0 | X |
 | FR-072 | Per-clip speed editing SHALL be exposed in the UI. | P1 | X |
+| FR-072a | A video clip SHALL take an optional speed curve (a velocity edit, the Vegas model): eased keyframes of speed (0.1×–8×) in seconds from the clip start. The clip SHALL keep its place and length; the curve decides how much footage it uses (the area under the curve). Preview, export, the mixer (pitch follows the curve), cuts, trims, the filmstrip, the waveform and beat analysis SHALL all map time through the curve, and a cut through a ramp SHALL leave both halves starting on the right frame. | P1 | X |
+| FR-072b | The speed curve SHALL be drawn over the clip's picture on a log scale (1× in the middle) and edited there: drag a point (up faster, down slower; sideways it snaps), double-click the line to add a point, double-click a point for 1×, right-click a point for its easing or to delete it; each drag SHALL be one undo step. Where the curve uses up the file before the clip ends, the clip SHALL show "out of footage" there and hold the last frame. | P1 | X |
 
 ### 3.7 Effects and transitions
 | ID | Requirement | Priority | Status |
@@ -296,7 +298,11 @@ Design: `uml/playback/gpu-render-schema.puml`, `uml/playback/gpu-render-sequence
 | FR-192 | The inspector SHALL show one tab per facet that every selected item has, icon-only, and keep the open tab while values are edited. | P0 | X |
 | FR-193 | Delete and the status bar text SHALL come from the selected things, through one table of per-group behaviour. | P0 | X |
 | FR-194 | A rack row (level, fades) SHALL be able to open its tab by facet. | P1 | X |
-| FR-194a | Trimming a clip into its neighbour SHALL push the neighbour (and any clip it then touches, with their linked partners) rather than overlap it; pulling the trim back SHALL let them return; the trim and the pushes SHALL be one undo step. A leftward push SHALL stop at the start of the timeline. | P0 | X |
+| FR-194a | Trimming an edge that touches another clip SHALL move the cut between them (a rolling edit): the neighbour's edge follows, taking more or less of its own footage, and no clip moves; the neighbour keeps at least 0.1 s and can't run past its file. An edge with a gap after it SHALL trim up to the next clip and no further. The trim SHALL be one undo step. | P0 | X |
+| FR-194b | Moving clips SHALL leave a faint outline where they came from; where they can't go (another clip is there) a red ghost SHALL show the spot while they wait where they last fit. | P1 | X |
+| FR-194c | Any drag on the timeline (clips, trims, effect bars, keyframes, speed points, markers, the playhead, a selection box, media dragged in) held near an edge SHALL scroll the timeline that way, faster nearer the edge, and the drag SHALL follow. | P1 | X |
+| FR-194d | The effects over a clip (or the selected effect bars) SHALL copy and paste onto other clips: each lands at the same offset from the clip start, cut to the clip; video effects only onto video clips, audio ones onto audio clips; one undo step. Ctrl+V pastes effects when effects were copied last. | P1 | X |
+| FR-194e | A video track's header SHALL have a mute button for its clips' own sound, beside the show/hide button. | P1 | X |
 | FR-194b | The outer edge of a clip SHALL always trim; fade handles SHALL only be grabbed in the top half of a clip, so a trim never catches a fade. | P0 | X |
 
 Design: `uml/domain/selection-schema.puml`, `uml/domain/selection-sequence.puml`.

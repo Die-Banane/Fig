@@ -47,13 +47,14 @@ namespace Fig.Core.Timeline
                 {
                     _splitClipOldStart = existing.StartSec;
                     var offset = _snappedPos - existing.StartSec;
+                    var cutSrc = ClipTime.SourceAt(existing, offset);
                     _splitLeft = ClipFactory.CloneWithRange(
-                        existing, existing.StartSec, offset, existing.SourceIn,
-                        existing.SourceIn + offset * existing.Speed);
+                        existing, existing.StartSec, offset, existing.SourceIn, cutSrc);
+                    ClipTime.KeepBefore(_splitLeft, offset);
                     ClipFade.ApplySplitLeft(_splitLeft);
                     _splitRight = ClipFactory.CloneWithRange(
-                        existing, _snappedPos, existing.DurSec - offset,
-                        existing.SourceIn + offset * existing.Speed, existing.SourceOut);
+                        existing, _snappedPos, existing.DurSec - offset, cutSrc, existing.SourceOut);
+                    ClipTime.KeepAfter(_splitRight, offset);
                     ClipFade.ApplySplitRight(_splitRight);
                     _track.Clips.Remove(existing);
                     _editor.InsertClip(_track, _splitLeft);

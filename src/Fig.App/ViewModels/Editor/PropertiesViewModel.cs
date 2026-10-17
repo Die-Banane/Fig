@@ -198,6 +198,10 @@ public partial class PropertiesViewModel : ViewModelBase
     [ObservableProperty] private double _fadeOutValue;
     /// <summary>A video clip's own sound fades apart from its picture: shown on the Audio tab.</summary>
     [ObservableProperty] private bool _hasOwnSoundFades;
+    /// <summary>The clip takes its speed from a curve drawn on it (the Speed slider is off).</summary>
+    [ObservableProperty] [NotifyPropertyChangedFor(nameof(CanAddSpeedCurve))] private bool _hasSpeedCurve;
+    [ObservableProperty] [NotifyPropertyChangedFor(nameof(CanAddSpeedCurve))] private bool _canHaveSpeedCurve;
+    public bool CanAddSpeedCurve => CanHaveSpeedCurve && !HasSpeedCurve;
     [ObservableProperty] private double _soundFadeInValue;
     [ObservableProperty] private double _soundFadeOutValue;
     [ObservableProperty] private double _volumeValue = 1;
@@ -415,16 +419,18 @@ public partial class PropertiesViewModel : ViewModelBase
             (SoundFadeInValue, SoundFadeOutValue) = ClipFade.Get(clip, FadeOf.Sound);
             VolumeValue = clip.Volume;
             SpeedValue = clip.Speed;
+            HasSpeedCurve = ClipTime.HasCurve(clip);
+            CanHaveSpeedCurve = _editor.Editor.CanHaveSpeedCurve(clip.Id);
             (CropLeft, CropTop, CropRight, CropBottom) = clip is ICroppable crop
                 ? (crop.CropL, crop.CropT, crop.CropR, crop.CropB)
                 : (0, 0, 0, 0);
             ClipDurationSec = Math.Max(0.01, clip.DurSec);
             RetimedDurationLabel = FormatTime(clip.DurSec);
-            OriginalDurationLabel = FormatTime(clip.DurSec * clip.Speed);
+            OriginalDurationLabel = FormatTime(ClipTime.SourceOffset(clip, clip.DurSec));
             if (clip.MediaId is { } mediaId)
                 _editor.MediaById.TryGetValue(mediaId, out asset);
             if (Has(Facet.Source) && clip.HasSourceRange)
-                SourceRangeLabel = $"{FormatTime(clip.SourceIn)} → {FormatTime(clip.SourceOut > 0 ? clip.SourceOut : clip.SourceIn + clip.DurSec * clip.Speed)}";
+                SourceRangeLabel = $"{FormatTime(clip.SourceIn)} → {FormatTime(clip.SourceOut > 0 ? clip.SourceOut : ClipTime.SourceAt(clip, clip.DurSec))}";
             else
                 SourceRangeLabel = null;
             LinkedToLabel = clip.LinkGroupId is not null && asset is not null ? $"Linked to {asset.FileName}" : null;
@@ -496,6 +502,20 @@ public partial class PropertiesViewModel : ViewModelBase
 
     [RelayCommand]
     private void ResetSpeed() => SpeedValue = 1;
+
+    [RelayCommand]
+    private void AddSpeedCurve()
+    {
+        if (_clipId is not null)
+            _editor.Editor.AddSpeedCurve(_clipId);
+    }
+
+    [RelayCommand]
+    private void RemoveSpeedCurve()
+    {
+        if (_clipId is not null)
+            _editor.Editor.RemoveSpeedCurve(_clipId);
+    }
 
     [RelayCommand]
     private void ResetFades()

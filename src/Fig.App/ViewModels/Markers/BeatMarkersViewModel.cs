@@ -19,7 +19,10 @@ public sealed partial class BeatMarkersViewModel : ViewModelBase
 
     // Everything the analysis depended on; if any of it changes the preview no longer matches the audio.
     private sealed record AnalyzedClip(TimelineEditor Editor, Clip Clip, string SourceId, double SrcIn,
-        double SrcOut, double Dur, double Speed, double PlayRate);
+        double SrcOut, double Dur, double Speed, double PlayRate, string Curve);
+
+    private static string CurveOf(Clip clip)
+        => ClipTime.Curve(clip) is { } keys ? string.Join(";", keys.Select(k => $"{k.TimeSec:R},{k.Value.AsNumber:R},{k.Easing}")) : "";
 
     private AnalyzedClip? _session;
     private BeatAnalysis? _analysis;
@@ -84,7 +87,7 @@ public sealed partial class BeatMarkersViewModel : ViewModelBase
         // Match the source-time advance used by AudioMixer.
         double speed = clip.Speed;
         double playRate = speed <= 0 ? 1 : speed;
-        double sourceDuration = Math.Min(clip.DurSec * playRate,
+        double sourceDuration = Math.Min(ClipTime.SourceOffset(clip, clip.DurSec),
             Math.Min(clip.SourceOut, asset.DurationSec) - clip.SourceIn);
         if (!double.IsFinite(playRate) || playRate <= 0 || sourceDuration <= 0)
         {
@@ -93,7 +96,7 @@ public sealed partial class BeatMarkersViewModel : ViewModelBase
         }
 
         var session = new AnalyzedClip(editor, clip, clip.MediaId!, clip.SourceIn, clip.SourceOut, clip.DurSec,
-            speed, playRate);
+            speed, playRate, CurveOf(clip));
         Discard();
         int generation = ++_generation;
         IsAnalyzing = true;
@@ -188,7 +191,7 @@ public sealed partial class BeatMarkersViewModel : ViewModelBase
             && s.Editor.Document.Tracks.SelectMany(track => track.Clips).Contains(s.Clip)
             && s.Clip.MediaId == s.SourceId && s.Clip is AudioClip or VideoClip { PlaysAudio: true }
             && s.Clip.SourceIn == s.SrcIn && s.Clip.SourceOut == s.SrcOut
-            && s.Clip.DurSec == s.Dur && s.Clip.Speed == s.Speed;
+            && s.Clip.DurSec == s.Dur && s.Clip.Speed == s.Speed && CurveOf(s.Clip) == s.Curve;
 
     /// <summary>Re-selects markers from the cached analysis; cheap enough to run on every slider tick.</summary>
     private void RefreshPreview()
@@ -196,7 +199,7 @@ public sealed partial class BeatMarkersViewModel : ViewModelBase
         if (_session is not { } session || _analysis is not { } analysis)
             return;
         var local = analysis.Select(Sensitivity / 100, KicksOnly)
-            .Select(time => (time - session.SrcIn) / session.PlayRate)
+            .Select(time => ClipTime.LocalAt(session.Clip, time))
             .Where(time => time >= 0 && time < session.Dur)
             .ToArray();
         session.Editor.SetBeatPreview(session.Clip, local);

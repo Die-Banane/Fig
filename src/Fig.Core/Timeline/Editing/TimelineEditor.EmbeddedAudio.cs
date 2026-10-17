@@ -11,7 +11,7 @@ namespace Fig.Core.Timeline
 
         /// <summary>
         /// Moves each video clip's sound to an audio clip of its own, on the first audio track with room (or a new
-        /// one): the same part of the file, place, speed, level, sound fades and volume keyframes, so it sounds the same.
+        /// one): the same part of the file, place, speed (and speed curve), level, sound fades and volume keyframes, so it sounds the same.
         /// The video clip stops playing it. The new clips are not linked, so they move and trim on their own.
         /// One undo step; returns the new audio clips.
         /// </summary>
@@ -42,6 +42,9 @@ namespace Fig.Core.Timeline
                     };
                     if (video.Keyframes.TryGetValue(AutomationKeys.Volume, out var volume))
                         audio.Keyframes[AutomationKeys.Volume] = new List<KeyframePoint>(volume);
+                    // a velocity edit: the sound keeps following the picture's speed curve
+                    if (ClipTime.Curve(video) is { } curve)
+                        audio.Keyframes[AutomationKeys.Speed] = new List<KeyframePoint>(curve);
 
                     History.Execute(new SetClipValueCommand<bool>(this, [video.Id], "detach audio",
                         c => ((VideoClip)c).PlaysAudio, (c, v) => ((VideoClip)c).PlaysAudio = v, false));

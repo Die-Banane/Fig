@@ -71,8 +71,9 @@ namespace Fig.Core.Timeline
                 var leftDur = overlapStart - clip.StartSec;
                 if (leftDur > 0.0001)
                 {
-                    var srcOut = clip.SourceIn + leftDur * clip.Speed;
+                    var srcOut = ClipTime.SourceAt(clip, leftDur);
                     var left = ClipFactory.CloneWithRange(clip, clip.StartSec, leftDur, clip.SourceIn, srcOut);
+                    ClipTime.KeepBefore(left, leftDur);
                     ClipFade.ApplySplitLeft(left);
                     affected.KeptPortions.Add(left);
                 }
@@ -81,8 +82,9 @@ namespace Fig.Core.Timeline
                 var rightDur = clipEnd - overlapEnd;
                 if (rightDur > 0.0001)
                 {
-                    var srcIn = clip.SourceIn + (rightStart - clip.StartSec) * clip.Speed;
+                    var srcIn = ClipTime.SourceAt(clip, rightStart - clip.StartSec);
                     var right = ClipFactory.CloneWithRange(clip, rightStart, rightDur, srcIn, clip.SourceOut);
+                    ClipTime.KeepAfter(right, rightStart - clip.StartSec);
                     ClipFade.ApplySplitRight(right);
                     affected.KeptPortions.Add(right);
                 }
@@ -142,8 +144,9 @@ namespace Fig.Core.Timeline
                 var leftDur = overlapStart - clip.StartSec;
                 if (leftDur > 0.0001)
                 {
-                    var srcOut = clip.SourceIn + leftDur * clip.Speed;
+                    var srcOut = ClipTime.SourceAt(clip, leftDur);
                     var left = ClipFactory.CloneWithRange(clip, clip.StartSec, leftDur, clip.SourceIn, srcOut);
+                    ClipTime.KeepBefore(left, leftDur);
                     ClipFade.ApplySplitLeft(left);
                     _editor.InsertClip(_track, left);
                 }
@@ -152,8 +155,9 @@ namespace Fig.Core.Timeline
                 var rightDur = clipEnd - overlapEnd;
                 if (rightDur > 0.0001)
                 {
-                    var srcIn = clip.SourceIn + (rightStart - clip.StartSec) * clip.Speed;
+                    var srcIn = ClipTime.SourceAt(clip, rightStart - clip.StartSec);
                     var right = ClipFactory.CloneWithRange(clip, rightStart, rightDur, srcIn, clip.SourceOut);
+                    ClipTime.KeepAfter(right, rightStart - clip.StartSec);
                     ClipFade.ApplySplitRight(right);
                     _editor.InsertClip(_track, right);
                 }

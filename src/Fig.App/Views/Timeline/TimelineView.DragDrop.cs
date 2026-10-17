@@ -52,6 +52,10 @@ namespace Fig.App.Views
 
         private void OnDragOver(object? sender, DragEventArgs e)
         {
+            // dragging media in near an edge scrolls the timeline too
+            _externalDragOver = true;
+            _externalDragPos = e.GetPosition(this);
+            EnsureAutoScroll();
             if (Editor is null)
             {
                 e.DragEffects = DragDropEffects.None;
@@ -144,12 +148,14 @@ namespace Fig.App.Views
 
         private void OnDragLeave(object? sender, DragEventArgs e)
         {
+            _externalDragOver = false;
             ClearDropPreview();
             InvalidateVisual();
         }
 
         private async void OnDrop(object? sender, DragEventArgs e)
         {
+            _externalDragOver = false;
             if (Editor is null)
                 return;
 

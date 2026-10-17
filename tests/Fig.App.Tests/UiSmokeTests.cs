@@ -529,7 +529,7 @@ public sealed class UiSmokeTests : IDisposable
 
             // a click at the very top of the pane is still on the ruler: it moves the playhead, it does not hit a track
             vm.PlayheadTimeSec = 0;
-            var x = 118 + timeline.Viewport.TimeToX(6);
+            var x = TimelineView.TrackHeaderWidth + timeline.Viewport.TimeToX(6);
             var point = scroller.TranslatePoint(new Avalonia.Point(x, 10), window)!.Value;
             window.MouseDown(point, Avalonia.Input.MouseButton.Left);
             window.MouseUp(point, Avalonia.Input.MouseButton.Left);
@@ -794,7 +794,7 @@ public sealed class UiSmokeTests : IDisposable
             void Click(double time, RawInputModifiers modifiers = RawInputModifiers.None)
             {
                 // Center of the marker lane, after the track header.
-                var point = timeline.TranslatePoint(new Point(118 + timeline.Viewport.TimeToX(time), 10), window)!.Value;
+                var point = timeline.TranslatePoint(new Point(TimelineView.TrackHeaderWidth + timeline.Viewport.TimeToX(time), 10), window)!.Value;
                 window.MouseDown(point, Avalonia.Input.MouseButton.Left, modifiers);
                 window.MouseUp(point, Avalonia.Input.MouseButton.Left, modifiers);
             }
@@ -1103,7 +1103,7 @@ public sealed class UiSmokeTests : IDisposable
         Assert.Single(clip.Effects);
 
         // Video body above its rack; copy into free space three seconds later.
-        from = ToWindow(new Point(118 + timeline.Viewport.TimeToX(0.5), lane.Y - 60));
+        from = ToWindow(new Point(TimelineView.TrackHeaderWidth + timeline.Viewport.TimeToX(0.5), lane.Y - 60));
         target = from + new Vector(300, 0);
         int before = vm.Editor.Document.Tracks.Sum(t => t.Clips.Count);
         window.MouseDown(from, Avalonia.Input.MouseButton.Left, RawInputModifiers.Control);
@@ -1221,5 +1221,54 @@ public sealed class UiSmokeTests : IDisposable
     public void Dispose()
     {
         try { Directory.Delete(_folder, true); } catch { /* temp cleanup is best-effort */ }
+    }
+
+    [AvaloniaFact]
+    public void EditorView_TrimmingACutBetweenTwoClips_RollsTheCut_AndMovesNothingElse()
+    {
+        var vm = OpenSampleEditor(out var window);
+        try
+        {
+            var track = vm.Editor.Document.Tracks.First(t => t.Kind == Fig.Core.Timeline.TrackKind.Video);
+            var whole = track.Clips.First();
+            var end = whole.StartSec + whole.DurSec;
+            vm.Editor.Cut(whole.Id, 6);
+            var (left, right) = (track.Clips[0], track.Clips[1]);
+            var rightIn = right.SourceIn;
+            window.UpdateLayout();
+            var timeline = window.GetVisualDescendants().OfType<TimelineView>().First();
+            Point ToWindow(Point p) => timeline.TranslatePoint(p, window)!.Value;
+            var rect = timeline.ClipRectFor(left.Id)!.Value;
+            // the lower part of the edge always trims (fades are grabbed in the top half)
+            double Y() => rect.Bottom - 30;
+            double X(double t) => TimelineView.TrackHeaderWidth + timeline.Viewport.TimeToX(t);
+
+            void DragCut(double from, double to)
+            {
+                var a = ToWindow(new Point(X(from) - 2, Y()));
+                var b = ToWindow(new Point(X(to) - 2, Y()));
+                window.MouseDown(a, Avalonia.Input.MouseButton.Left);
+                window.MouseMove(new Point((a.X + b.X) / 2, a.Y));
+                window.MouseMove(b);
+                window.MouseUp(b, Avalonia.Input.MouseButton.Left);
+            }
+
+            DragCut(6, 8);
+            Assert.Equal(8, left.StartSec + left.DurSec, 1);
+            Assert.Equal(left.StartSec + left.DurSec, right.StartSec, 6);   // still touching
+            Assert.Equal(end, right.StartSec + right.DurSec, 6);             // its end stays put
+            Assert.Equal(rightIn + (right.StartSec - 6), right.SourceIn, 6);  // it starts later in its file
+
+            DragCut(right.StartSec, 4);
+            Assert.Equal(4, right.StartSec, 1);
+            Assert.Equal(right.StartSec, left.StartSec + left.DurSec, 6);
+            Assert.Equal(end, right.StartSec + right.DurSec, 6);
+
+            vm.Editor.Undo();
+            vm.Editor.Undo();
+            Assert.Equal((6.0, 6.0), (left.StartSec + left.DurSec, right.StartSec));
+            Assert.Equal(rightIn, right.SourceIn, 6);
+        }
+        finally { window.Close(); vm.DisposePlayback(); }
     }
 }

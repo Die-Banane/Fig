@@ -8,6 +8,8 @@ namespace Fig.Core.Timeline
     {
         public const string Opacity = "opacity";
         public const string Volume = "volume";
+        /// <summary>The speed curve: see <see cref="ClipTime"/>.</summary>
+        public const string Speed = "speed";
         public const string CropLeft = "cropL";
         public const string CropTop = "cropT";
         public const string CropRight = "cropR";

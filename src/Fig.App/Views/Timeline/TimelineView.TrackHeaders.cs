@@ -31,9 +31,10 @@ namespace Fig.App.Views
             return new Rect(x, center - HeaderButtonSize / 2, HeaderButtonSize, HeaderButtonSize);
         }
 
+        /// <summary>Where the name starts: after the toggles and the delete button (three columns: video has two toggles).</summary>
         private static double HeaderLabelX()
         {
-            return HeaderPaddingLeft + 2 * (HeaderButtonSize + HeaderButtonGap) + 2;
+            return HeaderPaddingLeft + 3 * (HeaderButtonSize + HeaderButtonGap) + 2;
         }
 
         private static string ToggleIconKey(Track track)
@@ -59,7 +60,7 @@ namespace Fig.App.Views
 
         private void DrawHeaderDelete(DrawingContext context, Track track, Rect rect)
         {
-            var hovered = _hoverHeaderButton is (string tid, int col) && tid == track.Id && col == HeaderDeleteColumn;
+            var hovered = _hoverHeaderButton is (string tid, int col) && tid == track.Id && col == DeleteColumn(track);
             if (hovered)
                 context.DrawRectangle(DeleteHoverBrush, null, new RoundedRect(rect, 3));
             DrawHeaderIcon(context, "trash", rect, false);
@@ -91,8 +92,10 @@ namespace Fig.App.Views
                 return null;
             if (HeaderButtonRect(track, HeaderToggleColumn).Contains(pos))
                 return (track.Id, HeaderToggleColumn);
-            if (HeaderButtonRect(track, HeaderDeleteColumn).Contains(pos))
-                return (track.Id, HeaderDeleteColumn);
+            if (track.Kind == TrackKind.Video && HeaderButtonRect(track, HeaderMuteColumn).Contains(pos))
+                return (track.Id, HeaderMuteColumn);
+            if (HeaderButtonRect(track, DeleteColumn(track)).Contains(pos))
+                return (track.Id, DeleteColumn(track));
             if (TrackHasRack(track) && RackToggleRect(track).Contains(pos))
                 return (track.Id, HeaderRackColumn);
             return null;

@@ -1316,7 +1316,8 @@ namespace Fig.Core.Timeline
         {
             speed = Math.Clamp(speed, 0.1, 8.0);
             var clip = FindClip(clipId);
-            if (clip is null || Math.Abs(clip.Speed - speed) < 1e-6)
+            // a clip with a speed curve takes its speed from the curve
+            if (clip is null || Math.Abs(clip.Speed - speed) < 1e-6 || ClipTime.HasCurve(clip))
                 return;
             History.ExecuteCoalescing(new SetSpeedCommand(this, clipId, speed));
             RaiseChanged();

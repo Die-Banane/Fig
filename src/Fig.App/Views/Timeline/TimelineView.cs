@@ -169,6 +169,8 @@ namespace Fig.App.Views
         private readonly Dictionary<string, double> _dragOriginalDurs = new();
         private readonly Dictionary<string, double> _dragSrcIns = new();
         private readonly Dictionary<string, double> _dragSrcOuts = new();
+        // each dragged clip's speed curve as it was when the drag began, for clips with one
+        private readonly Dictionary<string, List<KeyframePoint>> _dragCurves = new();
 
         private static readonly IBrush SelectionBrush = EditorTheme.AccentBrush;
 
@@ -212,7 +214,7 @@ namespace Fig.App.Views
         private const double ClipCornerRadius = 6;
         /// <summary>Gap each side of a cut between clips that butt together, so both keep their rounded ends.</summary>
         private const double SplitGap = 1;
-        private const double TrackHeaderWidth = 118;
+        internal const double TrackHeaderWidth = 140;
         private const double ZoomFactor = 1.25;
         private const double HeaderButtonSize = 22;
         private const double HeaderButtonGap = 4;
@@ -443,8 +445,8 @@ namespace Fig.App.Views
                 foreach (var clip in track.Clips)
                 {
                     if (inTopBand)
-                        foreach (var (_, trackKf) in clip.Keyframes)
-                            foreach (var kf in trackKf)
+                        foreach (var (key, trackKf) in clip.Keyframes)
+                            foreach (var kf in key == AutomationKeys.Speed ? [] : trackKf)
                             {
                                 var x = TrackHeaderWidth + Viewport.TimeToX(clip.StartSec + kf.TimeSec);
                                 if (Math.Abs(pos.X - x) <= grabPx)
@@ -497,10 +499,14 @@ namespace Fig.App.Views
         private static readonly IBrush AudioWaveFill = new SolidColorBrush(Color.Parse("#74d6a0"));
         private static readonly Pen AudioCenterPen = new(new SolidColorBrush(Color.FromArgb(70, 0x74, 0xd6, 0xa0)), 1);
 
-        // header button columns: [0] = mute/visibility, [1] = delete
+        // header button columns: [0] = visibility (video) or mute (audio), [1] = mute (video, which has sound too),
+        // then delete
         private const int HeaderToggleColumn = 0;
-        private const int HeaderDeleteColumn = 1;
-        private const int HeaderRackColumn = 2;
+        private const int HeaderMuteColumn = 1;
+        private const int HeaderRackColumn = 9;
+
+        /// <summary>Where a track's delete button is: after its toggles.</summary>
+        private static int DeleteColumn(Track track) => track.Kind == TrackKind.Video ? 2 : 1;
 
         protected override void OnPointerPressed(PointerPressedEventArgs e)
         {
@@ -516,12 +522,20 @@ namespace Fig.App.Views
             // right-click: context menu (add marker / enable-disable / delete marker)
             if (e.GetCurrentPoint(this).Properties.IsRightButtonPressed)
             {
-                OpenContextMenu(pos);
+                if (!TryOpenSpeedPointMenu(pos))
+                    OpenContextMenu(pos);
                 e.Handled = true;
                 return;
             }
 
             if (TryArmCopyDrag(e, pos))
+            {
+                e.Handled = true;
+                return;
+            }
+
+            // a velocity edit's speed line: grab a point, or double-click the line to add one
+            if (HandleSpeedPress(e, pos))
             {
                 e.Handled = true;
                 return;
@@ -620,7 +634,15 @@ namespace Fig.App.Views
                 if (track is not null)
                 {
                     var toggleRect = HeaderButtonRect(track, HeaderToggleColumn);
-                    var delRect = HeaderButtonRect(track, HeaderDeleteColumn);
+                    var delRect = HeaderButtonRect(track, DeleteColumn(track));
+                    if (track.Kind == TrackKind.Video && HeaderButtonRect(track, HeaderMuteColumn).Contains(pos))
+                    {
+                        // a video track's sound
+                        Editor.SetTrackMuted(track.Id, !track.Muted);
+                        InvalidateVisual();
+                        e.Handled = true;
+                        return;
+                    }
                     if (TrackHasRack(track) && RackToggleRect(track).Contains(pos))
                     {
                         SetTrackRackExpanded(track.Id, !IsTrackRackExpanded(track));
@@ -728,8 +750,21 @@ namespace Fig.App.Views
             // while something is being dragged the pointer keeps its content coordinates; hovering and
             // scrubbing the playhead use the pinned ruler's
             var pos = e.GetPosition(this);
-            if (_draggingPlayhead || !e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
+            var leftPressed = e.GetCurrentPoint(this).Properties.IsLeftButtonPressed;
+            if (_draggingPlayhead || !leftPressed)
                 pos = RulerSpace(pos);
+            _lastDragPos = pos;
+            PointerMovedAt(pos, leftPressed);
+            // a drag held near an edge keeps scrolling
+            if (leftPressed && DragInProgress)
+                EnsureAutoScroll();
+        }
+
+        /// <summary>The pointer is at <paramref name="pos"/>: carries on whatever drag is under way, or updates hover.</summary>
+        private void PointerMovedAt(Point pos, bool leftPressed)
+        {
+            if (Editor is null)
+                return;
 
             if (UpdateCopyDrag(pos)) return;
 
@@ -754,6 +789,12 @@ namespace Fig.App.Views
             if (_keyDrag is not null)
             {
                 UpdateKeyDrag(pos);
+                return;
+            }
+
+            if (_speedDrag is not null)
+            {
+                UpdateSpeedDrag(pos);
                 return;
             }
 
@@ -839,7 +880,10 @@ namespace Fig.App.Views
                         }
 
                         var targets = _dragMembers.ToDictionary(m => m.Id, m => _dragOriginals[m.Id] + delta);
-                        if (!Editor.WouldOverlapMove(targets))
+                        // no room there: the clips wait where they last fit, and a red ghost shows where they'd go
+                        _ghostDelta = delta;
+                        _ghostBlocked = Editor.WouldOverlapMove(targets);
+                        if (!_ghostBlocked)
                             foreach (var m in _dragMembers)
                                 m.StartSec = targets[m.Id];
                         // selected effect bars come along by however far the clips really moved
@@ -848,21 +892,23 @@ namespace Fig.App.Views
                     }
                     case DragMode.ResizeStart:
                     {
-                        UndoNudge();
+                        // a touching neighbour rolls with the cut; otherwise stop at the clip before
                         ApplyLiveResizeStart(deltaTime);
-                        // the clips pushed left ran out of room: give back what they could not take
-                        if (Nudge(pushRight: false) is var deficit and > 0)
-                        {
-                            ApplyLiveResizeStart(deltaTime + deficit);
-                            Nudge(pushRight: false);
-                        }
+                        var moved = _dragClip.StartSec - _dragOriginals[_dragClip.Id];
+                        if (Math.Abs(ClampRoll(moved) - moved) > 1e-9)
+                            ApplyLiveResizeStart(deltaTime + ClampRoll(moved) - moved);
+                        ApplyRoll(atEnd: false);
                         break;
                     }
                     case DragMode.ResizeEnd:
-                        UndoNudge();
+                    {
                         ApplyLiveResizeEnd(deltaTime);
-                        Nudge(pushRight: true);
+                        var moved = _dragClip.DurSec - _dragOriginalDurs[_dragClip.Id];
+                        if (Math.Abs(ClampRoll(moved) - moved) > 1e-9)
+                            ApplyLiveResizeEnd(deltaTime + ClampRoll(moved) - moved);
+                        ApplyRoll(atEnd: true);
                         break;
+                    }
                     case DragMode.FadeIn:
                     {
                         var fade = Math.Max(0, pointerTime - _dragClip.StartSec);
@@ -880,6 +926,10 @@ namespace Fig.App.Views
                 InvalidateVisual();
                 return;
             }
+
+            // idle: a speed point shows its speed
+            if (UpdateSpeedHover(pos))
+                return;
 
             // idle: effect bars show what they are and how to use them
             if (HitTestRack(pos) is { } rackOver)
@@ -939,7 +989,7 @@ namespace Fig.App.Views
 
             // the moving edge is the clip start; snap it to other clips' boundaries
             var rawStart = Math.Max(0, _dragOriginals[_dragClip.Id] + deltaTime);
-            var snappedStart = Snap(rawStart, _dragClip.Id);
+            var snappedStart = Snap(rawStart, _dragClip.Id, excludeClips: _rollSnapExclude);
             var snapDelta = snappedStart - _dragOriginals[_dragClip.Id];
 
             foreach (var c in _dragMembers)
@@ -948,6 +998,20 @@ namespace Fig.App.Views
                 var origEnd = orig + _dragOriginalDurs[c.Id];
                 var memberStart = Math.Max(0, orig + snapDelta);
                 var memberDur = Math.Max(0.1, origEnd - memberStart);
+
+                if (c.HasSourceRange && _dragCurves.TryGetValue(c.Id, out var curve))
+                {
+                    // the curve stays where it is on the timeline; the in point is wherever it was at the new start
+                    var before = new VideoClip { SrcInSec = _dragSrcIns[c.Id], SrcOutSec = _dragSrcOuts[c.Id] };
+                    before.Keyframes[AutomationKeys.Speed] = curve;
+                    var delta = Math.Max(memberStart - orig, ClipTime.LocalAt(before, 0));   // not before the file starts
+                    delta = Math.Min(delta, _dragOriginalDurs[c.Id] - 0.1);
+                    c.StartSec = orig + delta;
+                    c.DurSec = origEnd - c.StartSec;
+                    ClipTime.TrimStart(c, curve, _dragSrcIns[c.Id], delta);
+                    ClipTime.SyncSourceOut(c);
+                    continue;
+                }
 
                 c.StartSec = memberStart;
                 c.DurSec = memberDur;
@@ -978,7 +1042,7 @@ namespace Fig.App.Views
 
             // the moving edge is the clip end; snap it to other clips' boundaries
             var rawEnd = Math.Max(_dragOriginals[_dragClip.Id] + 0.1, _dragOriginals[_dragClip.Id] + _dragOriginalDurs[_dragClip.Id] + deltaTime);
-            var snappedEnd = Snap(rawEnd, _dragClip.Id);
+            var snappedEnd = Snap(rawEnd, _dragClip.Id, excludeClips: _rollSnapExclude);
             var snapDelta = snappedEnd - (_dragOriginals[_dragClip.Id] + _dragOriginalDurs[_dragClip.Id]);
 
             foreach (var c in _dragMembers)
@@ -992,9 +1056,10 @@ namespace Fig.App.Views
 
                 var speed = c.Speed;
                 // a clip without a source range (text, a still) can be made any length
+                var hasCurve = _dragCurves.ContainsKey(c.Id);
                 var maxDur = !c.HasSourceRange ? double.MaxValue
                     : maxSrcOut is double max && max > srcIn
-                        ? (max - srcIn) / speed
+                        ? hasCurve ? ClipTime.LocalAt(c, max) : (max - srcIn) / speed
                         : _dragOriginalDurs[c.Id];
 
                 var newEnd = Math.Max(orig + 0.1, origEnd + snapDelta);
@@ -1006,7 +1071,7 @@ namespace Fig.App.Views
 
                 if (c.HasSourceRange)
                 {
-                    var newSrcOut = srcIn + newDur * speed;
+                    var newSrcOut = hasCurve ? ClipTime.SourceAt(c, newDur) : srcIn + newDur * speed;
                     newSrcOut = maxSrcOut is double m ? Math.Min(newSrcOut, m) : newSrcOut;
                     ClipFactory.SetSourceRange(c, srcIn, newSrcOut);
                 }
@@ -1035,7 +1100,7 @@ namespace Fig.App.Views
         protected override void OnPointerReleased(PointerReleasedEventArgs e)
         {
             base.OnPointerReleased(e);
-            if (FinishCopyDrag(e))
+            if (FinishCopyDrag(e) || EndSpeedDrag(e))
             {
                 e.Handled = true;
                 return;
@@ -1049,6 +1114,7 @@ namespace Fig.App.Views
             if (_draggingClip && _dragClip is not null)
             {
                 _draggingClip = false;
+                _ghostBlocked = false;
                 // the drag changed clips live; record it now as a single undo step
                 Editor?.CommitClipGeometry(_dragBefore);
                 EndCarry();
@@ -1111,8 +1177,11 @@ namespace Fig.App.Views
             _dragOriginalDurs.Clear();
             _dragSrcIns.Clear();
             _dragSrcOuts.Clear();
+            _dragCurves.Clear();
             foreach (var c in _dragMembers)
             {
+                if (ClipTime.Curve(c) is { } curve)
+                    _dragCurves[c.Id] = curve.ToList();
                 _dragOriginals[c.Id] = c.StartSec;
                 _dragOriginalDurs[c.Id] = c.DurSec;
                 // every clip has a source range; one without a file (text, a still) plays itself, 0 → its length
@@ -1120,11 +1189,12 @@ namespace Fig.App.Views
                 _dragSrcOuts[c.Id] = c.SourceOut;
             }
             _dragBefore = _dragMembers.Select(ClipGeometry.Capture).ToList();
+            RememberDragOrigins();
             _draggingClip = true;
             if (_dragMode == DragMode.Move)
                 BeginCarryForClips(_dragMembers);
             if (_dragMode is DragMode.ResizeStart or DragMode.ResizeEnd)
-                BeginNudge();
+                BeginRoll(atEnd: _dragMode == DragMode.ResizeEnd);
         }
 
         /// <summary>
@@ -1344,11 +1414,13 @@ namespace Fig.App.Views
                 context.DrawText(trackText, new Point(HeaderLabelX(), top + (height - trackText.Height) / 2));
 
                 DrawHeaderToggle(context, track, HeaderButtonRect(track, HeaderToggleColumn));
+                if (track.Kind == TrackKind.Video)
+                    DrawHeaderIcon(context, track.Muted ? "volume-x" : "volume", HeaderButtonRect(track, HeaderMuteColumn), track.Muted);
                 DrawRackToggle(context, track);
                 var deleteHovered = _hoverHeaderButton is (string tid, int col)
-                    && tid == track.Id && col == HeaderDeleteColumn;
+                    && tid == track.Id && col == DeleteColumn(track);
                 if (isTrackSelected || deleteHovered)
-                    DrawHeaderDelete(context, track, HeaderButtonRect(track, HeaderDeleteColumn));
+                    DrawHeaderDelete(context, track, HeaderButtonRect(track, DeleteColumn(track)));
 
                 // clip area, offset by header + viewport scroll
                 using (context.PushClip(clipArea))
@@ -1503,6 +1575,7 @@ namespace Fig.App.Views
                         DrawFadeRamps(context, pictureRect, clip.FadeInSec, clip.FadeOutSec);
                         if (clip is VideoClip { PlaysAudio: true } faded)
                             DrawFadeRamps(context, soundStripRect, faded.AudioFadeInSec, faded.AudioFadeOutSec);
+                        DrawSpeedCurve(context, clip, pictureRect);
 
                         foreach (var t in trackTransitions)
                         {
@@ -1649,6 +1722,7 @@ namespace Fig.App.Views
             DrawSnapGuide(context);
             DrawMarquee(context);
             DrawCopyPreview(context);
+            DrawMoveGhost(context);
 
             var playheadX = TrackHeaderWidth + Viewport.TimeToX(PlayheadTimeSec);
             if (playheadX >= TrackHeaderWidth)

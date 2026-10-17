@@ -751,7 +751,7 @@ public partial class EditorViewModel : ViewModelBase
                 if (!MediaById.TryGetValue(vc.SourceId, out var asset) || string.IsNullOrEmpty(asset.Url) || asset.Offline)
                     continue;
 
-                var srcTime = vc.SrcInSec + (timeSec - clip.StartSec) * vc.Speed;
+                var srcTime = ClipTime.SourceAt(vc, timeSec - clip.StartSec);
                 var localT = timeSec - clip.StartSec;
                 var opacity = ClipFade.EffectiveOpacity(vc, localT);
                 layers.Add(new PreviewLayer(asset.PlaybackVideoPath, srcTime, opacity, vc, i));
@@ -1348,15 +1348,45 @@ public partial class EditorViewModel : ViewModelBase
     [RelayCommand]
     private void CopySelected()
     {
+        // effect bars selected (and no clips): copy the effects, to paste onto other clips
+        if (Editor.Selection.SelectedClipIds.Count == 0 && Editor.CopySelectedEffects() is var effects and > 0)
+        {
+            Notify?.Invoke(effects == 1 ? "Copied effect · select clips and paste" : $"Copied {effects} effects · select clips and paste");
+            return;
+        }
         if (Editor.CopySelected())
             Notify?.Invoke(Editor.Selection.Count == 1 ? "Copied clip" : $"Copied {Editor.Selection.Count} clips");
+    }
+
+    /// <summary>Copies the effects over a clip, to paste onto others.</summary>
+    public void CopyEffects(string clipId)
+    {
+        var count = Editor.CopyEffects(clipId);
+        Notify?.Invoke(count == 0 ? "This clip has no effects to copy"
+            : count == 1 ? "Copied 1 effect · select clips and paste" : $"Copied {count} effects · select clips and paste");
+    }
+
+    /// <summary>Pastes the copied effects onto the selected clips.</summary>
+    public void PasteEffects()
+    {
+        var count = Editor.PasteEffects(Editor.Selection.SelectedClipIds);
+        if (count == 0)
+            Notify?.Invoke(Editor.Selection.SelectedClipIds.Count == 0 ? "Select the clips to paste the effects onto"
+                : "Those effects don't fit these clips (video effects go on video clips, audio ones on audio)");
     }
 
     [RelayCommand]
     private void CutSelected() => Editor.CutSelected();
 
     [RelayCommand]
-    private void Paste() => Editor.Paste(PlayheadTimeSec, Editor.Selection.ActiveTrackId);
+    private void Paste()
+    {
+        // after copying effects, pasting puts them on the selected clips
+        if (Editor.ClipboardHoldsEffects && Editor.HasEffectClipboard)
+            PasteEffects();
+        else
+            Editor.Paste(PlayheadTimeSec, Editor.Selection.ActiveTrackId);
+    }
 
     [RelayCommand]
     private void DuplicateSelected() => Editor.DuplicateSelected();

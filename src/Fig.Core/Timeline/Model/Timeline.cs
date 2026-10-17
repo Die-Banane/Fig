@@ -127,7 +127,7 @@ namespace Fig.Core.Timeline
         /// <summary>Video tracks: hides/shows the video clip content in the preview.</summary>
         public bool Visible { get; set; } = true;
 
-        /// <summary>Audio tracks: mutes the track's audio.</summary>
+        /// <summary>Mutes the track's sound: an audio track's clips, or a video track's clips' own sound.</summary>
         public bool Muted { get; set; }
         /// <summary>Independent effect regions on this track, timed in timeline seconds.</summary>
         public List<EffectInstance> Effects { get; set; } = new();

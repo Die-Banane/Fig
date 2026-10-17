@@ -702,7 +702,8 @@
                                             </Grid>
                                             <Grid ColumnDefinitions="58,*,56" ColumnSpacing="7">
                                                 <TextBlock Text="Speed" Classes="field-label" VerticalAlignment="Center"/>
-                                                <ctrls:FigSlider Grid.Column="1" Minimum="0.25" Maximum="4" Value="{Binding SpeedValue}"/>
+                                                <ctrls:FigSlider Grid.Column="1" Minimum="0.25" Maximum="4" Value="{Binding SpeedValue}"
+                                                                 IsEnabled="{Binding !HasSpeedCurve}"/>
                                                 <Border Grid.Column="2" Classes="inspector-value">
                                                     <TextBlock Text="{Binding SpeedValue, StringFormat={}{0:0.00}×}" Classes="field-value" FontSize="10" HorizontalAlignment="Right"/>
                                                 </Border>
@@ -713,6 +714,14 @@
                                                     <TextBlock Grid.Column="1" Text="4.00×" Classes="field-label" FontSize="10"/>
                                                 </Grid>
                                             </Grid>
+                                            <TextBlock IsVisible="{Binding HasSpeedCurve}" TextWrapping="Wrap" Classes="field-label"
+                                                       Text="Speed follows the curve on the clip: drag its points up for faster, down for slower. Double-click the line to add one."/>
+                                            <Button IsVisible="{Binding CanAddSpeedCurve}" Command="{Binding AddSpeedCurveCommand}"
+                                                    Classes="fig compact" HorizontalAlignment="Stretch" Content="Add speed curve"
+                                                    ToolTip.Tip="Ramp the speed through the clip (a velocity edit). The clip keeps its length."/>
+                                            <Button IsVisible="{Binding HasSpeedCurve}" Command="{Binding RemoveSpeedCurveCommand}"
+                                                    Classes="fig compact" HorizontalAlignment="Stretch" Content="Remove speed curve"
+                                                    ToolTip.Tip="Play at one speed again"/>
                                         </StackPanel>
                                     </Border>
                                     <Border Classes="inspector-group">

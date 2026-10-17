@@ -75,7 +75,7 @@ namespace Fig.App.Views
                 while (x < visRight)
                 {
                     var clipLocalSec = (x - rect.X) / (rect.Width / clip.DurSec);
-                    var srcTimeSec = clip.SrcInSec + clipLocalSec * speed;
+                    var srcTimeSec = ClipTime.SourceAt(clip, clipLocalSec);
 
                     var frameIndex = (int)(srcTimeSec / asset.FilmstripFrameIntervalSec);
                     frameIndex = Math.Clamp(frameIndex, 0, asset.FilmstripFrameCount - 1);
@@ -188,8 +188,10 @@ namespace Fig.App.Views
             if (clip.Keyframes.Count > 0)
             {
                 var topColor = new SolidColorBrush(Color.Parse("#4da3ff"));
-                foreach (var (_, track) in clip.Keyframes)
+                foreach (var (key, track) in clip.Keyframes)
                 {
+                    if (key == AutomationKeys.Speed)
+                        continue;   // drawn on the speed line
                     foreach (var kf in track)
                     {
                         var x = TrackHeaderWidth + Viewport.TimeToX(clip.StartSec + kf.TimeSec);
@@ -234,6 +236,7 @@ namespace Fig.App.Views
             var srcIn = Math.Max(0, clip.SourceIn);
             var srcSpan = Math.Max(0.0001, clip.SourceOut - srcIn);
             var samplesPerSec = peaks.Length / asset.DurationSec;
+            var curve = ClipTime.HasCurve(clip);
 
             var (visLeft, visRight) = VisibleXRange(rect);
             if (visRight <= visLeft)
@@ -249,8 +252,16 @@ namespace Fig.App.Views
                 var x = first + i;
                 var t0 = (x - rect.X) / rect.Width;
                 var t1 = (x + 1 - rect.X) / rect.Width;
-                var i0 = Math.Clamp((int)((srcIn + t0 * srcSpan) * samplesPerSec), 0, peaks.Length - 1);
-                var i1 = Math.Clamp((int)((srcIn + t1 * srcSpan) * samplesPerSec), i0, peaks.Length - 1);
+                // a speed curve spreads the file unevenly along the clip; the waveform follows it
+                var s0 = curve ? ClipTime.SourceAt(clip, t0 * clip.DurSec) : srcIn + t0 * srcSpan;
+                var s1 = curve ? ClipTime.SourceAt(clip, t1 * clip.DurSec) : srcIn + t1 * srcSpan;
+                if (s0 >= asset.DurationSec)
+                {
+                    amps[i] = 0;   // past the end of the file: silence
+                    continue;
+                }
+                var i0 = Math.Clamp((int)(s0 * samplesPerSec), 0, peaks.Length - 1);
+                var i1 = Math.Clamp((int)(s1 * samplesPerSec), i0, peaks.Length - 1);
                 var stride = Math.Max(1, (i1 - i0) / 48);
                 var peak = 0f;
                 for (var k = i0; k <= i1; k += stride)

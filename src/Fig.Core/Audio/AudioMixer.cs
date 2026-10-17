@@ -91,8 +91,9 @@ namespace Fig.Core.Audio
         private void MixClip(float[] mixed, double winStart, int winFrames, double clipStart, double clipEnd,
             Clip clip, MediaAsset asset)
         {
-            // real time: source time advances by speed, whatever the file's frame rate
+            // real time: source time advances by speed (or the speed curve), whatever the file's frame rate
             var playRate = clip.Speed <= 0 ? 1.0 : clip.Speed;
+            var curve = ClipTime.HasCurve(clip);
             var winEnd = winStart + winFrames / (double)SampleRate;
 
             var overlapStart = Math.Max(winStart, clipStart);
@@ -100,8 +101,10 @@ namespace Fig.Core.Audio
             if (overlapEnd <= overlapStart)
                 return;
 
-            var srcIn = clip.SourceIn + (overlapStart - clipStart) * playRate;
-            var srcDur = (overlapEnd - overlapStart) * playRate;
+            var srcIn = ClipTime.SourceAt(clip, overlapStart - clipStart);
+            var srcDur = ClipTime.SourceAt(clip, overlapEnd - clipStart) - srcIn;
+            if (srcDur <= 0)
+                return;
 
             float[] decoded;
             try
@@ -122,7 +125,14 @@ namespace Fig.Core.Audio
             // written and pitch/duration are wrong.
             var srcFrames = decoded.Length / 2;
             var overlapFrames = (int)Math.Round((overlapEnd - overlapStart) * SampleRate);
-            if (Math.Abs(playRate - 1.0) > 1e-6 && overlapFrames > 0)
+            if (curve && overlapFrames > 0)
+            {
+                // varispeed: each output sample reads the file where the curve is at that moment
+                var t0 = overlapStart - clipStart;
+                decoded = ResampleStereoLinear(decoded, srcFrames, overlapFrames,
+                    i => (ClipTime.SourceAt(clip, t0 + i / (double)SampleRate) - srcIn) * SampleRate);
+            }
+            else if (Math.Abs(playRate - 1.0) > 1e-6 && overlapFrames > 0)
                 decoded = ResampleStereoLinear(decoded, srcFrames, overlapFrames);
 
             // interleaved sample index: frame offset * 2 channels
@@ -153,7 +163,8 @@ namespace Fig.Core.Audio
             }
         }
 
-        private static float[] ResampleStereoLinear(float[] src, double srcFrames, int outFrames)
+        /// <param name="positionOf">Where in <paramref name="src"/> (in frames) output frame i reads; evenly spread when null.</param>
+        private static float[] ResampleStereoLinear(float[] src, double srcFrames, int outFrames, Func<int, double>? positionOf = null)
         {
             var output = new float[outFrames * 2];
             if (outFrames <= 0)
@@ -178,7 +189,7 @@ namespace Fig.Core.Audio
             var maxLo = (int)Math.Floor(srcFrames) - 1;
             for (var i = 0; i < outFrames; i++)
             {
-                var pos = i * step;
+                var pos = positionOf is null ? i * step : Math.Clamp(positionOf(i), 0, srcFrames - 1);
                 var lo = (int)pos;
                 if (lo > maxLo) lo = maxLo;
                 var hi = lo + 1 <= maxLo ? lo + 1 : lo;

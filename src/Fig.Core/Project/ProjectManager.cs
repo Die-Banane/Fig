@@ -330,7 +330,7 @@ namespace Fig.Core.Project
                 if (asset is null || string.IsNullOrEmpty(asset.Url) || asset.Offline)
                     continue;
 
-                var srcTime = top.SrcInSec + (earliest.Value - clip.StartSec) * top.Speed;
+                var srcTime = Timeline.ClipTime.SourceAt(top, earliest.Value - clip.StartSec);
                 var thumbPath = Path.Combine(CacheDirectory, "project-thumb.jpg");
                 try
                 {

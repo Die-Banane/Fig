@@ -28,6 +28,7 @@ namespace Fig.Core.Timeline
                     return new ClipboardEntry(track.Id, track.Kind, ClipFactory.Clone(c), c.StartSec - origin);
                 })
                 .ToList();
+            ClipboardHoldsEffects = false;
             return true;
         }
 

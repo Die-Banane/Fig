@@ -59,7 +59,7 @@ namespace Fig.Core.Timeline
             if (clip.HasSourceRange)
             {
                 clip.SetSourceRange(inSec, outSec);
-                clip.DurSec = (outSec - inSec) / clip.Speed;
+                clip.DurSec = ClipTime.DurationFor(clip, outSec - inSec);
             }
             else
                 clip.DurSec = outSec - inSec;

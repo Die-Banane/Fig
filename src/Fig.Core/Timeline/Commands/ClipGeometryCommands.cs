@@ -4,12 +4,18 @@ using System.Linq;
 
 namespace Fig.Core.Timeline
 {
-    /// <summary>A clip's position and extent on the timeline, and its source range where it has one.</summary>
+    /// <summary>
+    /// A clip's position and extent on the timeline, its source range where it has one, and its speed curve where
+    /// it has one (a left trim reshapes the curve, so undoing the trim has to put it back).
+    /// </summary>
     public readonly record struct ClipGeometry(string ClipId, double StartSec, double DurSec, double? SrcInSec, double? SrcOutSec)
     {
-        public static ClipGeometry Capture(Clip clip) => clip.HasSourceRange
+        public KeyframePoint[]? SpeedKeys { get; init; }
+
+        public static ClipGeometry Capture(Clip clip) => (clip.HasSourceRange
             ? new ClipGeometry(clip.Id, clip.StartSec, clip.DurSec, clip.SourceIn, clip.SourceOut)
-            : new ClipGeometry(clip.Id, clip.StartSec, clip.DurSec, null, null);
+            : new ClipGeometry(clip.Id, clip.StartSec, clip.DurSec, null, null))
+            with { SpeedKeys = ClipTime.Curve(clip)?.ToArray() };
 
         internal void ApplyTo(Clip clip)
         {
@@ -17,7 +23,16 @@ namespace Fig.Core.Timeline
             clip.DurSec = DurSec;
             if (SrcInSec is { } i && SrcOutSec is { } o)
                 ClipFactory.SetSourceRange(clip, i, o);
+            if (SpeedKeys is { } keys)
+                clip.Keyframes[AutomationKeys.Speed] = keys.ToList();
         }
+
+        public bool Equals(ClipGeometry other)
+            => ClipId == other.ClipId && StartSec == other.StartSec && DurSec == other.DurSec
+               && SrcInSec == other.SrcInSec && SrcOutSec == other.SrcOutSec
+               && (SpeedKeys ?? []).SequenceEqual(other.SpeedKeys ?? []);
+
+        public override int GetHashCode() => HashCode.Combine(ClipId, StartSec, DurSec, SrcInSec, SrcOutSec);
     }
 
     /// <summary>
