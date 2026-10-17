@@ -14,6 +14,7 @@ namespace Fig.Core.Timeline
         public const string CropTop = "cropT";
         public const string CropRight = "cropR";
         public const string CropBottom = "cropB";
+        public const string TextSize = "textSize";
     }
 
     /// <summary>

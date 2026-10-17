@@ -2,7 +2,7 @@
 
 Thanks for helping. Fig is a deliberately small editor ("simple, like CapCut"), so the most useful contributions are the ones that keep it that way: focused, understood, and designed before they are built.
 
-## The one rule: design before you build
+## The one rule: design before you build any large subsystem (excludes small features)
 
 **Before any major feature is implemented, its UML must exist and be part of the same pull request (or an earlier one).**
 
@@ -26,7 +26,7 @@ Needs UML:
 
 - A new subsystem, module, or pipeline stage (for example an effect graph, a new export path, a new kind of selection).
 - A new editing command family, or a change to how the timeline model or undo history works.
-- Anything that adds a new concept to the project file format.
+- Anything that adds a new concept to the project file format (like an Audio Mixer)
 - Anything that touches more than one of `Fig.Core`'s modules.
 
 Does **not** need UML:
@@ -182,14 +182,15 @@ dotnet test
 
 ## AI-assisted contributions
 
-AI-generated code is welcome when you:
+AI-assisted code if you:
 
-1. **State what model was used.**
-2. **Describe what you added, how it works, and why you added it.**
+1. **Hand-wrote the code**
 
-You must understand what you submit. If you cannot explain a change in review, it will not be merged. Low-quality generated output ("slop") will be rejected, and so will feature bloat: Fig has a narrow vision, and a feature that works but does not fit it may still be declined. This is another reason to open an issue before building something large.
+You can use AI to write tutorials for you if you want to implement something. It's a good way to learn. But as of now, commits have to be handwritten.
 
-AI is especially good at helping draft the UML. Review what it produced, because the diagram is your statement of the design.
+AI can be used for profiling, but there's really no need for that when profiling tools already exist. If you find it easier to explore flamecharts with AI, then that's fine.
+
+The main rule is that you have to understand what you've written. My dependence on UML was to ensure that I understood how to extend the codebase, which is why I'm able to not have to rely on AI for it, but I don't want contributors to have to write UML. If possible, you can use AI for UML if it makes sense.
 
 ## Reporting bugs
 

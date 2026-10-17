@@ -29,13 +29,22 @@ public sealed class SkiaLayerRasterizer : ILayerRasterizer
     /// <param name="findMedia">Looks up a library file by id (an image clip's picture).</param>
     public SkiaLayerRasterizer(Func<string, MediaAsset?> findMedia) => _findMedia = findMedia;
 
+
+    private static TextStyle StyleAt(TextClip text, double localT) {
+        var size = ClipAutomation.Evaluate(text, AutomationKeys.TextSize, localT, text.Style.SizePercent);
+
+        // round so that for indistinguishable sizes, we share cached pics
+        return text.Style with {SizePercent = Math.Round(size, 2)};
+    }
     public DecodedFrame? Rasterize(Clip clip, int width, int height, double localT)
     {
         if (width <= 0 || height <= 0)
             return null;
+
+        TextStyle? textStyle = clip is TextClip t ? StyleAt(t, localT) : null;
         object? key = clip switch
         {
-            TextClip text => (text.Text, text.Style, text.Layout, width, height),
+            TextClip text => (text.Text, textStyle, text.Layout, width, height),
             // an animation's picture changes with time: which frame is part of what is shown
             ImageClip image when _findMedia(image.SourceId) is { Url: { Length: > 0 } url } && LoadImage(url) is { } source
                 => (url, image.Layout, width, height, source.FrameAt(localT)),
@@ -76,10 +85,13 @@ public sealed class SkiaLayerRasterizer : ILayerRasterizer
         }
     }
 
-    public LayerSize? Measure(Clip clip, int width, int height)
+    public LayerSize? Measure(Clip clip, double localT int width, int height)
     {
         if (width <= 0 || height <= 0)
             return null;
+
+
+        var textStyle = clip is TextClip t ? StyleAt(t, localT) : null;
         object? key = clip switch
         {
             TextClip text => (text.Text, text.Style, width, height),
@@ -144,11 +156,10 @@ public sealed class SkiaLayerRasterizer : ILayerRasterizer
         canvas.Scale((float)Math.Max(0.01, layout.Scale));
     }
 
-    private static void DrawText(SKCanvas canvas, TextClip clip, int width, int height)
+    private static void DrawText(SKCanvas canvas, TextClip clip, TextStyle style, int width, int height)
     {
         if (string.IsNullOrEmpty(clip.Text))
             return;
-        var style = clip.Style;
         using var block = TextLayout.Of(style, clip.Text, height);
         var (blockWidth, blockHeight, size) = (block.BlockWidth, block.BlockHeight, block.Size);
 
