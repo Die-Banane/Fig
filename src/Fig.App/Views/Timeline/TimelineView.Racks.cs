@@ -50,9 +50,6 @@ namespace Fig.App.Views
         private readonly record struct RackHit(IEffectOwner Clip, RackItem? Item, RackPart Part, Rect Rect,
             double KeyframeSec = 0, bool InKeyLane = false);
 
-        private sealed record KeyDrag(string ClipId, string EffectId, double CurrentSec, string Gesture);
-
-        private KeyDrag? _keyDrag;
 
         /// <summary>Clip-relative times where an effect has a keyframe, in order.</summary>
         private static List<double> KeyframeTimes(EffectInstance fx)
@@ -309,7 +306,8 @@ namespace Fig.App.Views
                 var x = clipX + time * px;
                 if (x < rect.X - 6 || x > rect.Right + 6)
                     continue;
-                var selected = fx.Id == selectedId && selectedSec is { } sel && Math.Abs(sel - time) < 1e-4;
+                var selected = IsDiamondHot(KeyframeHostRef.OfEffect(clip.Id, fx.Id), time)
+                               || fx.Id == selectedId && selectedSec is { } sel && Math.Abs(sel - time) < 1e-4;
                 var size = expanded ? 5.0 : 3.0;
                 var g = new StreamGeometry();
                 using (var gc = g.Open())
@@ -443,16 +441,6 @@ namespace Fig.App.Views
             else
                 _editorVm?.Properties.SelectEffect(hit.Clip.Id, item.Effect.Id);
 
-            if (hit.Part == RackPart.Keyframe)
-            {
-                // click a keyframe to select it and jump there; drag it to retime it
-                _editorVm?.Properties.SelectKeyframe(hit.KeyframeSec);
-                SetPlayhead(Editor.SnapTime(hit.Clip.StartSec + hit.KeyframeSec));
-                _keyDrag = new KeyDrag(hit.Clip.Id, item.Effect.Id, hit.KeyframeSec, Guid.NewGuid().ToString("N"));
-                InvalidateVisual();
-                return true;
-            }
-
             if (hit.InKeyLane && clickCount >= 2)
             {
                 // double-click empty key lane: add a keyframe holding the current look at that time
@@ -530,20 +518,6 @@ namespace Fig.App.Views
         private Clip? FindClipById(string id)
             => Editor?.Document.Tracks.SelectMany(t => t.Clips).FirstOrDefault(c => c.Id == id);
 
-        private void UpdateKeyDrag(Point pos)
-        {
-            if (Editor is null || _keyDrag is not { } drag || Editor.FindEffectOwner(drag.ClipId) is not { } clip)
-                return;
-            var target = Snap(Math.Max(0, XToTime(pos.X)), null) - clip.StartSec;
-            target = Math.Clamp(target, 0, clip is Track ? double.PositiveInfinity : clip.DurSec);
-            if (Math.Abs(target - drag.CurrentSec) < 1e-6)
-                return;
-            Editor.MoveEffectKeyframe(drag.ClipId, drag.EffectId, drag.CurrentSec, target, drag.Gesture);
-            _keyDrag = drag with { CurrentSec = target };
-            _editorVm?.Properties.SelectKeyframe(target);
-            InvalidateVisual();
-        }
-
         private void EndRackDrag()
         {
             // a plain click on a bar that belonged to a group (no drag) selects just that bar
@@ -552,7 +526,6 @@ namespace Fig.App.Views
             _collapseToEffect = null;
             _rackMoved = false;
             _rackDrag = null;
-            _keyDrag = null;
             EndCarry();
         }
 
@@ -624,51 +597,6 @@ namespace Fig.App.Views
             var menu = new ContextMenu();
             var clip = hit.Clip;
 
-            if (hit.Part == RackPart.Keyframe)
-            {
-                var time = hit.KeyframeSec;
-                _editorVm?.Properties.SelectKeyframe(time);
-                var current = fx.Keyframes.Values
-                    .SelectMany(t => t).FirstOrDefault(k => Math.Abs(k.TimeSec - time) < 1e-6).Easing;
-
-                var jump = new MenuItem { Header = "Jump to keyframe" };
-                jump.Click += (_, _) => SetPlayhead(Editor.SnapTime(clip.StartSec + time));
-                menu.Items.Add(jump);
-
-                var duplicate = new MenuItem { Header = "Duplicate to the playhead" };
-                duplicate.Click += (_, _) =>
-                {
-                    Editor.DuplicateEffectKeyframe(clip.Id, fx.Id, time,
-                        Math.Max(0, (_editorVm?.PlayheadTimeSec ?? 0) - clip.StartSec));
-                    InvalidateVisual();
-                };
-                menu.Items.Add(duplicate);
-
-                var easing = new MenuItem { Header = "Movement to the next keyframe" };
-                foreach (var option in Enum.GetValues<KeyframeEasing>())
-                {
-                    var item = new MenuItem { Header = (option == current ? "\u2713  " : "     ") + EasingName(option) };
-                    item.Click += (_, _) =>
-                    {
-                        Editor.SetEffectKeyframeEasing(clip.Id, fx.Id, time, option);
-                        InvalidateVisual();
-                    };
-                    easing.Items.Add(item);
-                }
-                menu.Items.Add(easing);
-
-                menu.Items.Add(new Separator());
-                var delete = new MenuItem { Header = "Delete keyframe", Foreground = new SolidColorBrush(Color.Parse("#ff6b6b")) };
-                delete.Click += (_, _) =>
-                {
-                    Editor.RemoveEffectKeyframe(clip.Id, fx.Id, time);
-                    if (_editorVm is not null) _editorVm.Properties.SelectedKeyframeSec = null;
-                    InvalidateVisual();
-                };
-                menu.Items.Add(delete);
-                menu.Open(this);
-                return true;
-            }
 
             var addKey = new MenuItem { Header = "Add keyframe here" };
             var at = Math.Max(0, XToTime(pos.X) - clip.StartSec);

@@ -461,7 +461,7 @@
                                         </Border>
                                     </StackPanel>
                                 </ScrollViewer>
-    
+
                     </DataTemplate>
                 </ContentControl.ContentTemplate>
             </ContentControl>
@@ -508,6 +508,12 @@
                                                         <TextBlock Text="{Binding TextSizeValue, StringFormat={}{0:0.#}%}" Classes="field-value" FontSize="10"
                                                                    HorizontalAlignment="Right" VerticalAlignment="Center"/>
                                                     </Border>
+                                                    <ToggleButton Grid.Column="3" Classes="kf-diamond"
+                                                                      IsChecked="{Binding TextSizeAutomation.IsKeyframed, Mode=OneWay}"
+                                                                      Command="{Binding TextSizeAutomation.ToggleCommand}"
+                                                                      ToolTip.Tip="Toggle text size keyframe">
+                                                            <local:StrokeIcon Icon="diamond" Width="10" Height="10"/>
+                                                        </ToggleButton>
                                                 </Grid>
                                                 <Grid ColumnDefinitions="58,Auto,*" ColumnSpacing="7">
                                                     <TextBlock Text="Colour" Classes="field-label" VerticalAlignment="Center"/>
@@ -672,7 +678,7 @@
                                                Margin="4,16,0,0"/>
                                     </StackPanel>
                                 </ScrollViewer>
-    
+
                     </DataTemplate>
                 </ContentControl.ContentTemplate>
             </ContentControl>
@@ -746,7 +752,7 @@
                                                Margin="4,16,0,0"/>
                                     </StackPanel>
                                 </ScrollViewer>
-    
+
                     </DataTemplate>
                 </ContentControl.ContentTemplate>
             </ContentControl>
@@ -792,7 +798,7 @@
                                     </Border>
                                     </StackPanel>
                                 </ScrollViewer>
-    
+
                     </DataTemplate>
                 </ContentControl.ContentTemplate>
             </ContentControl>
@@ -971,7 +977,7 @@
                                                 ToolTip.Tip="Open the effects library"/>
                                     </StackPanel>
                                 </ScrollViewer>
-    
+
                     </DataTemplate>
                 </ContentControl.ContentTemplate>
             </ContentControl>
@@ -998,7 +1004,7 @@
                                         </StackPanel>
                                     </StackPanel>
                                 </ScrollViewer>
-    
+
                     </DataTemplate>
                 </ContentControl.ContentTemplate>
             </ContentControl>
@@ -1090,7 +1096,7 @@
                                                 HorizontalContentAlignment="Center"/>
                                     </StackPanel>
                                 </ScrollViewer>
-    
+
                     </DataTemplate>
                 </ContentControl.ContentTemplate>
             </ContentControl>
@@ -1134,7 +1140,7 @@
                                         </Grid>
                                     </StackPanel>
                                 </ScrollViewer>
-    
+
                     </DataTemplate>
                 </ContentControl.ContentTemplate>
             </ContentControl>
@@ -1186,7 +1192,7 @@
                                         </StackPanel>
                                     </StackPanel>
                                 </ScrollViewer>
-    
+
                     </DataTemplate>
                 </ContentControl.ContentTemplate>
             </ContentControl>

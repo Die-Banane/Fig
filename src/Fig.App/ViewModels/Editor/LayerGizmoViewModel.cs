@@ -66,7 +66,8 @@ public sealed partial class LayerGizmoViewModel : ViewModelBase
     }
 
     private LayerSize? Measure(Clip clip)
-        => _editor.Layers.Measure(clip, (int)Math.Round(MeasureHeight * FrameAspect), MeasureHeight);
+        => _editor.Layers.Measure(clip, (int)Math.Round(MeasureHeight * FrameAspect), MeasureHeight,
+            _editor.PlayheadTimeSec - clip.StartSec);
 
     /// <summary>The layer showing under a frame point, topmost first: a selected one as it is, any other measured afresh.</summary>
     public GizmoItem? ItemAt(double x, double y)

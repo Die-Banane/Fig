@@ -197,7 +197,8 @@ namespace Fig.App.Views
                         var x = TrackHeaderWidth + Viewport.TimeToX(clip.StartSec + kf.TimeSec);
                         if (x < TrackHeaderWidth || x > Bounds.Width)
                             continue;
-                        DrawDiamond(context, x, bodyRect.Y + 6, topColor);
+                        var hot = IsDiamondHot(KeyframeHostRef.OfClip(clip.Id), kf.TimeSec);
+                        DrawDiamond(context, x, bodyRect.Y + 6, hot ? Brushes.White : topColor);
                     }
                 }
             }

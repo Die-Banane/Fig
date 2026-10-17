@@ -41,6 +41,15 @@ public partial class PropertiesViewModel
     /// <summary>Crop sits in the Picture tab, for pictures that can be cropped.</summary>
     public bool HasCrop => Has(Facet.Crop);
 
+    private void ShowTextSizeAtPlayhead() {
+        if (_clipId is null || FindClip(_clipId) is not TextClip text) return; // clip doesn't exist
+        var localT = Math.Clamp(_editor.PlayheadTimeSec - text.StartSec,0, text.DurSec); // get param t
+        var was = _suppressApply;
+        _suppressApply = true;
+        TextSizeValue = ClipAutomation.Evaluate(text, AutomationKeys.TextSize, localT, text.Style.SizePercent);
+        _suppressApply = was;
+    }
+
     private void LoadLayer(Clip? clip)
     {
         OnPropertyChanged(nameof(HasCrop));
@@ -57,6 +66,7 @@ public partial class PropertiesViewModel
             TextShadow = style.Shadow;
             TextBackground = style.Background;
             TextBackgroundHex = Hex(style.BackgroundColor);
+            ShowTextSizeAtPlayhead();
         }
         if (clip is ILayerClip layer)
             (LayoutX, LayoutY, LayoutScale, LayoutRotation) =
@@ -104,8 +114,19 @@ public partial class PropertiesViewModel
     partial void OnTextItalicChanged(bool value) => SetStyle("italic", s => s.Italic, (s, v) => s with { Italic = v }, value);
 
     partial void OnTextSizeValueChanged(double value)
-        => SetStyle("text size", s => s.SizePercent, (s, v) => s with { SizePercent = v }, Math.Clamp(value, 1, 40));
-
+    {
+        var size = Math.Clamp(value, 1, 40);
+        if (!_suppressApply && _clipId is not null && FindClip(_clipId) is TextClip text
+            && text.Keyframes.TryGetValue(AutomationKeys.TextSize, out var keys) && keys.Count > 0)
+        {
+            var localT = Math.Clamp(_editor.PlayheadTimeSec - text.StartSec, 0, text.DurSec);
+            _editor.Editor.SetClipKeyframe(text.Id, AutomationKeys.TextSize, localT, size);   // adds or updates the one here
+            TextSizeAutomation.Refresh();
+            _editor.Preview.RefreshFrame();
+            return;
+        }
+        SetStyle("text size", s => s.SizePercent, (s, v) => s with { SizePercent = v }, size);
+    }
     partial void OnTextAlignValueChanged(TextAlign value) => SetStyle("alignment", s => s.Align, (s, v) => s with { Align = v }, value);
     partial void OnTextShadowChanged(bool value) => SetStyle("shadow", s => s.Shadow, (s, v) => s with { Shadow = v }, value);
     partial void OnTextBackgroundChanged(bool value) => SetStyle("background", s => s.Background, (s, v) => s with { Background = v }, value);

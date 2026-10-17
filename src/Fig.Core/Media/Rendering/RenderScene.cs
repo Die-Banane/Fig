@@ -70,7 +70,7 @@ namespace Fig.Core.Media
         /// The size of what the layer draws before its layout scales and turns it, as a share of the frame height
         /// (the gizmo's box). Null when there is nothing to draw.
         /// </summary>
-        LayerSize? Measure(Clip clip, int width, int height);
+        LayerSize? Measure(Clip clip, int width, int height, double localT);
     }
 
     /// <summary>Draws a <see cref="RenderScene"/> into a BGRA canvas. Implemented on the CPU here and on the GPU in the app.</summary>

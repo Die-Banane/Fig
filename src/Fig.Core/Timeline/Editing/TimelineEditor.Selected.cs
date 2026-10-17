@@ -24,6 +24,13 @@ namespace Fig.Core.Timeline
         /// </summary>
         public (int Count, string Noun)? DeleteSelection()
         {
+            // a picked keyframe diamond goes, not the clip or effect it sits on
+            if (Selection.Keyframe is { } keyframe)
+            {
+                RemoveKeyframes(keyframe);
+                Selection.ClearKeyframe();
+                return (1, "keyframe");
+            }
             var keys = Selection.Items;
             if (keys.Count == 0)
                 return null;

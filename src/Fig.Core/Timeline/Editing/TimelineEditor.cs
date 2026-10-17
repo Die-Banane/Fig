@@ -873,10 +873,8 @@ namespace Fig.Core.Timeline
         /// </summary>
         public void SetEffectKeyframe(string clipId, string effectId, double timeSec,
             IReadOnlyDictionary<string, double> values, KeyframeEasing? easing = null)
-        {
-            ExecuteEffectEdit(clipId, effectId, "Set keyframe", $"kf|{clipId}|{effectId}|{Math.Round(timeSec, 4)}",
-                fx => UpsertKeyframes(fx, timeSec, values, easing));
-        }
+            => EditKeyframes(KeyframeHostRef.OfEffect(clipId, effectId), "Set keyframe", $"kf|{clipId}|{effectId}|{Math.Round(timeSec, 4)}",
+                host => Upsert(host, timeSec, values.ToDictionary(kv => kv.Key, kv => host.ToValue(kv.Key, kv.Value)), easing, host.NewKeyEasing));
 
         /// <summary>
         /// Adds a keyframe at a clip-relative time holding the effect's current look there, so adding it
@@ -884,17 +882,7 @@ namespace Fig.Core.Timeline
         /// single keyframe is already a valid (constant) animation. Returns the time keyed.
         /// </summary>
         public double? AddEffectKeyframe(string clipId, string effectId, double localSec)
-        {
-            var clip = FindEffectOwner(clipId);
-            var effect = clip?.Effects.FirstOrDefault(e => e.Id == effectId);
-            if (clip is null || effect is null)
-                return null;
-
-            var time = Math.Clamp(localSec, 0, EffectTimeLimit(clip));
-            ExecuteEffectEdit(clipId, effectId, "Add keyframe", null,
-                fx => UpsertKeyframes(fx, time, CurrentNumericValues(fx, time), null));
-            return time;
-        }
+            => AddKeyframe(KeyframeHostRef.OfEffect(clipId, effectId), localSec);
 
         /// <summary>
         /// Turns animation on or off for an effect. On: a keyframe at the given time holds the current look.
@@ -934,41 +922,11 @@ namespace Fig.Core.Timeline
         /// (<see cref="RemoveEffectKeyframe"/>, <see cref="SetEffectAnimated"/>).
         /// </summary>
         public double? RecordEffectKeyframe(string clipId, string effectId, double localSec)
-        {
-            var clip = FindEffectOwner(clipId);
-            var effect = clip?.Effects.FirstOrDefault(e => e.Id == effectId);
-            if (clip is null || effect is null)
-                return null;
-
-            var time = Math.Clamp(localSec, 0, EffectTimeLimit(clip));
-            var alreadyKeyed = effect.Keyframes.Values.Any(track => track.Any(p => Math.Abs(p.TimeSec - time) < 1e-6));
-            if (!alreadyKeyed)
-                ExecuteEffectEdit(clipId, effectId, effect.Keyframes.Count == 0 ? "Animate effect" : "Record keyframe", null,
-                    fx => UpsertKeyframes(fx, time, CurrentNumericValues(fx, time), null));
-            return time;
-        }
+            => RecordKeyframe(KeyframeHostRef.OfEffect(clipId, effectId), localSec);
 
         /// <summary>Copies the keyframe at one time to another time (same values and easing).</summary>
         public void DuplicateEffectKeyframe(string clipId, string effectId, double fromSec, double toSec)
-        {
-            var clip = FindEffectOwner(clipId);
-            if (clip is null)
-                return;
-            toSec = Math.Clamp(toSec, 0, EffectTimeLimit(clip));
-            ExecuteEffectEdit(clipId, effectId, "Duplicate keyframe", null, fx =>
-            {
-                foreach (var track in fx.Keyframes.Values)
-                {
-                    var i = track.FindIndex(p => Math.Abs(p.TimeSec - fromSec) < 1e-6);
-                    if (i < 0)
-                        continue;
-                    var copy = track[i] with { TimeSec = toSec };
-                    track.RemoveAll(p => Math.Abs(p.TimeSec - toSec) < 1e-6);
-                    track.Add(copy);
-                    track.Sort((a, b) => a.TimeSec.CompareTo(b.TimeSec));
-                }
-            });
-        }
+            => DuplicateKeyframes(new KeyframeRef(KeyframeHostRef.OfEffect(clipId, effectId), fromSec), toSec);
 
         private static Dictionary<string, double> CurrentNumericValues(EffectInstance fx, double localT)
         {
@@ -1006,58 +964,18 @@ namespace Fig.Core.Timeline
 
         /// <summary>Removes the keyframe at a clip-relative time from every parameter of an effect.</summary>
         public void RemoveEffectKeyframe(string clipId, string effectId, double timeSec)
-        {
-            ExecuteEffectEdit(clipId, effectId, "Delete keyframe", null, fx =>
-            {
-                foreach (var key in fx.Keyframes.Keys.ToList())
-                {
-                    fx.Keyframes[key].RemoveAll(p => Math.Abs(p.TimeSec - timeSec) < 1e-6);
-                    if (fx.Keyframes[key].Count == 0)
-                        fx.Keyframes.Remove(key);
-                }
-            });
-        }
+            => RemoveKeyframes(new KeyframeRef(KeyframeHostRef.OfEffect(clipId, effectId), timeSec));
 
         /// <summary>
         /// Moves a keyframe to a new time on every parameter of an effect. Pass the same
         /// <paramref name="gesture"/> for every step of one drag so it undoes in one go.
         /// </summary>
         public void MoveEffectKeyframe(string clipId, string effectId, double fromSec, double toSec, string gesture)
-        {
-            var clip = FindEffectOwner(clipId);
-            if (clip is null)
-                return;
-            toSec = Math.Clamp(toSec, 0, EffectTimeLimit(clip));
-            ExecuteEffectEdit(clipId, effectId, "Move keyframe", $"mv|{gesture}", fx =>
-            {
-                foreach (var key in fx.Keyframes.Keys.ToList())
-                {
-                    var track = fx.Keyframes[key];
-                    var i = track.FindIndex(p => Math.Abs(p.TimeSec - fromSec) < 1e-6);
-                    if (i < 0)
-                        continue;
-                    var point = track[i];
-                    track.RemoveAt(i);
-                    track.RemoveAll(p => Math.Abs(p.TimeSec - toSec) < 1e-6);
-                    track.Add(point with { TimeSec = toSec });
-                    track.Sort((a, b) => a.TimeSec.CompareTo(b.TimeSec));
-                }
-            });
-        }
+            => MoveKeyframes(new KeyframeRef(KeyframeHostRef.OfEffect(clipId, effectId), fromSec), toSec, gesture);
 
         /// <summary>Changes how the effect eases from the keyframe at a time to the next one.</summary>
         public void SetEffectKeyframeEasing(string clipId, string effectId, double timeSec, KeyframeEasing easing)
-        {
-            ExecuteEffectEdit(clipId, effectId, "Change easing", null, fx =>
-            {
-                foreach (var track in fx.Keyframes.Values)
-                {
-                    var i = track.FindIndex(p => Math.Abs(p.TimeSec - timeSec) < 1e-6);
-                    if (i >= 0)
-                        track[i] = track[i] with { Easing = easing };
-                }
-            });
-        }
+            => SetKeyframeEasing(new KeyframeRef(KeyframeHostRef.OfEffect(clipId, effectId), timeSec), easing);
 
         public void RemoveEffect(string clipId, string effectId)
         {
@@ -1114,54 +1032,28 @@ namespace Fig.Core.Timeline
         // ---- effect keyframes ----
 
         public void SetKeyframe(string clipId, string effectId, string key, double timeSec, ParamValue value)
-        {
-            if (FindEffectOwner(clipId) is null)
-                return;
-            History.Execute(new SetKeyframeCommand(this, clipId, effectId, key, timeSec, value));
-            RaiseChanged();
-        }
+            => SetKeyframeValue(KeyframeHostRef.OfEffect(clipId, effectId), key, timeSec, _ => value, null);
 
         public void RemoveKeyframe(string clipId, string effectId, string key, double timeSec)
-        {
-            if (FindEffectOwner(clipId) is null)
-                return;
-            History.Execute(new RemoveKeyframeCommand(this, clipId, effectId, key, timeSec));
-            RaiseChanged();
-        }
+            => RemoveKeyframe(KeyframeHostRef.OfEffect(clipId, effectId), key, timeSec);
 
         public void ClearKeyframes(string clipId, string effectId, string key)
-        {
-            if (FindEffectOwner(clipId) is null)
-                return;
-            History.Execute(new ClearKeyframesCommand(this, clipId, effectId, key));
-            RaiseChanged();
-        }
+            => ClearKeyframes(KeyframeHostRef.OfEffect(clipId, effectId), key);
 
         // ---- clip automation keyframes ----
 
         public void SetClipKeyframe(string clipId, string key, double timeSec, double value)
-        {
-            if (FindClip(clipId) is null)
-                return;
-            History.Execute(new SetClipKeyframeCommand(this, clipId, key, timeSec, ParamValue.OfDouble(value)));
-            RaiseChanged();
-        }
+            => SetKeyframeValue(ClipHost(clipId, key), key, timeSec, value);
 
         public void RemoveClipKeyframe(string clipId, string key, double timeSec)
-        {
-            if (FindClip(clipId) is null)
-                return;
-            History.Execute(new RemoveClipKeyframeCommand(this, clipId, key, timeSec));
-            RaiseChanged();
-        }
+            => RemoveKeyframe(ClipHost(clipId, key), key, timeSec);
 
-        public void ClearClipKeyframes(string clipId, string key)
-        {
-            if (FindClip(clipId) is null)
-                return;
-            History.Execute(new ClearClipKeyframesCommand(this, clipId, key));
-            RaiseChanged();
-        }
+        public void ClearClipKeyframes(string clipId, string? key)
+            => ClearKeyframes(key is null ? KeyframeHostRef.OfClip(clipId) : ClipHost(clipId, key), key);
+
+        /// <summary>Which of a clip's keyframe hosts a property belongs to: its speed curve, or its own keys.</summary>
+        private static KeyframeHostRef ClipHost(string clipId, string key)
+            => key == AutomationKeys.Speed ? KeyframeHostRef.OfSpeed(clipId) : KeyframeHostRef.OfClip(clipId);
 
         public void SetTransitionIn(string clipId, TransitionRef? transition)
         {

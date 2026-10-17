@@ -18,6 +18,37 @@ namespace Fig.Core.Timeline
         /// <summary>Raised after any selection change.</summary>
         public event Action? Changed;
 
+        /// <summary>
+        /// The keyframe diamond picked on the timeline, of any kind; its owner (clip or effect bar) is the selection.
+        /// Any other change to the selection drops it.
+        /// </summary>
+        public KeyframeRef? Keyframe { get; private set; }
+
+        /// <summary>Selects a keyframe diamond, and its owner with it.</summary>
+        public void SelectKeyframe(SelectionKey owner, KeyframeRef keyframe)
+        {
+            _items.Clear();
+            _items.Add(owner);
+            Keyframe = keyframe;
+            Changed?.Invoke();
+        }
+
+        /// <summary>The selected diamond moved (dragged): keep it selected at its new time.</summary>
+        public void MoveKeyframe(double timeSec)
+        {
+            if (Keyframe is { } k)
+                Keyframe = k with { TimeSec = timeSec };
+        }
+
+        /// <summary>Drops the selected diamond (it was deleted), keeping its owner selected.</summary>
+        public void ClearKeyframe()
+        {
+            if (Keyframe is null)
+                return;
+            Keyframe = null;
+            Changed?.Invoke();
+        }
+
         // ---- the uniform API ------------------------------------------------------------------
 
         /// <summary>Everything selected, in the order it was picked.</summary>
@@ -41,6 +72,7 @@ namespace Fig.Core.Timeline
                 return;
             _items.Clear();
             _items.AddRange(next);
+            Keyframe = null;
             Changed?.Invoke();
         }
 
@@ -50,6 +82,7 @@ namespace Fig.Core.Timeline
             if (_items.Contains(key))
                 return;
             _items.Add(key);
+            Keyframe = null;
             Changed?.Invoke();
         }
 
@@ -57,7 +90,10 @@ namespace Fig.Core.Timeline
         public void Remove(SelectionKey key)
         {
             if (_items.Remove(key))
+            {
+                Keyframe = null;
                 Changed?.Invoke();
+            }
         }
 
         /// <summary>Adds the item, or takes it out when it is already selected.</summary>
@@ -78,10 +114,11 @@ namespace Fig.Core.Timeline
 
         public void Clear()
         {
-            if (_items.Count == 0)
+            if (_items.Count == 0 && Keyframe is null)
                 return;
             _items.Clear();
             _markerAnchorId = null;
+            Keyframe = null;
             Changed?.Invoke();
         }
 

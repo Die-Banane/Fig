@@ -151,7 +151,7 @@ dotnet test
 - Edits to the timeline go through commands on `TimelineEditor` so that they are undoable. Do not mutate the document directly from the UI.
 - Match the style of the surrounding code: naming, comment density, and idiom.
 - Adding an effect or transition has its own short guide in [DEVELOPMENT.md](DEVELOPMENT.md).
-
+- Use `<summary></summary>` where possible to describe codeblocks.
 ### Tests
 
 - Core behaviour gets unit tests before the UI is written.

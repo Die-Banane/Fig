@@ -61,7 +61,7 @@ public sealed class SkiaLayerRasterizer : ILayerRasterizer
 
         var picture = clip switch
         {
-            TextClip text => Draw(width, height, canvas => DrawText(canvas, text, width, height)),
+            TextClip text => Draw(width, height, canvas => DrawText(canvas, text, textStyle!, width, height)),
             ImageClip image => LoadImage(_findMedia(image.SourceId)!.Url) is { } source
                 ? Draw(width, height, canvas => DrawImage(canvas, source[source.FrameAt(localT)], image.Layout, width, height))
                 : null,
@@ -85,7 +85,7 @@ public sealed class SkiaLayerRasterizer : ILayerRasterizer
         }
     }
 
-    public LayerSize? Measure(Clip clip, double localT int width, int height)
+    public LayerSize? Measure(Clip clip,  int width, int height, double localT)
     {
         if (width <= 0 || height <= 0)
             return null;
@@ -108,7 +108,7 @@ public sealed class SkiaLayerRasterizer : ILayerRasterizer
 
         var (w, h) = clip switch
         {
-            TextClip text => string.IsNullOrEmpty(text.Text) ? (0f, 0f) : MeasureText(text, height),
+            TextClip text => string.IsNullOrEmpty(text.Text) ? (0f, 0f) : MeasureText(text, textStyle, height),
             ImageClip image => LoadImage(_findMedia(image.SourceId)!.Url) is { } source ? Fit(source[0], width, height) : (0f, 0f),
             _ => (0f, 0f),
         };
@@ -122,9 +122,9 @@ public sealed class SkiaLayerRasterizer : ILayerRasterizer
         return size;
     }
 
-    private static (float Width, float Height) MeasureText(TextClip text, int height)
+    private static (float Width, float Height) MeasureText(TextClip text, TextStyle style, int height)
     {
-        using var layout = TextLayout.Of(text.Style, text.Text, height);
+        using var layout = TextLayout.Of(style, text.Text, height);
         return layout.Bounds;
     }
 

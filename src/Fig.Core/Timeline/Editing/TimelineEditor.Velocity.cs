@@ -44,8 +44,9 @@ namespace Fig.Core.Timeline
                 })
                 .GroupBy(k => System.Math.Round(k.TimeSec, 6)).Select(g => g.Last())
                 .OrderBy(k => k.TimeSec).ToList();
-            History.ExecuteCoalescing(new SetSpeedCurveCommand(this, clipId, cleaned is { Count: > 0 } ? cleaned : null, description, gesture));
-            RaiseChanged();
+            ReplaceKeyframes(KeyframeHostRef.OfSpeed(clipId),
+                cleaned is { Count: > 0 } ? new Dictionary<string, List<KeyframePoint>> { [AutomationKeys.Speed] = cleaned } : null,
+                description, gesture);
         }
     }
 }

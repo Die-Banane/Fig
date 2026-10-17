@@ -36,6 +36,7 @@ public partial class PropertiesViewModel : ViewModelBase
             OnPropertyChanged(nameof(NoEffects));
         };
         OpacityAutomation = new AutomationButtonViewModel(this, AutomationKeys.Opacity, () => OpacityValue);
+        TextSizeAutomation = new AutomationButtonViewModel(this, AutomationKeys.TextSize, () => TextSizeValue);
         VolumeAutomation = new AutomationButtonViewModel(this, AutomationKeys.Volume, () => VolumeValue);
         CropTopAutomation = new AutomationButtonViewModel(this, AutomationKeys.CropTop, () => CropTop);
         CropBottomAutomation = new AutomationButtonViewModel(this, AutomationKeys.CropBottom, () => CropBottom);
@@ -48,6 +49,7 @@ public partial class PropertiesViewModel : ViewModelBase
     /// <summary>The move / scale / rotate gizmo for text and image layers on the preview.</summary>
     public LayerGizmoViewModel Gizmo { get; }
     public AutomationButtonViewModel OpacityAutomation { get; }
+    public AutomationButtonViewModel TextSizeAutomation { get;}
     public AutomationButtonViewModel VolumeAutomation { get; }
     public AutomationButtonViewModel CropTopAutomation { get; }
     public AutomationButtonViewModel CropBottomAutomation { get; }
@@ -63,6 +65,8 @@ public partial class PropertiesViewModel : ViewModelBase
                 RefreshParams();
             if (Has(Facet.Picture | Facet.Sound))
                 RefreshAutomation();
+            if (Has(Facet.Text))
+                ShowTextSizeAtPlayhead();
             Transform.Refresh();
             Gizmo.Refresh();
             NotifyPreviewControlsChanged();
@@ -116,6 +120,7 @@ public partial class PropertiesViewModel : ViewModelBase
     public void RefreshAutomation()
     {
         OpacityAutomation.Refresh();
+        TextSizeAutomation.Refresh();
         VolumeAutomation.Refresh();
         CropTopAutomation.Refresh();
         CropBottomAutomation.Refresh();

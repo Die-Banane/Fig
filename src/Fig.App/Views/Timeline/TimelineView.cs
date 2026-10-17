@@ -439,12 +439,12 @@ namespace Fig.App.Views
                 var top = TrackTop(i);
                 if (pos.Y < top || pos.Y >= TrackBottom(i))
                     continue;
-                // clip automation diamonds render along the top edge of the body (effect keyframes live on the effect bars)
-                var bodyTop = top + TimelineGeometry.ClipInset + TimelineGeometry.LabelHeight(track);
-                var inTopBand = pos.Y >= bodyTop - 2 && pos.Y <= bodyTop + 14;
+                // a clip's own diamonds sit along the top edge of its body (effect keyframes live on the effect bars);
+                // a text clip has no name strip, so its body starts at the top of the clip (as it is drawn)
                 foreach (var clip in track.Clips)
                 {
-                    if (inTopBand)
+                    var bodyTop = top + TimelineGeometry.ClipInset + (clip is TextClip ? 0 : TimelineGeometry.LabelHeight(track));
+                    if (pos.Y >= bodyTop - 2 && pos.Y <= bodyTop + 14)
                         foreach (var (key, trackKf) in clip.Keyframes)
                             foreach (var kf in key == AutomationKeys.Speed ? [] : trackKf)
                             {
@@ -522,8 +522,16 @@ namespace Fig.App.Views
             // right-click: context menu (add marker / enable-disable / delete marker)
             if (e.GetCurrentPoint(this).Properties.IsRightButtonPressed)
             {
-                if (!TryOpenSpeedPointMenu(pos))
+                // a keyframe diamond, of any kind, has the same menu
+                if (!TryOpenDiamondMenu(pos))
                     OpenContextMenu(pos);
+                e.Handled = true;
+                return;
+            }
+
+            // a keyframe diamond, of any kind: pick it, drag it, Ctrl-drag a copy
+            if (HandleDiamondPress(e, pos))
+            {
                 e.Handled = true;
                 return;
             }
@@ -534,7 +542,7 @@ namespace Fig.App.Views
                 return;
             }
 
-            // a velocity edit's speed line: grab a point, or double-click the line to add one
+            // a velocity edit's speed line: double-click it to add a point
             if (HandleSpeedPress(e, pos))
             {
                 e.Handled = true;
@@ -583,16 +591,6 @@ namespace Fig.App.Views
             }
 
             // keyframe diamond hit-test: seek the playhead to it
-            if (HitTestKeyframe(pos) is { } keyframe)
-            {
-                _selectedClipId = keyframe.Clip.Id;
-                _selectedTrackId = null;
-                Editor.Selection.SelectOnly(keyframe.Clip.Id);
-                SetPlayhead(Editor.SnapTime(Math.Max(0, keyframe.TimeSec)));
-                e.Handled = true;
-                return;
-            }
-
             // marker hit-test: takes priority over playhead drag (ruler) and clip drag.
             // double-click on a marker seeks the playhead to it.
             var markerHit = HitTestMarker(pos);
@@ -790,17 +788,8 @@ namespace Fig.App.Views
                 return;
             }
 
-            if (_keyDrag is not null)
-            {
-                UpdateKeyDrag(pos);
+            if (UpdateDiamondDrag(pos))
                 return;
-            }
-
-            if (_speedDrag is not null)
-            {
-                UpdateSpeedDrag(pos);
-                return;
-            }
 
             if (_rackDrag is not null)
             {
@@ -939,8 +928,8 @@ namespace Fig.App.Views
                 return;
             }
 
-            // idle: a speed point shows its speed
-            if (UpdateSpeedHover(pos))
+            // idle: a keyframe diamond, of any kind, highlights and says what it does
+            if (UpdateDiamondHover(pos))
                 return;
 
             // idle: effect bars show what they are and how to use them
@@ -1112,7 +1101,7 @@ namespace Fig.App.Views
         protected override void OnPointerReleased(PointerReleasedEventArgs e)
         {
             base.OnPointerReleased(e);
-            if (FinishCopyDrag(e) || EndSpeedDrag(e) || EndTrackDrag(e))
+            if (FinishCopyDrag(e) || EndDiamondDrag(e) || EndTrackDrag(e))
             {
                 e.Handled = true;
                 return;
@@ -1734,6 +1723,7 @@ namespace Fig.App.Views
             DrawSnapGuide(context);
             DrawMarquee(context);
             DrawCopyPreview(context);
+            DrawDiamondCopyPreview(context);
             DrawMoveGhost(context);
             DrawTrackDrop(context);
 

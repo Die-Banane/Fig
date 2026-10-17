@@ -105,7 +105,7 @@ namespace Fig.App.Views
         }
 
         private bool DragInProgress
-            => _draggingClip || _rackDrag is not null || _keyDrag is not null || _speedDrag is not null
+            => _draggingClip || _rackDrag is not null || _diamondDrag is not null
                || _copyDrag is { Active: true } || _trackDrag is { Active: true } || _draggingMarker || _draggingPlayhead || _marqueeActive;
 
         private void AutoScrollTick()
