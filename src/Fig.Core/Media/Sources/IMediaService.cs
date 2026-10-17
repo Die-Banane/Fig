@@ -77,6 +77,15 @@ namespace Fig.Core.Media
         /// <summary>Decode with an explicit play vs scrub tradeoff.</summary>
         DecodedFrame? DecodeForward(double timeSec, PreviewDecodeMode mode);
 
+        /// <summary>
+        /// A frame smoothed for the clip's speed there: slow motion blends the real frames around the moment
+        /// (<paramref name="blend"/>), fast motion averages the frames it passes (<paramref name="motionBlur"/>, 0..1).
+        /// <paramref name="spanSec"/> is how much of the file one output frame covers. A source that can't smooth
+        /// gives the plain frame.
+        /// </summary>
+        DecodedFrame? DecodeSmoothed(double timeSec, double spanSec, bool blend, double motionBlur, PreviewDecodeMode mode)
+            => DecodeForward(timeSec, mode);
+
         /// <summary>Random-access seek (used when scrubbing backwards or jumping).</summary>
         void Seek(double timeSec);
 

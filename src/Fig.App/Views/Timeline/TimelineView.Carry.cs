@@ -46,7 +46,7 @@ namespace Fig.App.Views
                 return;
             foreach (var clip in _carryClips)
                 _carryStarts[clip.Id] = clip.StartSec;
-            _carryBefore = _carryClips.Select(ClipGeometry.Capture).ToList();
+            _carryBefore = _carryClips.Select(Editor!.CaptureGeometry).ToList();
             _carryGroup = Editor.History.Group();
         }
 

@@ -616,7 +616,9 @@ namespace Fig.App.Views
             if (Editor is null || HitTestRack(pos) is not { Item.Effect: { } fx } hit)
                 return false;
 
-            _editorVm?.Properties.SelectEffect(hit.Clip.Id, fx.Id);
+            // right-clicking a bar that is part of a selection keeps the selection (to copy them all)
+            if (!Editor.Selection.IsEffectSelected(fx.Id))
+                _editorVm?.Properties.SelectEffect(hit.Clip.Id, fx.Id);
             InvalidateVisual();
 
             var menu = new ContextMenu();
@@ -689,6 +691,20 @@ namespace Fig.App.Views
                 };
                 menu.Items.Add(clear);
             }
+
+            var selectedCount = Math.Max(1, Editor.Selection.SelectedEffects.Count);
+            var copy = new MenuItem { Header = selectedCount == 1 ? "Copy effect" : $"Copy {selectedCount} effects" };
+            copy.Click += (_, _) => _editorVm?.CopySelectedEffects();
+            menu.Items.Add(copy);
+            var paste = new MenuItem { Header = "Paste effects at playhead", IsEnabled = Editor.HasEffectClipboard };
+            paste.Click += (_, _) =>
+            {
+                Editor.PasteEffects(_editorVm?.PlayheadTimeSec ?? 0, clip is Track t ? t.Id : Editor.FindTrackForClip((Clip)clip).Id);
+                InvalidateMeasure();
+                InvalidateVisual();
+            };
+            menu.Items.Add(paste);
+            menu.Items.Add(new Separator());
 
             var savePreset = new MenuItem { Header = "Save as preset..." };
             savePreset.Click += async (_, _) =>

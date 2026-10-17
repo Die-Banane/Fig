@@ -198,6 +198,21 @@ namespace Fig.Core.Timeline
         /// </summary>
         public bool PlaysAudio { get; set; }
 
+        /// <summary>
+        /// Slow motion glides: where the clip plays slower than its file's frames, the two real frames around each
+        /// moment are blended instead of one being repeated.
+        /// </summary>
+        public bool BlendFrames { get; set; }
+
+        /// <summary>
+        /// Fast motion smears: where the clip plays faster than its file's frames, the frames each step passes over
+        /// are averaged. 0 is off, 1 is a full shutter (every frame passed).
+        /// </summary>
+        public double MotionBlur { get; set; }
+
+        /// <summary>True when the clip smooths its frames for its speed at all.</summary>
+        [JsonIgnore] public bool Smooths => BlendFrames || MotionBlur > 0;
+
         /// <summary>Seconds the sound fades in from the clip start, apart from the picture's fade (0 = none).</summary>
         public double AudioFadeInSec { get; set; }
 

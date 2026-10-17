@@ -22,7 +22,10 @@ public partial class ExportDialog : Window
     {
         Model = new ExportDialogViewModel(fps, defaultWidth, defaultHeight, timeline) { ProjectName = projectName };
         if (defaults is not null)
+        {
             Model.Quality = defaults.Quality;
+            Model.Encoder = defaults.Encoder;
+        }
         var videos = defaults?.Folder is { Length: > 0 } folder && Directory.Exists(folder)
             ? folder
             : Environment.GetFolderPath(Environment.SpecialFolder.MyVideos);

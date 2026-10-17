@@ -805,9 +805,9 @@ public partial class PreviewViewModel : ViewModelBase
                 return false;
             }
 
-            // bottom of the stack first: a higher track index is drawn on top
+            // bottom of the stack first: the lowest track on the timeline is painted first
             var paintOrder = ordered
-                .OrderBy(o => o.TrackIndex)
+                .OrderBy(o => TrackStacking.PaintKey(o.TrackIndex))
                 .Where(o => o.Layer is not null)
                 .Select(o => o.Layer!)
                 .ToList();
@@ -1020,9 +1020,11 @@ public partial class PreviewViewModel : ViewModelBase
         // text and still images are drawn, not decoded; the rasterizer keeps its own cache
         if (layer.Clip is ILayerClip)
             return Layers?.Rasterize(layer.Clip, _targetWidth, _targetHeight, layer.TimeSec);
+        // a clip smoothed for its speed blends between frames finer than the cache's buckets: always decode it
+        var smooth = layer.Clip is VideoClip { Smooths: true } && mode == PreviewDecodeMode.Playback;
         // Cache the pre-effect source frame (the pool owns a copy); effects are applied after
         // retrieval, so effect clips benefit from the cache too instead of re-decoding every frame.
-        if (_frameCache.TryGet(layer.SourcePath, layer.TimeSec, _targetWidth, _targetHeight, out var cached)
+        if (!smooth && _frameCache.TryGet(layer.SourcePath, layer.TimeSec, _targetWidth, _targetHeight, out var cached)
             && cached is not null)
         {
             fromCache = true;
@@ -1034,15 +1036,16 @@ public partial class PreviewViewModel : ViewModelBase
 
         if (needsSeek
             || source.LastPresentedTimeSec < 0
-            || layer.TimeSec < source.LastPresentedTimeSec - 0.05)
+            || layer.TimeSec < source.LastPresentedTimeSec - (smooth ? 0.1 : 0.05))
         {
             source.Seek(layer.TimeSec);
         }
 
-        var frame = source.DecodeForward(layer.TimeSec, mode);
+        var frame = smooth ? DecodeSmoothed(source, (VideoClip)layer.Clip, layer.TimeSec, ClipTime.LocalAt(layer.Clip, layer.TimeSec), mode)
+            : source.DecodeForward(layer.TimeSec, mode);
         if (source.LastFrameApproximate)
             _composeApproximate = true;   // a stand-in keyframe: never cache it under this time
-        else if (frame is not null)
+        else if (frame is not null && !smooth)
             _frameCache.Put(layer.SourcePath, layer.TimeSec, _targetWidth, _targetHeight, frame);
         return frame;
     }
@@ -1081,7 +1084,8 @@ public partial class PreviewViewModel : ViewModelBase
             if (source is null)
                 return false;
 
-            if (_frameCache.TryGet(path, srcTime, _targetWidth, _targetHeight, out var cached)
+            var smooth = clip.Smooths && mode == PreviewDecodeMode.Playback;
+            if (!smooth && _frameCache.TryGet(path, srcTime, _targetWidth, _targetHeight, out var cached)
                 && cached is not null)
             {
                 frame = cached;
@@ -1090,14 +1094,14 @@ public partial class PreviewViewModel : ViewModelBase
 
             if (needsSeek
                 || source.LastPresentedTimeSec < 0
-                || srcTime < source.LastPresentedTimeSec - 0.05)
+                || srcTime < source.LastPresentedTimeSec - (smooth ? 0.1 : 0.05))
             {
                 source.Seek(srcTime);
             }
-            frame = source.DecodeForward(srcTime, mode);
+            frame = smooth ? DecodeSmoothed(source, clip, srcTime, localT, mode) : source.DecodeForward(srcTime, mode);
             if (source.LastFrameApproximate)
                 _composeApproximate = true;
-            else if (frame is not null)
+            else if (frame is not null && !smooth)
                 _frameCache.Put(path, srcTime, _targetWidth, _targetHeight, frame);
             return frame is not null;
         }
@@ -1105,6 +1109,13 @@ public partial class PreviewViewModel : ViewModelBase
         {
             return false;
         }
+    }
+
+    /// <summary>A frame blended (slow) or blurred (fast) for the clip's speed at <paramref name="localT"/>.</summary>
+    private DecodedFrame? DecodeSmoothed(IVideoFrameSource source, VideoClip clip, double srcTime, double localT, PreviewDecodeMode mode)
+    {
+        var frameSec = 1 / Math.Max(1, _editor?.Editor.Document.Rate.Fps ?? 30);
+        return source.DecodeSmoothed(srcTime, ClipTime.SpanAt(clip, localT, frameSec), clip.BlendFrames, clip.MotionBlur, mode);
     }
 
     private bool TryGetOrOpenSource(string path, string clipId, out IVideoFrameSource? source)

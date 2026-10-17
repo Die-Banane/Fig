@@ -23,7 +23,8 @@ namespace Fig.Core.Media
         public unsafe void RenderTimeline(ProjectModel project, TimelineModel timeline,
             string outputPath, int width, int height, int crf = 23, Action<double>? progress = null,
             double? rangeStartSec = null, double? rangeEndSec = null, ISceneRenderer? renderer = null,
-            ILayerRasterizer? layers = null)
+            ILayerRasterizer? layers = null, VideoEncoderChoice encoder = VideoEncoderChoice.Automatic,
+            Action<string>? encoderUsed = null)
         {
             if (timeline.Tracks.Count == 0)
                 throw new InvalidOperationException("Timeline has no tracks");
@@ -41,13 +42,15 @@ namespace Fig.Core.Media
 
             width = Math.Max(2, width & ~1);
             height = Math.Max(2, height & ~1);
-            var fps = Math.Max(1, (int)Math.Round(timeline.Rate.Fps));
+            // frame f is at start + f x Den / Num: the timeline's exact rate (29.97 is 30000/1001, not 30)
+            var rate = timeline.Rate;
 
             var sources = new Dictionary<string, IVideoFrameSource>();
             try
             {
                 AVFormatContext* outCtx = null;
-                AVCodecContext* vEnc = null;
+                AVCodecContext* vEnc = null;   // owned by opened
+                OpenedEncoder? opened = null;
                 AVCodecContext* aEnc = null;
                 AVStream* vStream = null;
                 AVStream* aStream = null;
@@ -61,22 +64,12 @@ namespace Fig.Core.Media
                     if (outCtx == null)
                         throw new InvalidOperationException("Could not create output context");
 
-                    // ---- video stream: libx264 @ timeline rate ----
-                    var vcodec = ffmpeg.avcodec_find_encoder_by_name("libx264");
-                    if (vcodec == null)
-                        throw new InvalidOperationException("libx264 encoder not found");
-                    vEnc = ffmpeg.avcodec_alloc_context3(vcodec);
-                    vEnc->width = width;
-                    vEnc->height = height;
-                    vEnc->time_base = new AVRational { num = 1, den = fps };
-                    vEnc->framerate = new AVRational { num = fps, den = 1 };
-                    vEnc->pix_fmt = AVPixelFormat.AV_PIX_FMT_YUV420P;
-                    vEnc->gop_size = fps * 2;
-                    vEnc->max_b_frames = 0;
-                    var crfStr = Math.Clamp(crf, 0, 51).ToString(System.Globalization.CultureInfo.InvariantCulture);
-                    ffmpeg.av_opt_set(vEnc->priv_data, "crf", crfStr, 0);
-                    ThrowIfError(ffmpeg.avcodec_open2(vEnc, vcodec, null), "avcodec_open2 (video)");
-                    vStream = ffmpeg.avformat_new_stream(outCtx, vcodec);
+                    // ---- video stream: H.264 on the GPU when there is one, else libx264, at the timeline's exact rate ----
+                    opened = VideoEncoders.Open(encoder, width, height, timeline.Rate, crf,
+                        (outCtx->oformat->flags & ffmpeg.AVFMT_GLOBALHEADER) != 0);
+                    encoderUsed?.Invoke(opened.Label);
+                    vEnc = opened.Context;
+                    vStream = ffmpeg.avformat_new_stream(outCtx, opened.Codec);
                     ThrowIfError(ffmpeg.avcodec_parameters_from_context(vStream->codecpar, vEnc), "avcodec_parameters_from_context (video)");
                     vStream->time_base = vEnc->time_base;
 
@@ -109,32 +102,32 @@ namespace Fig.Core.Media
                     ThrowIfError(ffmpeg.av_frame_get_buffer(bgra, 32), "av_frame_get_buffer (bgra)");
 
                     yuv = ffmpeg.av_frame_alloc();
-                    yuv->format = (int)AVPixelFormat.AV_PIX_FMT_YUV420P;
+                    yuv->format = (int)opened.InputFormat;
                     yuv->width = width;
                     yuv->height = height;
                     ThrowIfError(ffmpeg.av_frame_get_buffer(yuv, 32), "av_frame_get_buffer (yuv)");
 
                     sws = ffmpeg.sws_getContext(width, height, AVPixelFormat.AV_PIX_FMT_BGRA,
-                        width, height, AVPixelFormat.AV_PIX_FMT_YUV420P, SWS_BILINEAR, null, null, null);
+                        width, height, opened.InputFormat, SWS_BILINEAR, null, null, null);
                     if (sws == null)
                         throw new InvalidOperationException("sws_getContext failed");
 
                     // ---- video frames: describe each as a scene, let the renderer draw it, encode in order ----
                     renderer ??= new CpuSceneRenderer();
                     var depth = Math.Max(1, renderer.MaxInFlight);
-                    var totalFrames = Math.Max(1, (long)Math.Round(length * fps));
+                    var totalFrames = Math.Max(1, (long)Math.Round(length * rate.Num / rate.Den));
                     var inFlight = new Queue<(long Frame, double Time, byte[] Canvas, Task Done)>();
                     var spare = new Stack<byte[]>();
                     for (var f = 0L; f < totalFrames; f++)
                     {
-                        var t = start + f / (double)fps;
+                        var t = start + f * (double)rate.Den / rate.Num;
                         var scene = BuildScene(project, timeline, sources, t, width, height, layers);
                         var canvas = spare.Count > 0 ? spare.Pop() : new byte[width * height * 4];
                         inFlight.Enqueue((f, t, canvas, renderer.RenderAsync(scene, canvas)));
                         while (inFlight.Count >= depth)
                         {
                             var item = inFlight.Dequeue();
-                            FinishFrame(item.Done, item.Canvas, item.Frame, bgra, yuv, sws, vEnc, outCtx, vStream, width, height);
+                            FinishFrame(item.Done, item.Canvas, item.Frame, bgra, yuv, sws, opened, outCtx, vStream, width, height);
                             spare.Push(item.Canvas);
                             progress?.Invoke(Math.Min(1, (item.Time - start) / length));
                         }
@@ -142,7 +135,7 @@ namespace Fig.Core.Media
                     while (inFlight.Count > 0)
                     {
                         var item = inFlight.Dequeue();
-                        FinishFrame(item.Done, item.Canvas, item.Frame, bgra, yuv, sws, vEnc, outCtx, vStream, width, height);
+                        FinishFrame(item.Done, item.Canvas, item.Frame, bgra, yuv, sws, opened, outCtx, vStream, width, height);
                         spare.Push(item.Canvas);
                         progress?.Invoke(Math.Min(1, (item.Time - start) / length));
                     }
@@ -173,7 +166,7 @@ namespace Fig.Core.Media
                     if (yuv != null) ffmpeg.av_frame_free(&yuv);
                     if (bgra != null) ffmpeg.av_frame_free(&bgra);
                     if (aEnc != null) ffmpeg.avcodec_free_context(&aEnc);
-                    if (vEnc != null) ffmpeg.avcodec_free_context(&vEnc);
+                    opened?.Dispose();
                     if (outCtx != null) ffmpeg.avformat_free_context(outCtx);
                 }
             }
@@ -230,8 +223,9 @@ namespace Fig.Core.Media
 
         /// <summary>Waits for a frame to be drawn, then copies it into the encoder's frame, converts to YUV and encodes it.</summary>
         private unsafe void FinishFrame(Task drawn, byte[] canvas, long index, AVFrame* bgra, AVFrame* yuv, SwsContext* sws,
-            AVCodecContext* vEnc, AVFormatContext* outCtx, AVStream* vStream, int width, int height)
+            OpenedEncoder encoder, AVFormatContext* outCtx, AVStream* vStream, int width, int height)
         {
+            var vEnc = encoder.Context;
             drawn.GetAwaiter().GetResult();
             var srcStride = width * 4;
             fixed (byte* pCanvas = canvas)
@@ -246,7 +240,23 @@ namespace Fig.Core.Media
 
             ffmpeg.sws_scale(sws, bgra->data, bgra->linesize, 0, height, yuv->data, yuv->linesize);
             yuv->pts = index;
-            EncodeFrame(vEnc, outCtx, vStream, yuv, index);
+            if (encoder.HwFrames == null)
+            {
+                EncodeFrame(vEnc, outCtx, vStream, yuv, index);
+                return;
+            }
+            // VA-API encodes GPU frames: upload this one into the encoder's pool first
+            var gpu = ffmpeg.av_frame_alloc();
+            try
+            {
+                ThrowIfError(ffmpeg.av_hwframe_get_buffer(encoder.HwFrames, gpu, 0), "av_hwframe_get_buffer");
+                ThrowIfError(ffmpeg.av_hwframe_transfer_data(gpu, yuv, 0), "av_hwframe_transfer_data");
+                EncodeFrame(vEnc, outCtx, vStream, gpu, index);
+            }
+            finally
+            {
+                ffmpeg.av_frame_free(&gpu);
+            }
         }
 
         /// <summary>
@@ -257,12 +267,9 @@ namespace Fig.Core.Media
             Dictionary<string, IVideoFrameSource> sources, double t, int width, int height, ILayerRasterizer? rasterizer)
         {
             var layers = new List<RenderLayer>();
-            // the first track is the bottom of the stack (matches the preview)
-            for (var i = 0; i < timeline.Tracks.Count; i++)
+            // paint from the lowest track up: a track higher on the timeline covers the ones below (matches the preview)
+            foreach (var (_, track) in TrackStacking.BottomUp(timeline))
             {
-                var track = timeline.Tracks[i];
-                if (track.Kind != TrackKind.Video || !track.Visible)
-                    continue;
 
                 var trackEffects = EffectPipeline.ResolveStack(track.Effects, t);
                 var activeTx = TransitionResolver.FindActive(track, t);
@@ -365,9 +372,14 @@ namespace Fig.Core.Media
                 sources[decoderKey] = source;
             }
 
-            if (source.LastPresentedTimeSec < 0 || srcTime < source.LastPresentedTimeSec - 0.05)
+            // a blended frame sits up to a frame before the one decoded last: only seek back further than that
+            var slack = clip.Smooths ? 0.1 : 0.05;
+            if (source.LastPresentedTimeSec < 0 || srcTime < source.LastPresentedTimeSec - slack)
                 source.Seek(srcTime);
-            frame = source.DecodeForward(srcTime, PreviewDecodeMode.Playback);
+            frame = clip.Smooths
+                ? source.DecodeSmoothed(srcTime, ClipTime.SpanAt(clip, localT, 1 / Math.Max(1, timeline.Rate.Fps)),
+                    clip.BlendFrames, clip.MotionBlur, PreviewDecodeMode.Playback)
+                : source.DecodeForward(srcTime, PreviewDecodeMode.Playback);
             return frame is not null;
         }
 

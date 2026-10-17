@@ -89,14 +89,3 @@ Extending Fig goes like this:
 3. Tests first, UI last. After the backend/headless infrastructure works, the UI can easily be built on top of it.
 
 This is the design philosophy I use for other projects, and it keeps things maintainable and **extensible**.
-
-## Contributing
-
-AI generated code is allowed as long as you mention:
-
-1. What model was used
-2. You can extensively describe what you added, how it works, and **why** you added it
-
-Being able to understand what you added or built is of utmost importance. 
-
-AI generated output will not be accepted if it's generated slop. I couldn't care less if you use AI as long as the code is good and you understand it, but I have a vision for this project, and feature bloat isn't one of them.

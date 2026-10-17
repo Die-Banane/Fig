@@ -72,6 +72,9 @@ namespace Fig.App.Services
         public int Quality { get; set; } = 23;
         /// <summary>Where exports go; null means the Videos folder.</summary>
         public string? Folder { get; set; }
+        /// <summary>The H.264 encoder: a GPU one when there is one (Automatic), or a named one, or the CPU.</summary>
+        [JsonConverter(typeof(JsonStringEnumConverter<Fig.Core.Media.VideoEncoderChoice>))]
+        public Fig.Core.Media.VideoEncoderChoice Encoder { get; set; } = Fig.Core.Media.VideoEncoderChoice.Automatic;
     }
 
     /// <summary>What draws the preview and export frames.</summary>

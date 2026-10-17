@@ -71,8 +71,8 @@ namespace Fig.App.Views
             }
 
             // the undo step covers the trimmed clips and the neighbours that rolled with them
-            _dragBefore = _dragMembers.Select(ClipGeometry.Capture)
-                .Concat(_rollPartners.Values.Select(p => ClipGeometry.Capture(p.Clip))).ToList();
+            _dragBefore = _dragMembers.Select(Editor.CaptureGeometry)
+                .Concat(_rollPartners.Values.Select(p => Editor.CaptureGeometry(p.Clip))).ToList();
         }
 
         /// <summary>Holds a trim's edge movement inside what the neighbours allow.</summary>

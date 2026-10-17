@@ -180,6 +180,7 @@ The primary user is a solo creator (hobbyist to semi-professional) who edits sho
 | FR-072 | Per-clip speed editing SHALL be exposed in the UI. | P1 | X |
 | FR-072a | A video clip SHALL take an optional speed curve (a velocity edit, the Vegas model): eased keyframes of speed (0.1×–8×) in seconds from the clip start. The clip SHALL keep its place and length; the curve decides how much footage it uses (the area under the curve). Preview, export, the mixer (pitch follows the curve), cuts, trims, the filmstrip, the waveform and beat analysis SHALL all map time through the curve, and a cut through a ramp SHALL leave both halves starting on the right frame. | P1 | X |
 | FR-072b | The speed curve SHALL be drawn over the clip's picture on a log scale (1× in the middle) and edited there: drag a point (up faster, down slower; sideways it snaps), double-click the line to add a point, double-click a point for 1×, right-click a point for its easing or to delete it; each drag SHALL be one undo step. Where the curve uses up the file before the clip ends, the clip SHALL show "out of footage" there and hold the last frame. | P1 | X |
+| FR-072c | A video clip SHALL offer frame smoothing for its speed, in preview playback and export: "Blend frames" mixes the two real frames around each moment where the clip plays slower than its footage, and "Motion blur" (0–100 %) averages the frames each output frame passes where it plays faster. Scrubbing SHALL show plain frames. | P1 | X |
 
 ### 3.7 Effects and transitions
 | ID | Requirement | Priority | Status |
@@ -221,6 +222,8 @@ The primary user is a solo creator (hobbyist to semi-professional) who edits sho
 | ID | Requirement | Priority | Status |
 | --- | --- | --- | --- |
 | FR-110 | The application SHALL export the full timeline to MP4 (H.264 video + AAC audio) at the timeline frame rate, honoring effects, transitions, fades, speed, and layering. | P0 | X |
+| FR-110a | Export SHALL run at the timeline's exact frame rate (a 29.97 project exports at 30000/1001, never rounded to 30). | P0 | X |
+| FR-110b | Export SHALL encode H.264 on the GPU when it can: Automatic tries NVIDIA NVENC, Intel Quick Sync, AMD AMF, then VA-API, and uses the first that opens, else libx264 on the CPU; the user MAY pick one, and one that isn't available SHALL fall back to the CPU. The quality setting SHALL map to each encoder's constant-quality control, and the export list SHALL show which encoder ran. | P1 | X |
 | FR-111 | An export dialog SHALL let the user choose resolution (presets or custom), quality (CRF), and output path. | P0 | X |
 | FR-112 | Exports SHALL run as background jobs with live progress visible in a jobs popup; failures SHALL be reported and partial output removed. | P0 | X |
 | FR-113 | The software encoder SHALL use all available cores and expose Fast/Medium/Best quality presets. | P1 | O |
@@ -300,9 +303,13 @@ Design: `uml/playback/gpu-render-schema.puml`, `uml/playback/gpu-render-sequence
 | FR-194 | A rack row (level, fades) SHALL be able to open its tab by facet. | P1 | X |
 | FR-194a | Trimming an edge that touches another clip SHALL move the cut between them (a rolling edit): the neighbour's edge follows, taking more or less of its own footage, and no clip moves; the neighbour keeps at least 0.1 s and can't run past its file. An edge with a gap after it SHALL trim up to the next clip and no further. The trim SHALL be one undo step. | P0 | X |
 | FR-194b | Moving clips SHALL leave a faint outline where they came from; where they can't go (another clip is there) a red ghost SHALL show the spot while they wait where they last fit. | P1 | X |
+| FR-194i | Dragging clips over another track of the same kind SHALL move them onto it, at the time the pointer puts them, when there is room there (several selected clips from one track move together; a linked partner of the other kind stays on its track and moves in time); otherwise they wait where they last fit and the red ghost shows the spot on that track. Undo SHALL put them back on their own track. | P0 | X |
 | FR-194c | Any drag on the timeline (clips, trims, effect bars, keyframes, speed points, markers, the playhead, a selection box, media dragged in) held near an edge SHALL scroll the timeline that way, faster nearer the edge, and the drag SHALL follow. | P1 | X |
-| FR-194d | The effects over a clip (or the selected effect bars) SHALL copy and paste onto other clips: each lands at the same offset from the clip start, cut to the clip; video effects only onto video clips, audio ones onto audio clips; one undo step. Ctrl+V pastes effects when effects were copied last. | P1 | X |
+| FR-194d | Effects SHALL live on tracks, never on clips. The selected effect bars SHALL copy (Ctrl+C, or Copy on a bar's menu) and paste at the playhead (Ctrl+V when effects were copied last) keeping their spacing and keyframes, each back on the track it came from, or on the chosen track of the same kind when they all came from one track; one undo step, the pasted bars selected. | P1 | X |
 | FR-194e | A video track's header SHALL have a mute button for its clips' own sound, beside the show/hide button. | P1 | X |
+| FR-194f | Video tracks SHALL stack as the timeline shows them: a track higher on the timeline covers the ones below, in preview, export, the project thumbnail and picking a layer on the preview. A new video track SHALL go above the other video tracks. | P0 | X |
+| FR-194g | Dragging a track's header up or down SHALL move the track (a line shows where it lands), as one undo step; the track menu SHALL also offer Move track up / down. | P1 | X |
+| FR-194h | Every colour setting (text colour, text box colour, colour effect parameters) SHALL be picked with a colour picker (spectrum, palette, sliders, with a hex box for exact values); a drag in the picker SHALL be one undo step. | P1 | X |
 | FR-194b | The outer edge of a clip SHALL always trim; fade handles SHALL only be grabbed in the top half of a clip, so a trim never catches a fade. | P0 | X |
 
 Design: `uml/domain/selection-schema.puml`, `uml/domain/selection-sequence.puml`.

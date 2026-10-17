@@ -35,16 +35,17 @@ namespace Fig.App.Services
         }
 
         public ExportJob Enqueue(string outputPath, int width, int height, int crf,
-            ProjectModel project, TimelineModel timeline, double? startSec = null, double? endSec = null)
+            ProjectModel project, TimelineModel timeline, double? startSec = null, double? endSec = null,
+            Fig.Core.Media.VideoEncoderChoice encoder = Fig.Core.Media.VideoEncoderChoice.Automatic)
         {
             var job = new ExportJob(outputPath, width, height, timeline.Rate.Fps);
             Jobs.Add(job);
-            _ = RunAsync(job, project, timeline, crf, startSec, endSec);
+            _ = RunAsync(job, project, timeline, crf, startSec, endSec, encoder);
             return job;
         }
 
         private async Task RunAsync(ExportJob job, ProjectModel project, TimelineModel timeline, int crf,
-            double? startSec, double? endSec)
+            double? startSec, double? endSec, Fig.Core.Media.VideoEncoderChoice encoder)
         {
             await _gate.WaitAsync();
             try
@@ -58,7 +59,8 @@ namespace Fig.App.Services
                     var renderer = await SkiaSceneRenderer.CreateAsync(_renderer());
                     await Task.Run(() => _media.RenderTimeline(
                         project, timeline, job.OutputPath, job.Width, job.Height, crf,
-                        p => Dispatcher.UIThread.Post(() => job.Progress = p), startSec, endSec, renderer, _layers));
+                        p => Dispatcher.UIThread.Post(() => job.Progress = p), startSec, endSec, renderer, _layers,
+                        encoder, name => Dispatcher.UIThread.Post(() => job.EncoderName = name)));
                     job.Status = ExportJobStatus.Done;
                     job.Progress = 1;
                 }

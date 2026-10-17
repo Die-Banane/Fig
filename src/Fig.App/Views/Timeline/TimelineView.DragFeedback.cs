@@ -28,6 +28,8 @@ namespace Fig.App.Views
         // where the pointer would put the dragged clips (seconds from where they started), and whether they can go there
         private double _ghostDelta;
         private bool _ghostBlocked;
+        // the track the blocked clips were headed for, when it isn't their own
+        private string? _ghostTrackId;
         private readonly Dictionary<string, string> _dragOriginTracks = new();
 
         private DispatcherTimer? _autoScrollTimer;
@@ -80,8 +82,12 @@ namespace Fig.App.Views
                     var moved = Math.Abs(clip.StartSec - origin) > 1e-6 || current?.Id != originTrack;
                     if (moved && ClipSlot(originTrack, origin, clip.DurSec) is { } from)
                         context.DrawRectangle(GhostOriginFill, GhostOriginPen, new RoundedRect(from, ClipCornerRadius));
-                    if (_ghostBlocked && current is not null
-                        && ClipSlot(current.Id, Math.Max(0, origin + _ghostDelta), clip.DurSec) is { } wanted)
+                    // clips of the kind that was heading to another track show there; a linked partner on its own
+                    var ghostTrack = _ghostTrackId is { } wantedTrack && current is not null
+                        && Editor.Document.Tracks.FirstOrDefault(t => t.Id == wantedTrack)?.Kind == current.Kind
+                            ? wantedTrack : current?.Id;
+                    if (_ghostBlocked && ghostTrack is not null
+                        && ClipSlot(ghostTrack, Math.Max(0, origin + _ghostDelta), clip.DurSec) is { } wanted)
                         context.DrawRectangle(GhostBlockedFill, GhostBlockedPen, new RoundedRect(wanted, ClipCornerRadius));
                 }
             }
@@ -100,7 +106,7 @@ namespace Fig.App.Views
 
         private bool DragInProgress
             => _draggingClip || _rackDrag is not null || _keyDrag is not null || _speedDrag is not null
-               || _copyDrag is { Active: true } || _draggingMarker || _draggingPlayhead || _marqueeActive;
+               || _copyDrag is { Active: true } || _trackDrag is { Active: true } || _draggingMarker || _draggingPlayhead || _marqueeActive;
 
         private void AutoScrollTick()
         {

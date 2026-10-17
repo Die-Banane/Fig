@@ -21,6 +21,10 @@ public sealed class TestApp : Application
         RequestedThemeVariant = Avalonia.Styling.ThemeVariant.Dark;
         DataTemplates.Add(new Fig.App.ViewLocator());
         Styles.Add(new Avalonia.Themes.Fluent.FluentTheme());
+        Styles.Add(new Avalonia.Markup.Xaml.Styling.StyleInclude(new Uri("avares://Fig.App/"))
+        {
+            Source = new Uri("avares://Avalonia.Controls.ColorPicker/Themes/Fluent/Fluent.xaml"),
+        });
         foreach (var sheet in new[] { "FigTheme", "FigControls" })
             Styles.Add(new Avalonia.Markup.Xaml.Styling.StyleInclude(new Uri("avares://Fig.App/"))
             {
@@ -130,8 +134,9 @@ public sealed class UiSmokeTests : IDisposable
         foreach (var asset in vm.Media)
             asset.WaveformPeaks = Enumerable.Range(0, (int)(asset.DurationSec * 50))
                 .Select(i => (float)Math.Clamp(Math.Abs(Math.Sin(i / 7.0)) * (0.35 + 0.65 * rng.NextDouble()), 0, 1)).ToArray();
-        vm.Editor.AddMediaNewTracks(vm.Media[0], 0);
+        // a new video track goes on top: add the later clip first so Robot_01 is on V1, the top track
         vm.Editor.AddMediaNewTracks(vm.Media[1], 12);
+        vm.Editor.AddMediaNewTracks(vm.Media[0], 0);
         if (vm.Editor.Document.Tracks.SelectMany(t => t.Clips).FirstOrDefault() is { } firstClip)
             vm.Editor.AddMarker(firstClip, 3, "Beat", "#eab308");
         vm.Editor.Document.Markers.Add(new Fig.Core.Timeline.Marker { Name = "Beat", StartSec = 15, Color = "#EAB308" });

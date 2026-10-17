@@ -152,6 +152,12 @@
                     <TextBlock Classes="label" Text="CRF (18 = best, 28 = smallest)"/>
                     <NumericUpDown Value="{Binding Quality}" Minimum="0" Maximum="51" FormatString="0" Width="120" HorizontalAlignment="Left"/>
                 </StackPanel>
+                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10" Margin="0,4,0,0">
+                    <TextBlock Classes="label" Text="Encoder" VerticalAlignment="Center"/>
+                    <ComboBox Grid.Column="1" ItemsSource="{x:Static vm:ExportDialogViewModel.Encoders}" SelectedIndex="{Binding EncoderIndex}"
+                              HorizontalAlignment="Stretch" AutomationProperties.Name="Encoder"
+                              ToolTip.Tip="A GPU encoder is much faster; the CPU makes slightly smaller files at the same quality. One that isn't available here falls back to the CPU."/>
+                </Grid>
             </StackPanel>
         </StackPanel>
 

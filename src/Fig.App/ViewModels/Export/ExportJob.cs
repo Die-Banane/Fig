@@ -35,6 +35,11 @@ public partial class ExportJob : ViewModelBase
     [NotifyPropertyChangedFor(nameof(HasError))]
     private string? _error;
 
+    /// <summary>The encoder the export ended up using ("NVIDIA NVENC", "CPU (x264)"), once it starts.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SizeLabel))]
+    private string? _encoderName;
+
     public ExportJob(string outputPath, int width, int height, double fps)
     {
         OutputPath = outputPath;
@@ -44,7 +49,7 @@ public partial class ExportJob : ViewModelBase
     }
 
     public string FileName => Path.GetFileName(OutputPath);
-    public string SizeLabel => $"{Width}×{Height} · {Fps:0.###} fps";
+    public string SizeLabel => EncoderName is null ? $"{Width}×{Height} · {Fps:0.###} fps" : $"{Width}×{Height} · {Fps:0.###} fps · {EncoderName}";
     public string StatusLabel => Status switch
     {
         ExportJobStatus.Queued => "Queued",

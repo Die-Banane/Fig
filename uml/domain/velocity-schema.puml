@@ -12,6 +12,25 @@ package "Fig.Core.Timeline" {
     No "speed" keys: the clip plays at Speed, as before.
     SrcOutSec = SourceAt(DurSec): how much footage the curve uses.
   }
+  class VideoClip {
+    +BlendFrames: bool  <<new>>
+    +MotionBlur: 0..1  <<new>>
+    --
+    smoothing for the speed at each moment:
+    span = ClipTime.SpanAt(clip, t, 1 / project fps)
+    span < one file frame and BlendFrames: mix the two real frames around t
+    span > one file frame and MotionBlur: average the frames the step passed
+  }
+  class "VideoFrameSource" as VFS {
+    +DecodeSmoothed(t, span, blend, motionBlur, mode)  <<new>>
+    --
+    blend: the frame shown before is kept (two buffers swap, no copy)
+    blur: frames from t - span x MotionBlur are scaled and summed
+    scrub: always the plain frame
+  }
+  VideoClip --|> Clip
+  VFS ..> VideoClip
+
   class AutomationKeys {
     +Speed = "speed"  <<new>>
   }

@@ -95,14 +95,9 @@ namespace Fig.App.Views
 
             menu.Items.Add(Item($"Cut {noun}", () => vm.CutSelectedCommand.Execute(null)));
             menu.Items.Add(Item($"Copy {noun}", () => vm.CopySelectedCommand.Execute(null)));
-            menu.Items.Add(Item("Paste at playhead", () => vm.PasteCommand.Execute(null), ed.HasClipboard));
+            menu.Items.Add(Item("Paste at playhead", () => { vm.PasteCommand.Execute(null); InvalidateMeasure(); },
+                ed.ClipboardHoldsEffects ? ed.HasEffectClipboard : ed.HasClipboard));
             menu.Items.Add(Item($"Duplicate {noun}", () => vm.DuplicateSelectedCommand.Execute(null)));
-            menu.Items.Add(new Separator());
-
-            menu.Items.Add(Item("Copy effects", () => vm.CopyEffects(clip.Id), ed.EffectsOver(clip.Id).Count > 0,
-                "Copy the effects on this clip, to paste onto other clips"));
-            menu.Items.Add(Item(many ? $"Paste effects onto {noun}" : "Paste effects", () => { vm.PasteEffects(); InvalidateMeasure(); InvalidateVisual(); },
-                ed.HasEffectClipboard, "Put the copied effects on the selected clips"));
             menu.Items.Add(new Separator());
 
             menu.Items.Add(Item($"Delete {noun}", () => vm.LiftSelectedCommand.Execute(null), hint: "Remove it and leave a gap"));
@@ -180,6 +175,11 @@ namespace Fig.App.Views
                 ed.Selection.SelectClips(track.Clips.Select(c => c.Id));
                 InvalidateVisual();
             }, track.Clips.Count > 0));
+            var index = ed.Document.Tracks.IndexOf(track);
+            menu.Items.Add(Item("Move track up", () => { ed.MoveTrack(track.Id, index - 1); InvalidateMeasure(); InvalidateVisual(); },
+                index > 0, video ? "Higher tracks cover lower ones · or drag the header" : "Or drag the header"));
+            menu.Items.Add(Item("Move track down", () => { ed.MoveTrack(track.Id, index + 2); InvalidateMeasure(); InvalidateVisual(); },
+                index < ed.Document.Tracks.Count - 1, "Or drag the header"));
             menu.Items.Add(new Separator());
             menu.Items.Add(Item("Add video track", () => { ed.AddTrack(TrackKind.Video); InvalidateMeasure(); InvalidateVisual(); }));
             menu.Items.Add(Item("Add audio track", () => { ed.AddTrack(TrackKind.Audio); InvalidateMeasure(); InvalidateVisual(); }));

@@ -22,7 +22,8 @@ public sealed record ExportChapter(string Name, string FileName, double StartSec
 /// <param name="OutputPath">The output file, or the destination folder when <see cref="Chapters"/> is set.</param>
 /// <param name="Chapters">When set, each chapter is exported as a separate file inside <see cref="OutputPath"/>.</param>
 public sealed record ExportOptions(int Width, int Height, int Crf, string OutputPath,
-    IReadOnlyList<ExportChapter>? Chapters = null);
+    IReadOnlyList<ExportChapter>? Chapters = null,
+    Fig.Core.Media.VideoEncoderChoice Encoder = Fig.Core.Media.VideoEncoderChoice.Automatic);
 
 /// <summary>One row in the "Export marked ranges" list.</summary>
 public sealed partial class ExportChapterItem : ObservableObject
@@ -100,6 +101,27 @@ public partial class ExportDialogViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(CrfLabel))]
     [NotifyPropertyChangedFor(nameof(SummaryText))]
     private int _quality = 23;
+
+    /// <summary>The encoders on offer, in the order of <see cref="Fig.Core.Media.VideoEncoderChoice"/>.</summary>
+    public static IReadOnlyList<string> Encoders { get; } =
+    [
+        "Automatic (GPU when there is one)",
+        "NVIDIA NVENC",
+        "Intel Quick Sync",
+        "AMD AMF (Windows)",
+        "VA-API (AMD / Intel on Linux)",
+        "CPU (x264)",
+    ];
+
+    /// <summary>The chosen encoder, as an index into <see cref="Encoders"/>.</summary>
+    [ObservableProperty]
+    private int _encoderIndex;
+
+    public Fig.Core.Media.VideoEncoderChoice Encoder
+    {
+        get => (Fig.Core.Media.VideoEncoderChoice)Math.Clamp(EncoderIndex, 0, Encoders.Count - 1);
+        set => EncoderIndex = (int)value;
+    }
 
     /// <summary>The file (single export) or destination folder (marked ranges).</summary>
     [ObservableProperty]
@@ -371,6 +393,6 @@ public partial class ExportDialogViewModel : ViewModelBase
             chapters = Chapters.Where(c => c.IsIncluded)
                 .Select(c => new ExportChapter(c.Name, c.FileName.Trim(), c.StartSec, c.EndSec))
                 .ToList();
-        return new ExportOptions(Width, Height, Quality, OutputPath, chapters);
+        return new ExportOptions(Width, Height, Quality, OutputPath, chapters, Encoder);
     }
 }

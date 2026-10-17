@@ -12,6 +12,9 @@ namespace Fig.Core.Timeline
     {
         public KeyframePoint[]? SpeedKeys { get; init; }
 
+        /// <summary>The track the clip is on, when captured by the editor: a drag can move a clip to another track.</summary>
+        public string? TrackId { get; init; }
+
         public static ClipGeometry Capture(Clip clip) => (clip.HasSourceRange
             ? new ClipGeometry(clip.Id, clip.StartSec, clip.DurSec, clip.SourceIn, clip.SourceOut)
             : new ClipGeometry(clip.Id, clip.StartSec, clip.DurSec, null, null))
@@ -29,7 +32,7 @@ namespace Fig.Core.Timeline
 
         public bool Equals(ClipGeometry other)
             => ClipId == other.ClipId && StartSec == other.StartSec && DurSec == other.DurSec
-               && SrcInSec == other.SrcInSec && SrcOutSec == other.SrcOutSec
+               && SrcInSec == other.SrcInSec && SrcOutSec == other.SrcOutSec && TrackId == other.TrackId
                && (SpeedKeys ?? []).SequenceEqual(other.SpeedKeys ?? []);
 
         public override int GetHashCode() => HashCode.Combine(ClipId, StartSec, DurSec, SrcInSec, SrcOutSec);
@@ -47,6 +50,7 @@ namespace Fig.Core.Timeline
 
         public string Description => _before.Count == 1 ? "Move clip" : $"Move {_before.Count} clips";
 
+
         public SetClipGeometryCommand(TimelineEditor editor, IReadOnlyList<ClipGeometry> before, IReadOnlyList<ClipGeometry> after)
         {
             _editor = editor;
@@ -63,8 +67,19 @@ namespace Fig.Core.Timeline
         private void Apply(IReadOnlyList<ClipGeometry> state)
         {
             foreach (var g in state)
-                if (_editor.FindClip(g.ClipId) is { } clip)
-                    g.ApplyTo(clip);
+            {
+                if (_editor.FindClip(g.ClipId) is not { } clip)
+                    continue;
+                g.ApplyTo(clip);
+                // back to (or on to) the track it was on
+                if (g.TrackId is { } trackId && _editor.FindClipTrack(clip.Id) is { } current && current.Id != trackId
+                    && _editor.FindTrack(trackId) is { } target)
+                {
+                    current.Clips.Remove(clip);
+                    _editor.InsertClip(target, clip);
+                }
+            }
+            _editor.RefreshTrackIndices();
         }
     }
 

@@ -312,11 +312,8 @@ namespace Fig.Core.Project
                 return false;
 
             // topmost visible clip at that time wins (painters algorithm)
-            for (var i = timeline.Tracks.Count - 1; i >= 0; i--)
+            foreach (var (_, track) in Timeline.TrackStacking.TopDown(timeline))
             {
-                var track = timeline.Tracks[i];
-                if (track.Kind != Timeline.TrackKind.Video || !track.Visible)
-                    continue;
 
                 var clip = track.Clips.LastOrDefault(c =>
                     c.Enabled

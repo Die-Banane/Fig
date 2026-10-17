@@ -130,6 +130,13 @@ namespace Fig.Core.Timeline
             return (lo + hi) / 2;
         }
 
+        /// <summary>
+        /// How much of its file the clip plays during the project frame ending at <paramref name="localT"/>: one
+        /// project frame times the speed there. Below one of the file's frames it is slow motion, above it fast.
+        /// </summary>
+        public static double SpanAt(Clip clip, double localT, double projectFrameSec)
+            => Math.Abs(SourceAt(clip, localT) - SourceAt(clip, localT - projectFrameSec));
+
         /// <summary>How long on the timeline the clip takes to play <paramref name="sourceSpan"/> seconds of its file from its in point.</summary>
         public static double DurationFor(Clip clip, double sourceSpan) => LocalAt(clip, clip.SourceIn + sourceSpan);
 

@@ -94,8 +94,8 @@ note bottom of TimelineRender
   matches what the editor shows: aspect-correct
   letterbox decode at the canvas size, effects,
   transitions, fades, speed, and the
-  last-track-on-top compositing order. Video is
-  H.264 at the timeline rate (CRF quality);
+  top-track-on-top compositing order (TrackStacking). Video is
+  H.264 at the timeline's exact rate (GPU encoder when there is one, else x264; see export-encoders-schema.puml);
   audio is AAC 48kHz mixed by AudioMixer in
   1024-frame chunks. Runs entirely on a worker.
 end note

@@ -670,6 +670,9 @@ namespace Fig.App.Views
                     }
                     _selectedClipId = null;
                     _selectedTrackId = track.Id;
+                    // dragging the header up or down moves the track
+                    if (e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
+                        ArmTrackDrag(track, pos, e.Pointer);
                     InvalidateVisual();
                     e.Handled = true;
                     return;
@@ -767,6 +770,7 @@ namespace Fig.App.Views
                 return;
 
             if (UpdateCopyDrag(pos)) return;
+            if (UpdateTrackDrag(pos)) return;
 
             if (_panning)
             {
@@ -869,19 +873,27 @@ namespace Fig.App.Views
                         var earliest = _dragOriginals.Values.Min();
                         delta = Math.Max(delta, -earliest);                      // nothing may go before the start
 
-                        // dragging a single clip (with its partners) onto another track moves it there
+                        var targets = _dragMembers.ToDictionary(m => m.Id, m => _dragOriginals[m.Id] + delta);
+                        _ghostDelta = delta;
+                        _ghostTrackId = null;
+
+                        // over another track of the same kind: the clips go there, at the time the pointer puts them
                         var hoverTrack = HitTestTrack(pos.Y);
-                        if (_dragMembers.Count == Editor.LinkGroup(_dragClip.Id).Count && LinkedSelectionOn
-                            && hoverTrack is not null && hoverTrack.Id != _dragOriginalTrack?.Id
-                            && Editor.MoveClipToTrack(_dragClip.Id, hoverTrack.Id))
+                        var currentTrack = Editor.Document.Tracks.FirstOrDefault(t => t.Clips.Contains(_dragClip));
+                        if (hoverTrack is not null && currentTrack is not null && hoverTrack.Id != currentTrack.Id
+                            && hoverTrack.Kind == currentTrack.Kind)
                         {
-                            _dragOriginalTrack = hoverTrack;
+                            _ghostBlocked = !Editor.MoveClipsToTrack(targets.Keys, hoverTrack.Id, targets);
+                            // no room there: the clips wait where they last fit; the ghost shows the spot on that track
+                            if (_ghostBlocked)
+                                _ghostTrackId = hoverTrack.Id;
+                            else
+                                _dragOriginalTrack = hoverTrack;
+                            Carry(_dragClip.StartSec - origin);
                             break;
                         }
 
-                        var targets = _dragMembers.ToDictionary(m => m.Id, m => _dragOriginals[m.Id] + delta);
                         // no room there: the clips wait where they last fit, and a red ghost shows where they'd go
-                        _ghostDelta = delta;
                         _ghostBlocked = Editor.WouldOverlapMove(targets);
                         if (!_ghostBlocked)
                             foreach (var m in _dragMembers)
@@ -1100,7 +1112,7 @@ namespace Fig.App.Views
         protected override void OnPointerReleased(PointerReleasedEventArgs e)
         {
             base.OnPointerReleased(e);
-            if (FinishCopyDrag(e) || EndSpeedDrag(e))
+            if (FinishCopyDrag(e) || EndSpeedDrag(e) || EndTrackDrag(e))
             {
                 e.Handled = true;
                 return;
@@ -1188,7 +1200,7 @@ namespace Fig.App.Views
                 _dragSrcIns[c.Id] = c.SourceIn;
                 _dragSrcOuts[c.Id] = c.SourceOut;
             }
-            _dragBefore = _dragMembers.Select(ClipGeometry.Capture).ToList();
+            _dragBefore = _dragMembers.Select(Editor.CaptureGeometry).ToList();
             RememberDragOrigins();
             _draggingClip = true;
             if (_dragMode == DragMode.Move)
@@ -1723,6 +1735,7 @@ namespace Fig.App.Views
             DrawMarquee(context);
             DrawCopyPreview(context);
             DrawMoveGhost(context);
+            DrawTrackDrop(context);
 
             var playheadX = TrackHeaderWidth + Viewport.TimeToX(PlayheadTimeSec);
             if (playheadX >= TrackHeaderWidth)

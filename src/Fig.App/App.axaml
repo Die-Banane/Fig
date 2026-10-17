@@ -11,6 +11,7 @@
   
     <Application.Styles>
         <FluentTheme />
+        <StyleInclude Source="avares://Avalonia.Controls.ColorPicker/Themes/Fluent/Fluent.xaml" />
         <StyleInclude Source="avares://Fig.App/Styles/FigTheme.axaml"/>
         <StyleInclude Source="avares://Fig.App/Styles/FigControls.axaml"/>
     </Application.Styles>

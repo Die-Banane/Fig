@@ -714,8 +714,8 @@ public partial class EditorViewModel : ViewModelBase
 
     /// <summary>
     /// Collects every visible, enabled video clip covering a timeline time, ordered
-    /// topmost-first (the last track drawn on top is the top layer, matching the project
-    /// thumbnail's painters algorithm), so the compositor can layer them painters-style.
+    /// topmost-first (a track higher on the timeline covers the ones below: see
+    /// <see cref="TrackStacking"/>), so the compositor can layer them painters-style.
     /// Returns an empty list when nothing is shown.
     /// </summary>
     private IReadOnlyList<PreviewLayer> ResolvePreviewLayers(double timeSec)
@@ -726,13 +726,9 @@ public partial class EditorViewModel : ViewModelBase
 
         var document = Editor.Document;
 
-        // The compositor treats layers[0] as the topmost (blended last). The last track is
-        // the top layer, so collect tracks in reverse order to make it win.
-        for (var i = document.Tracks.Count - 1; i >= 0; i--)
+        // The compositor treats layers[0] as the topmost (blended last): collect from the top track down.
+        foreach (var (i, track) in TrackStacking.TopDown(document))
         {
-            var track = document.Tracks[i];
-            if (track.Kind != TrackKind.Video || !track.Visible)
-                continue;
 
             foreach (var clip in track.Clips)
             {
@@ -1348,31 +1344,20 @@ public partial class EditorViewModel : ViewModelBase
     [RelayCommand]
     private void CopySelected()
     {
-        // effect bars selected (and no clips): copy the effects, to paste onto other clips
-        if (Editor.Selection.SelectedClipIds.Count == 0 && Editor.CopySelectedEffects() is var effects and > 0)
-        {
-            Notify?.Invoke(effects == 1 ? "Copied effect · select clips and paste" : $"Copied {effects} effects · select clips and paste");
+        // effect bars selected (and no clips): copy the effects, to paste at the playhead
+        if (Editor.Selection.SelectedClipIds.Count == 0 && CopySelectedEffects())
             return;
-        }
         if (Editor.CopySelected())
             Notify?.Invoke(Editor.Selection.Count == 1 ? "Copied clip" : $"Copied {Editor.Selection.Count} clips");
     }
 
-    /// <summary>Copies the effects over a clip, to paste onto others.</summary>
-    public void CopyEffects(string clipId)
+    /// <summary>Copies the selected effect bars. True when there were any.</summary>
+    public bool CopySelectedEffects()
     {
-        var count = Editor.CopyEffects(clipId);
-        Notify?.Invoke(count == 0 ? "This clip has no effects to copy"
-            : count == 1 ? "Copied 1 effect · select clips and paste" : $"Copied {count} effects · select clips and paste");
-    }
-
-    /// <summary>Pastes the copied effects onto the selected clips.</summary>
-    public void PasteEffects()
-    {
-        var count = Editor.PasteEffects(Editor.Selection.SelectedClipIds);
-        if (count == 0)
-            Notify?.Invoke(Editor.Selection.SelectedClipIds.Count == 0 ? "Select the clips to paste the effects onto"
-                : "Those effects don't fit these clips (video effects go on video clips, audio ones on audio)");
+        var count = Editor.CopySelectedEffects();
+        if (count > 0)
+            Notify?.Invoke(count == 1 ? "Copied effect · paste puts it at the playhead" : $"Copied {count} effects · paste puts them at the playhead");
+        return count > 0;
     }
 
     [RelayCommand]
@@ -1381,9 +1366,9 @@ public partial class EditorViewModel : ViewModelBase
     [RelayCommand]
     private void Paste()
     {
-        // after copying effects, pasting puts them on the selected clips
+        // after copying effects, pasting puts them back on their tracks at the playhead
         if (Editor.ClipboardHoldsEffects && Editor.HasEffectClipboard)
-            PasteEffects();
+            Editor.PasteEffects(PlayheadTimeSec, Editor.Selection.ActiveTrackId);
         else
             Editor.Paste(PlayheadTimeSec, Editor.Selection.ActiveTrackId);
     }
@@ -1650,19 +1635,21 @@ public partial class EditorViewModel : ViewModelBase
         var width = Math.Max(2, options.Width & ~1);
         var height = Math.Max(2, options.Height & ~1);
         var crf = Math.Clamp(options.Crf, 0, 51);
+        var encoder = options.Encoder;
+        Remember(p => p.Export.Encoder = encoder);
 
         if (options.Chapters is { Count: > 0 } chapters)
         {
             System.IO.Directory.CreateDirectory(options.OutputPath);
             foreach (var chapter in chapters)
                 Exports.Enqueue(System.IO.Path.Combine(options.OutputPath, chapter.FileName), width, height, crf,
-                    Project, timeline, chapter.StartSec, chapter.EndSec);
+                    Project, timeline, chapter.StartSec, chapter.EndSec, encoder);
             IsJobsOpen = true;
             Notify?.Invoke($"Exporting {chapters.Count} video{(chapters.Count == 1 ? "" : "s")} — you can keep editing");
             return;
         }
 
-        Exports.Enqueue(options.OutputPath, width, height, crf, Project, timeline);
+        Exports.Enqueue(options.OutputPath, width, height, crf, Project, timeline, encoder: encoder);
         IsJobsOpen = true;
         Notify?.Invoke($"Export started: {System.IO.Path.GetFileName(options.OutputPath)} — you can keep editing");
     }

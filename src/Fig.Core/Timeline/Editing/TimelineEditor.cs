@@ -286,6 +286,47 @@ namespace Fig.Core.Timeline
         /// each linked member goes to a track of its own kind (video→video, audio→audio), creating
         /// one if none is free. Refuses if the move would overlap any clip. Returns true on success.
         /// </summary>
+        /// <summary>A clip's place, extent, source range, speed curve and track, for a drag's undo step.</summary>
+        public ClipGeometry CaptureGeometry(Clip clip) => ClipGeometry.Capture(clip) with { TrackId = FindClipTrack(clip.Id)?.Id };
+
+        /// <summary>
+        /// Moves dragged clips live: those of the target's kind (all from one track) onto <paramref name="targetTrackId"/>,
+        /// every clip to its start in <paramref name="starts"/>. Clips of the other kind (a linked partner) stay on their
+        /// own tracks and only move in time. Nothing changes, and false comes back, when anything would land on another
+        /// clip. Not an undo step by itself: the drag records one when it ends (<see cref="CommitClipGeometry"/>).
+        /// </summary>
+        public bool MoveClipsToTrack(IReadOnlyCollection<string> clipIds, string targetTrackId, IReadOnlyDictionary<string, double> starts)
+        {
+            if (FindTrack(targetTrackId) is not { } target)
+                return false;
+            var clips = clipIds.Distinct().Select(FindClip).Where(c => c is not null).Cast<Clip>().ToList();
+            var movers = clips.Where(c => (c.Kind == ClipKind.Audio ? TrackKind.Audio : TrackKind.Video) == target.Kind).ToList();
+            if (movers.Count == 0 || movers.Select(c => FindClipTrack(c.Id)?.Id).Distinct().Count() != 1)
+                return false;   // only clips from one track move across together
+            var moving = clips.Select(c => c.Id).ToHashSet();
+            double StartOf(Clip c) => starts.TryGetValue(c.Id, out var s) ? Math.Max(0, s) : c.StartSec;
+            bool Free(Track track, Clip clip)
+                => !track.Clips.Any(o => !moving.Contains(o.Id)
+                    && o.StartSec < StartOf(clip) + clip.DurSec - 1e-9 && StartOf(clip) < o.StartSec + o.DurSec - 1e-9);
+
+            if (movers.Any(c => !Free(target, c)))
+                return false;
+            foreach (var other in clips.Except(movers))
+                if (FindClipTrack(other.Id) is { } own && !Free(own, other))
+                    return false;
+
+            foreach (var clip in clips)
+                clip.StartSec = StartOf(clip);
+            foreach (var clip in movers)
+                if (FindClipTrack(clip.Id) is { } from && from.Id != target.Id)
+                {
+                    from.Clips.Remove(clip);
+                    InsertClip(target, clip);
+                }
+            RefreshTrackIndices();
+            return true;
+        }
+
         public bool MoveClipToTrack(string clipId, string targetTrackId)
         {
             var clip = FindClip(clipId);
@@ -425,7 +466,7 @@ namespace Fig.Core.Timeline
         public void CommitClipGeometry(IReadOnlyList<ClipGeometry> before)
         {
             var after = before.Select(b => FindClip(b.ClipId)).Where(c => c is not null)
-                .Select(c => ClipGeometry.Capture(c!)).ToList();
+                .Select(c => CaptureGeometry(c!)).ToList();
             var changed = false;
             for (var i = 0; i < before.Count && i < after.Count; i++)
                 changed |= before[i] != after[i];
@@ -1409,10 +1450,47 @@ namespace Fig.Core.Timeline
                 Name = kind == TrackKind.Video ? $"V{CountTracks(TrackKind.Video) + 1}" : $"A{CountTracks(TrackKind.Audio) + 1}",
             };
             var before = Document.Tracks.ToList();
-            var after = new List<Track>(before) { track };
-            History.Execute(new SetTrackListCommand(this, "Add track", before, after));
+            History.Execute(new SetTrackListCommand(this, "Add track", before, WithNewTrack(before, track)));
             RaiseChanged();
             return track;
+        }
+
+        /// <summary>
+        /// The track list with <paramref name="track"/> added: a video track on top of the picture (above the other
+        /// video tracks, see <see cref="TrackStacking"/>), an audio track at the end.
+        /// </summary>
+        private static List<Track> WithNewTrack(IReadOnlyList<Track> tracks, Track track)
+        {
+            var after = tracks.ToList();
+            var topVideo = after.FindIndex(t => t.Kind == TrackKind.Video);
+            if (track.Kind == TrackKind.Video && topVideo >= 0)
+                after.Insert(topVideo, track);
+            else
+                after.Add(track);
+            return after;
+        }
+
+        /// <summary>
+        /// Moves a track so it sits before the track now at <paramref name="insertIndex"/> (0 is the top; the track
+        /// count is the end). Higher video tracks cover lower ones, so this changes the picture's stacking. One undo step.
+        /// </summary>
+        public bool MoveTrack(string trackId, int insertIndex)
+        {
+            var before = Document.Tracks.ToList();
+            var from = before.FindIndex(t => t.Id == trackId);
+            if (from < 0)
+                return false;
+            insertIndex = Math.Clamp(insertIndex, 0, before.Count);
+            var to = insertIndex > from ? insertIndex - 1 : insertIndex;
+            if (to == from)
+                return false;
+            var after = before.ToList();
+            var track = after[from];
+            after.RemoveAt(from);
+            after.Insert(to, track);
+            History.Execute(new SetTrackListCommand(this, "Move track", before, after));
+            RaiseChanged();
+            return true;
         }
 
         public bool RemoveTrack(string trackId)

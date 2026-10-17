@@ -44,7 +44,7 @@ namespace Fig.Core.Timeline
             {
                 track = new Track { Kind = TrackKind.Video, Name = $"V{CountTracks(TrackKind.Video) + 1}" };
                 var before = Document.Tracks.ToList();
-                commands.Add(new SetTrackListCommand(this, "Add track", before, new List<Track>(before) { track }));
+                commands.Add(new SetTrackListCommand(this, "Add track", before, WithNewTrack(before, track)));
             }
             commands.Add(new AddClipCommand(this, track.Id, clip));
             History.Execute(commands.Count == 1 ? commands[0] : new CompositeCommand(commands.ToArray()));
@@ -87,15 +87,12 @@ namespace Fig.Core.Timeline
 
         /// <summary>
         /// The topmost drawn layer (text, image) showing at <paramref name="timeSec"/> under the frame point
-        /// (<paramref name="x"/>, <paramref name="y"/>, 0..1), or null. Later tracks draw over earlier ones.
+        /// (<paramref name="x"/>, <paramref name="y"/>, 0..1), or null. Higher tracks draw over lower ones.
         /// </summary>
         public Clip? LayerAt(double timeSec, double x, double y, double aspect, Func<Clip, LayerSize?> measure)
         {
-            for (var i = Document.Tracks.Count - 1; i >= 0; i--)
+            foreach (var (_, track) in TrackStacking.TopDown(Document))
             {
-                var track = Document.Tracks[i];
-                if (track.Kind != TrackKind.Video || !track.Visible)
-                    continue;
                 foreach (var clip in track.Clips)
                     if (clip is ILayerClip layer && clip.Enabled
                         && timeSec >= clip.StartSec && timeSec < clip.StartSec + clip.DurSec

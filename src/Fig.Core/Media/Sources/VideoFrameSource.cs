@@ -52,6 +52,17 @@ namespace Fig.Core.Media
         private AVFrame* _pendingFrame;
         // a packet the decoder refused (EAGAIN: it still holds decoded frames); sent again before reading on
         private AVPacket* _heldPacket;
+
+        // smoothing (DecodeSmoothed). Blending keeps the frame shown before the current one: the two output
+        // buffers swap, so it costs no copy. Motion blur adds up every frame a step passes, from _accumFrom on.
+        private bool _keepPrevious;
+        private byte[] _prevPixels = Array.Empty<byte>();
+        private double _prevSec = -1;
+        private double _canvasSec = -1;
+        private byte[] _mixScratch = Array.Empty<byte>();
+        private int[] _accum = Array.Empty<int>();
+        private double _accumFrom = double.NaN;
+        private int _accumCount;
         private AVFrame* _tailFrame;   // the newest frame seen, kept so the picture can hold at the end of the media
         private AVFrame* _rgbFrame;
         private SwsContext* _sws;
@@ -232,6 +243,8 @@ namespace Fig.Core.Media
                 ffmpeg.av_seek_frame(ctx, _vIdx, 0, ffmpeg.AVSEEK_FLAG_BACKWARD);
             ffmpeg.avcodec_flush_buffers(dec);
             ffmpeg.av_packet_unref(_heldPacket);
+            _prevSec = -1;
+            _canvasSec = -1;
             _lastPresentedSec = -1;
             _seekedSinceFrame = true;
             _atKeyframeAfterSeek = false;
@@ -339,6 +352,8 @@ namespace Fig.Core.Media
                         {
                             var sec = _pendingFrame->best_effort_timestamp * ffmpeg.av_q2d(_timeBase);
                             var nearest = sec > targetSec - _halfFrameSec;
+                            if (!nearest && !double.IsNaN(_accumFrom) && sec >= _accumFrom)
+                                Accumulate(ScalePendingToLastFrame(sec));   // motion blur: this frame counts too
                             if (!nearest)
                             {
                                 lastSeenSec = sec;
@@ -399,7 +414,10 @@ namespace Fig.Core.Media
             }
         }
 
-        private DecodedFrame ScalePendingToLastFrame()
+        private DecodedFrame ScalePendingToLastFrame() => ScalePendingToLastFrame(_lastPresentedSec);
+
+        /// <param name="sec">The time of the frame being scaled.</param>
+        private DecodedFrame ScalePendingToLastFrame(double sec)
         {
             EnsureRgbFrame();
             var srcFmt = (AVPixelFormat)_pendingFrame->format;
@@ -421,6 +439,15 @@ namespace Fig.Core.Media
                 _outputScratch = new byte[byteCount];
                 Array.Clear(_outputScratch, 0, _outputScratch.Length);   // letterbox bars = black
             }
+            // blending: the frame on the canvas becomes the previous one, and the next is drawn into the other buffer
+            if (_keepPrevious && _canvasSec >= 0 && sec > _canvasSec)
+            {
+                if (_prevPixels.Length < byteCount)
+                    _prevPixels = new byte[byteCount];
+                (_prevPixels, _outputScratch) = (_outputScratch, _prevPixels);
+                _prevSec = _canvasSec;
+            }
+            _canvasSec = sec;
             var canvas = _outputScratch;
 
             // Paste the aspect-correct fit region into the center of the canvas. Both the
@@ -446,6 +473,94 @@ namespace Fig.Core.Media
         {
             if (ret < 0)
                 throw new InvalidOperationException($"{what} failed: {ret}");
+        }
+
+        /// <summary>
+        /// A frame for <paramref name="timeSec"/> smoothed for its speed. <paramref name="spanSec"/> is how much of the
+        /// file one output frame covers there (the clip's speed over one project frame). Slower than the file's own
+        /// frames and <paramref name="blend"/>: the two real frames around the moment, mixed by how far between them
+        /// it is, so slow motion glides. Faster, with <paramref name="motionBlur"/> (0..1, the shutter): the frames the
+        /// step passes over, averaged, so fast motion smears. Scrubbing always takes the plain frame.
+        /// </summary>
+        public DecodedFrame? DecodeSmoothed(double timeSec, double spanSec, bool blend, double motionBlur, PreviewDecodeMode mode)
+        {
+            var frameSec = 2 * _halfFrameSec;
+            if (mode == PreviewDecodeMode.Scrub)
+            {
+                _keepPrevious = false;
+                return DecodeForward(timeSec, mode);
+            }
+            if (motionBlur > 0 && spanSec > frameSec * 1.25)
+            {
+                _keepPrevious = false;
+                return DecodeBlurred(timeSec, spanSec * Math.Clamp(motionBlur, 0, 1), mode);
+            }
+            if (blend && spanSec < frameSec * 0.95)
+                return DecodeBlended(timeSec, mode);
+            _keepPrevious = false;
+            return DecodeForward(timeSec, mode);
+        }
+
+        private DecodedFrame? DecodeBlended(double timeSec, PreviewDecodeMode mode)
+        {
+            _keepPrevious = true;
+            // the first real frame after the moment; the one shown before it is the frame at or before it
+            var after = DecodeForward(timeSec + _halfFrameSec + 1e-6, mode);
+            var afterSec = _lastPresentedSec;
+            if (after is null || _prevSec < 0 || _prevSec > timeSec + 1e-6 || afterSec - _prevSec > 2 * _halfFrameSec * 1.6)
+                return after;   // no neighbour to blend with (just sought, or a frame was skipped)
+            var mix = Math.Clamp((timeSec - _prevSec) / Math.Max(1e-9, afterSec - _prevSec), 0, 1);
+            var count = _outW * _outH * 4;
+            if (_mixScratch.Length < count)
+                _mixScratch = new byte[count];
+            var w = (int)Math.Round(mix * 256);
+            fixed (byte* a = _prevPixels, b = after.Pixels, o = _mixScratch)
+                for (var i = 0; i < count; i++)
+                    o[i] = (byte)((a[i] * (256 - w) + b[i] * w) >> 8);
+            return new DecodedFrame { Width = _outW, Height = _outH, Pixels = _mixScratch };
+        }
+
+        private DecodedFrame? DecodeBlurred(double timeSec, double windowSec, PreviewDecodeMode mode)
+        {
+            var count = _outW * _outH * 4;
+            if (_accum.Length < count)
+                _accum = new int[count];
+            Array.Clear(_accum, 0, count);
+            _accumCount = 0;
+            _accumFrom = timeSec - windowSec;
+            DecodedFrame? frame;
+            try
+            {
+                var before = _lastPresentedSec;
+                frame = DecodeForward(timeSec, mode);
+                if (frame is null || _lastPresentedSec == before)
+                    return frame;   // the frame on screen still stands: nothing new to smear
+                Accumulate(frame);
+            }
+            finally
+            {
+                _accumFrom = double.NaN;
+            }
+            if (_accumCount <= 1)
+                return frame;
+            if (_mixScratch.Length < count)
+                _mixScratch = new byte[count];
+            var n = _accumCount;
+            fixed (int* acc = _accum)
+            fixed (byte* o = _mixScratch)
+                for (var i = 0; i < count; i++)
+                    o[i] = (byte)(acc[i] / n);
+            return new DecodedFrame { Width = _outW, Height = _outH, Pixels = _mixScratch };
+        }
+
+        private void Accumulate(DecodedFrame frame)
+        {
+            var count = Math.Min(_outW * _outH * 4, frame.Pixels.Length);
+            fixed (int* acc = _accum)
+            fixed (byte* p = frame.Pixels)
+                for (var i = 0; i < count; i++)
+                    acc[i] += p[i];
+            _accumCount++;
         }
 
         /// <summary>The packet the decoder refused last time, if any, else the next one from the file.</summary>

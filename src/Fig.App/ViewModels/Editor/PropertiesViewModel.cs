@@ -202,6 +202,10 @@ public partial class PropertiesViewModel : ViewModelBase
     [ObservableProperty] [NotifyPropertyChangedFor(nameof(CanAddSpeedCurve))] private bool _hasSpeedCurve;
     [ObservableProperty] [NotifyPropertyChangedFor(nameof(CanAddSpeedCurve))] private bool _canHaveSpeedCurve;
     public bool CanAddSpeedCurve => CanHaveSpeedCurve && !HasSpeedCurve;
+    /// <summary>A video clip: it can blend its frames for slow motion and blur them for fast.</summary>
+    [ObservableProperty] private bool _canSmoothFrames;
+    [ObservableProperty] private bool _blendFramesValue;
+    [ObservableProperty] private double _motionBlurValue;
     [ObservableProperty] private double _soundFadeInValue;
     [ObservableProperty] private double _soundFadeOutValue;
     [ObservableProperty] private double _volumeValue = 1;
@@ -420,6 +424,9 @@ public partial class PropertiesViewModel : ViewModelBase
             VolumeValue = clip.Volume;
             SpeedValue = clip.Speed;
             HasSpeedCurve = ClipTime.HasCurve(clip);
+            CanSmoothFrames = clip is VideoClip;
+            BlendFramesValue = clip is VideoClip { BlendFrames: true };
+            MotionBlurValue = (clip as VideoClip)?.MotionBlur ?? 0;
             CanHaveSpeedCurve = _editor.Editor.CanHaveSpeedCurve(clip.Id);
             (CropLeft, CropTop, CropRight, CropBottom) = clip is ICroppable crop
                 ? (crop.CropL, crop.CropT, crop.CropR, crop.CropB)
@@ -1327,6 +1334,28 @@ public partial class PropertiesViewModel : ViewModelBase
 
     partial void OnVolumeValueChanged(double value)
         => SetOnSelection(Facet.Sound, "volume", c => c.Volume, (c, v) => c.Volume = v, Math.Clamp(value, 0, 1));
+
+    partial void OnBlendFramesValueChanged(bool value)
+    {
+        if (_suppressApply || _clipId is null)
+            return;
+        _editor.Editor.SetClipValue(VideoTargets(), "frame blending", c => ((VideoClip)c).BlendFrames, (c, v) => ((VideoClip)c).BlendFrames = v, value);
+        _editor.Preview.RefreshFrame();
+    }
+
+    partial void OnMotionBlurValueChanged(double value)
+    {
+        if (_suppressApply || _clipId is null)
+            return;
+        _editor.Editor.SetClipValue(VideoTargets(), "motion blur", c => ((VideoClip)c).MotionBlur, (c, v) => ((VideoClip)c).MotionBlur = v,
+            Math.Clamp(value, 0, 1));
+        _editor.Preview.RefreshFrame();
+    }
+
+    /// <summary>The selected video clips (smoothing applies to each).</summary>
+    private IEnumerable<string> VideoTargets()
+        => _editor.Editor.Selection.SelectedClipIds.Append(_clipId!).Distinct()
+            .Where(id => _editor.Editor.FindClipForView(id) is VideoClip);
 
     partial void OnSpeedValueChanged(double value)
     {
