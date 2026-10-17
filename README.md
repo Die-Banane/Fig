@@ -16,16 +16,18 @@ Actively developed. Expect rough edges, incomplete features, and frequent change
 
 ## Features
 
-- **Timeline editing**: drag, move, and resize clips; trim from either edge; split at the playhead; ripple delete with a fully undoable command history.
-- **Video with its sound**: a video's audio is part of its clip, shown as a waveform strip under the picture, so they move, trim, cut, and ripple together. Picture and sound fade independently, and right-click → Detach audio moves the sound to an audio clip of its own.
-- **Media previews**: aspect-correct filmstrips tiled across video clips and sample-accurate waveforms rendered in real time from decoded audio peaks.
-- **Synchronous playback**: audio is the master clock. A background producer decodes and mixes the audible clips into a ring buffer while the device drains it, so the timeline position and video preview follow the audio in real time.
-- **Keyboard-first controls**: a data-driven gesture system that maps input combinations to timeline actions. Mappings are stored as editable configuration, not hardcoded.
-- **Project validation**: opening a project checks every asset, detects offline sources, and regenerates stale or missing previews, with visible progress and a summary of what was repaired.
-- **Resizable workspace**: media library, preview, inspector and timeline are separated by draggable splitters, scale with the window, collapse out of the way, and remember their sizes. Focus the preview with one click.
-- **Markers**: bookmarks and range markers on the sequence, a Markers panel in the sidebar, snapping to markers, and "Export marked ranges" to save each range as its own video.
-- **Effects and keyframes**: effects apply to the whole clip and can be animated with keyframes (a stopwatch switches animating on; values hold before the first and after the last keyframe). Each effect gets a row under its clip with its keyframes, and a keyframe ruler in the inspector; an effect can optionally be limited to part of the clip. Transform zooms, pans and rotates with keyframes (zoom in, hold and zoom back out are just keyframes), with an on-preview frame, easing, and reusable presets; the Swirl transition has draggable center, radius and rotation handles.
-- **Creative library**: 30 effects, 20 transitions, and 13 presets, including camera shake, glow, glitch, VHS, blur, zoom transitions, and short musical-hit animations. Search and category filters help find them; catalog thumbnails use the actual renderers. See the [creative library guide](docs/creative-library.md) for usage and rendering limitations.
+| Feature | What you get |
+| :--- | :--- |
+| **Timeline editing** | Drag, move and resize clips, trim either edge, split at the playhead, ripple delete. Every edit can be undone. |
+| **Video with its sound** | A video's audio is part of its clip, shown as a waveform strip under the picture. Picture and sound fade independently; right-click → *Detach audio* gives the sound its own clip. |
+| **Media previews** | Filmstrips across video clips and waveforms drawn from the decoded audio. |
+| **In-sync playback** | Audio drives the clock, so the playhead and preview stay in step with what you hear. |
+| **Keyboard-first** | Shortcuts are editable configuration, not hard-coded. |
+| **Project checks** | Opening a project finds missing files and rebuilds stale previews, with progress and a summary. |
+| **Flexible workspace** | Library, preview, inspector and timeline resize, collapse, and remember their sizes. |
+| **Markers** | Bookmarks and ranges on the sequence, a Markers panel, snapping, and *Export marked ranges* to save each range as its own video. |
+| **Effects and keyframes** | Effects cover the whole clip or part of it, and any value can be keyframed with easing. Transform zooms, pans and rotates with an on-preview frame and reusable presets. |
+| **Creative library** | 30 effects, 20 transitions and 13 presets (camera shake, glow, glitch, VHS, blur, zoom transitions, musical hits), with search and live thumbnails. See the [creative library guide](docs/creative-library.md). |
 
 ## Requirements
 
