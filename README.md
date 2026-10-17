@@ -18,6 +18,8 @@ A simple, open-source video editor for cutting clips, long or short, without the
 
 ![Fig](assets/preview.png)
 
+https://github.com/user-attachments/assets/1620a3e4-e0cc-43f5-843e-638beefd4a89
+
 - **Timeline editing:** move, trim, split, ripple delete, with undo for everything.
 - **Speed ramps:** keyframe a clip's speed, with frame blending or motion blur.
 - **Effects and keyframes:** 30 effects, 20 transitions and presets, with any value keyframable. See the [creative library](docs/creative-library.md).
