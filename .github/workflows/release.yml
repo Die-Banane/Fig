@@ -102,7 +102,8 @@ jobs:
             iscc="/c/Program Files (x86)/Inno Setup 6/ISCC.exe"
             [ -f "$iscc" ] || { choco install innosetup -y --no-progress > /dev/null; }
             here=$(pwd -W)
-            "$iscc" //Q //DVersion=$VERSION //DSource="$here/publish/Fig.App.exe" //DOutput="$here/dist" packaging/windows/Fig.iss
+            # no Git Bash path rewriting: ISCC's /D options must arrive as written
+            MSYS_NO_PATHCONV=1 "$iscc" /Q /DVersion=$VERSION /DSource="$here/publish/Fig.App.exe" /DOutput="$here/dist" packaging/windows/Fig.iss
           else
             cp publish/Fig.App "dist/$OUT"
             chmod +x "dist/$OUT"
