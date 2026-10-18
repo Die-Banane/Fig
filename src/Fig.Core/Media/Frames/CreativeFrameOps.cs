@@ -12,6 +12,16 @@ internal static class CreativeFrameOps
         return double.IsFinite(value) ? Math.Clamp(value, min, max) : fallback;
     }
 
+    /// <summary>
+    /// A coordinate (0..1 across the picture) folded back inside it, mirroring at each edge: what a picture drawn
+    /// smaller than the frame shows around itself, instead of its edge pixels smeared outwards.
+    /// </summary>
+    internal static double Mirror(double t)
+    {
+        var m = t - 2 * Math.Floor(t / 2);
+        return 1 - Math.Abs(1 - m);
+    }
+
     internal static byte Byte(double value) => (byte)Math.Clamp((int)Math.Round(value), 0, 255);
     internal static DecodedFrame New(DecodedFrame source) => new()
     {

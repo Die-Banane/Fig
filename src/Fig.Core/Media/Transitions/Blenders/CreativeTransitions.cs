@@ -101,7 +101,8 @@ internal abstract class CreativeTransitionBlender : TransitionBlender
             {
                 double sign = Kind == CreativeTransitionKind.ZoomIn ? 1 : -1;
                 double scale = Math.Exp(sign * amount * 1.5 * (incoming ? 1 - progress : -progress));
-                return (0.5 + (u - 0.5) * scale, 0.5 + (v - 0.5) * scale);
+                // the zoomed-out side is smaller than the frame: mirror it out to the edges
+                return (Mirror(0.5 + (u - 0.5) * scale), Mirror(0.5 + (v - 0.5) * scale));
             }
             if (Kind == CreativeTransitionKind.Whip)
             {

@@ -532,10 +532,12 @@ internal static partial class GpuEffects
             """,
         ["tx.zoom"] = """
             uniform shader a; uniform shader b; uniform float2 size; uniform float progress; uniform float k;
+            // the zoomed-out side is smaller than the frame: mirror it out to the edges, as the CPU does
+            float2 mirror(float2 t) { return 1.0 - abs(1.0 - mod(t, 2.0)); }
             half4 main(float2 p) {
                 float2 uv = p / size - 0.5;
-                float2 qa = (0.5 + uv * exp(k * -progress)) * size;
-                float2 qb = (0.5 + uv * exp(k * (1.0 - progress))) * size;
+                float2 qa = mirror(0.5 + uv * exp(k * -progress)) * size;
+                float2 qb = mirror(0.5 + uv * exp(k * (1.0 - progress))) * size;
                 half4 ca = a.eval(clamp(qa, float2(0.5), size - 0.5));
                 half4 cb = b.eval(clamp(qb, float2(0.5), size - 0.5));
                 return mix(ca, cb, half(progress));
