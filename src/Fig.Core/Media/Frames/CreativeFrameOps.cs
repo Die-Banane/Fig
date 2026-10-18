@@ -1,3 +1,9 @@
+/*
+CPU Ops for effects
+
+*/
+
+
 using Fig.Core.Timeline;
 
 namespace Fig.Core.Media;

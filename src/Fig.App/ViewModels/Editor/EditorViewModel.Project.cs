@@ -106,7 +106,9 @@ public partial class EditorViewModel
 
         SelectedMedia = null;
         InitializePlaybackForCurrentEditor();
-        SeekFromUser(0);
+        // back to the start without the scrub snippet a user's seek plays: opening a project makes no sound
+        StopShuttle();
+        MovePlayhead(0, audible: false);
         Properties.Refresh();
     }
 
