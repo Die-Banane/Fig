@@ -158,6 +158,12 @@
                               HorizontalAlignment="Stretch" AutomationProperties.Name="Encoder"
                               ToolTip.Tip="A GPU encoder is much faster; the CPU makes slightly smaller files at the same quality. One that isn't available here falls back to the CPU."/>
                 </Grid>
+                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+                    <TextBlock Classes="label" Text="Orientation" VerticalAlignment="Center"/>
+                    <ComboBox Grid.Column="1" ItemsSource="{x:Static vm:ExportDialogViewModel.Turns}" SelectedIndex="{Binding TurnIndex}"
+                              HorizontalAlignment="Stretch" AutomationProperties.Name="Orientation"
+                              ToolTip.Tip="Sideways: the wide video lies on its side in a tall file, so it fills a phone held sideways. Nothing in the edit changes."/>
+                </Grid>
             </StackPanel>
         </StackPanel>
 

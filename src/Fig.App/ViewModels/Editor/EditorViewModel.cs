@@ -166,6 +166,7 @@ public partial class EditorViewModel : ViewModelBase
             OnPropertyChanged(nameof(HasMedia));
             OnPropertyChanged(nameof(NoMedia));
             RefreshVisibleMedia();
+            RefreshMediaHomes();
             Preview.UpdateCanvasFromMedia();
             Properties.Refresh();
         };

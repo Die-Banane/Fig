@@ -20,6 +20,15 @@ namespace Fig.Core.Project
         public bool HadIssues => ArtifactsRepaired > 0 || OfflineAssets > 0 || FailedArtifacts > 0;
     }
 
+    /// <summary>What <see cref="ProjectManager.CollectSources"/> did.</summary>
+    public class CollectResult
+    {
+        public int Copied { get; set; }
+
+        /// <summary>Files the project uses that aren't where it last saw them, so couldn't be copied.</summary>
+        public List<string> Missing { get; } = new();
+    }
+
     public class ProjectManager
     {
         public Project Project { get; }
@@ -43,6 +52,59 @@ namespace Fig.Core.Project
             // nothing is encoding when a project opens: a proxy saved mid-encode was interrupted, not in progress
             foreach (var asset in project.Media.Where(m => m.ProxyStatus == ProxyStatus.Pending))
                 asset.ProxyStatus = ProxyStatus.None;
+        }
+
+        /// <summary>
+        /// Copies every media file the project uses into its own folder (a <c>media</c> folder beside the project
+        /// file) and points the project at the copies, so the folder holds everything and can simply be zipped.
+        /// Files already in the folder (reversed copies live there) are left alone, and so are missing ones (listed
+        /// in the result). Names that clash get a number. <paramref name="progress"/> runs from 0 to 1 by bytes.
+        /// </summary>
+        public CollectResult CollectSources(Action<double>? progress = null)
+        {
+            var result = new CollectResult();
+            var projectFolder = Path.GetFullPath(Path.GetDirectoryName(CacheDirectory.TrimEnd(Path.DirectorySeparatorChar))!);
+            var inside = projectFolder.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+            var mediaFolder = Path.Combine(projectFolder, "media");
+
+            var toCopy = new List<MediaAsset>();
+            foreach (var asset in Project.Media)
+            {
+                if (string.IsNullOrEmpty(asset.Url) || Path.GetFullPath(asset.Url).StartsWith(inside, StringComparison.Ordinal))
+                    continue;
+                if (!File.Exists(asset.Url))
+                    result.Missing.Add(asset.FileName);
+                else
+                    toCopy.Add(asset);
+            }
+
+            var total = Math.Max(1L, toCopy.Sum(a => new FileInfo(a.Url).Length));
+            long done = 0;
+            foreach (var asset in toCopy)
+            {
+                Directory.CreateDirectory(mediaFolder);
+                var target = FreeName(mediaFolder, Path.GetFileName(asset.Url));
+                var size = new FileInfo(asset.Url).Length;
+                File.Copy(asset.Url, target + ".partial", overwrite: true);
+                File.Move(target + ".partial", target);
+                asset.Url = target;
+                asset.Offline = false;
+                done += size;
+                result.Copied++;
+                progress?.Invoke(done / (double)total);
+            }
+            if (result.Copied > 0)
+                ProjectChanged?.Invoke();
+            return result;
+        }
+
+        /// <summary><paramref name="name"/> in <paramref name="folder"/>, numbered ("clip (2).mp4") if taken.</summary>
+        private static string FreeName(string folder, string name)
+        {
+            var path = Path.Combine(folder, name);
+            for (var n = 2; File.Exists(path); n++)
+                path = Path.Combine(folder, $"{Path.GetFileNameWithoutExtension(name)} ({n}){Path.GetExtension(name)}");
+            return path;
         }
 
         public ProbeResult ImportMedia(string path)

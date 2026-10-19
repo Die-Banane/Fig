@@ -7,7 +7,7 @@ using System.Text.Json.Serialization;
 
 namespace Fig.Core.Project
 {
-    public class ProjectStore
+    public partial class ProjectStore
     {
         private static readonly JsonSerializerOptions Options = new()
         {
@@ -66,8 +66,19 @@ namespace Fig.Core.Project
         public void SaveProject(Project project)
         {
             project.UpdatedAt = DateTime.Now;
-            Directory.CreateDirectory(ProjectDirectory(project.Id));
-            var json = JsonSerializer.Serialize(project, Options);
+            var folder = ProjectDirectory(project.Id);
+            Directory.CreateDirectory(folder);
+            // saved relative to the folder, so it can be zipped up and opened anywhere; in memory they stay full
+            string json;
+            ProjectPaths.MakeRelative(project, folder);
+            try
+            {
+                json = JsonSerializer.Serialize(project, Options);
+            }
+            finally
+            {
+                ProjectPaths.Resolve(project, folder);
+            }
             File.WriteAllText(ProjectPath(project.Id), json);
         }
 
@@ -86,10 +97,12 @@ namespace Fig.Core.Project
                 var project = JsonSerializer.Deserialize<Project>(File.ReadAllText(jsonPath), Options);
                 if (project is null)
                     continue;
+                ProjectPaths.Resolve(project, dir);
 
                 summaries.Add(new ProjectSummary
                 {
-                    Id = project.Id,
+                    // the folder is the project: one unzipped under another name still opens (and saves) there
+                    Id = Path.GetFileName(dir),
                     Name = project.Name,
                     UpdatedAt = project.UpdatedAt,
                     MediaCount = project.Media.Count,
@@ -126,6 +139,8 @@ namespace Fig.Core.Project
             var project = JsonSerializer.Deserialize<Project>(File.ReadAllText(jsonPath), Options);
             if (project is not null)
             {
+                project.Id = id;
+                ProjectPaths.Resolve(project, ProjectDirectory(id));
                 EffectMigration.Migrate(project);
                 EffectMigration.MoveClipEffectsToTracks(project);
                 EmbeddedAudioMigration.Migrate(project);

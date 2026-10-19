@@ -24,7 +24,7 @@ namespace Fig.Core.Media
             string outputPath, int width, int height, int crf = 23, Action<double>? progress = null,
             double? rangeStartSec = null, double? rangeEndSec = null, ISceneRenderer? renderer = null,
             ILayerRasterizer? layers = null, VideoEncoderChoice encoder = VideoEncoderChoice.Automatic,
-            Action<string>? encoderUsed = null)
+            Action<string>? encoderUsed = null, ExportTurn turn = ExportTurn.None)
         {
             if (timeline.Tracks.Count == 0)
                 throw new InvalidOperationException("Timeline has no tracks");
@@ -42,6 +42,8 @@ namespace Fig.Core.Media
 
             width = Math.Max(2, width & ~1);
             height = Math.Max(2, height & ~1);
+            // the picture is composed as edited (width × height); turned, the file is the other way up
+            var (outW, outH) = turn == ExportTurn.None ? (width, height) : (height, width);
             // frame f is at start + f x Den / Num: the timeline's exact rate (29.97 is 30000/1001, not 30)
             var rate = timeline.Rate;
 
@@ -65,7 +67,7 @@ namespace Fig.Core.Media
                         throw new InvalidOperationException("Could not create output context");
 
                     // ---- video stream: H.264 on the GPU when there is one, else libx264, at the timeline's exact rate ----
-                    opened = VideoEncoders.Open(encoder, width, height, timeline.Rate, crf,
+                    opened = VideoEncoders.Open(encoder, outW, outH, timeline.Rate, crf,
                         (outCtx->oformat->flags & ffmpeg.AVFMT_GLOBALHEADER) != 0);
                     encoderUsed?.Invoke(opened.Label);
                     vEnc = opened.Context;
@@ -97,18 +99,18 @@ namespace Fig.Core.Media
                     // ---- scratch frames: compose to BGRA, convert to YUV420 ----
                     bgra = ffmpeg.av_frame_alloc();
                     bgra->format = (int)AVPixelFormat.AV_PIX_FMT_BGRA;
-                    bgra->width = width;
-                    bgra->height = height;
+                    bgra->width = outW;
+                    bgra->height = outH;
                     FfmpegOpen.Check(ffmpeg.av_frame_get_buffer(bgra, 32), "av_frame_get_buffer (bgra)");
 
                     yuv = ffmpeg.av_frame_alloc();
                     yuv->format = (int)opened.InputFormat;
-                    yuv->width = width;
-                    yuv->height = height;
+                    yuv->width = outW;
+                    yuv->height = outH;
                     FfmpegOpen.Check(ffmpeg.av_frame_get_buffer(yuv, 32), "av_frame_get_buffer (yuv)");
 
-                    sws = ffmpeg.sws_getContext(width, height, AVPixelFormat.AV_PIX_FMT_BGRA,
-                        width, height, opened.InputFormat, SWS_BILINEAR, null, null, null);
+                    sws = ffmpeg.sws_getContext(outW, outH, AVPixelFormat.AV_PIX_FMT_BGRA,
+                        outW, outH, opened.InputFormat, SWS_BILINEAR, null, null, null);
                     if (sws == null)
                         throw new InvalidOperationException("sws_getContext failed");
 
@@ -127,7 +129,7 @@ namespace Fig.Core.Media
                         while (inFlight.Count >= depth)
                         {
                             var item = inFlight.Dequeue();
-                            FinishFrame(item.Done, item.Canvas, item.Frame, bgra, yuv, sws, opened, outCtx, vStream, width, height);
+                            FinishFrame(item.Done, item.Canvas, item.Frame, bgra, yuv, sws, opened, outCtx, vStream, width, height, turn);
                             spare.Push(item.Canvas);
                             progress?.Invoke(Math.Min(1, (item.Time - start) / length));
                         }
@@ -135,7 +137,7 @@ namespace Fig.Core.Media
                     while (inFlight.Count > 0)
                     {
                         var item = inFlight.Dequeue();
-                        FinishFrame(item.Done, item.Canvas, item.Frame, bgra, yuv, sws, opened, outCtx, vStream, width, height);
+                        FinishFrame(item.Done, item.Canvas, item.Frame, bgra, yuv, sws, opened, outCtx, vStream, width, height, turn);
                         spare.Push(item.Canvas);
                         progress?.Invoke(Math.Min(1, (item.Time - start) / length));
                     }
@@ -222,8 +224,27 @@ namespace Fig.Core.Media
         }
 
         /// <summary>Waits for a frame to be drawn, then copies it into the encoder's frame, converts to YUV and encodes it.</summary>
+        /// <summary>
+        /// Copies a composed picture (width × height) into a frame of the other shape (height × width), turned a
+        /// quarter: turned right, the picture's top lies along the frame's right side; turned left, along its left.
+        /// </summary>
+        private static unsafe void Turn(byte* source, int width, int height, byte* frame, int frameStride, ExportTurn turn)
+        {
+            var src = (uint*)source;
+            var rowStride = frameStride / 4;
+            var dst = (uint*)frame;
+            System.Threading.Tasks.Parallel.For(0, height, y =>
+            {
+                for (var x = 0; x < width; x++)
+                {
+                    var (dx, dy) = turn == ExportTurn.Right ? (height - 1 - y, x) : (y, width - 1 - x);
+                    dst[dy * rowStride + dx] = src[y * width + x];
+                }
+            });
+        }
+
         private unsafe void FinishFrame(Task drawn, byte[] canvas, long index, AVFrame* bgra, AVFrame* yuv, SwsContext* sws,
-            OpenedEncoder encoder, AVFormatContext* outCtx, AVStream* vStream, int width, int height)
+            OpenedEncoder encoder, AVFormatContext* outCtx, AVStream* vStream, int width, int height, ExportTurn turn)
         {
             var vEnc = encoder.Context;
             drawn.GetAwaiter().GetResult();
@@ -231,14 +252,19 @@ namespace Fig.Core.Media
             fixed (byte* pCanvas = canvas)
             {
                 var dstStride = bgra->linesize[0];
-                for (var y = 0; y < height; y++)
-                    Buffer.MemoryCopy(
-                        pCanvas + y * srcStride,
-                        (byte*)bgra->data[0] + y * dstStride,
-                        srcStride, srcStride);
+                if (turn == ExportTurn.None)
+                {
+                    for (var y = 0; y < height; y++)
+                        Buffer.MemoryCopy(
+                            pCanvas + y * srcStride,
+                            (byte*)bgra->data[0] + y * dstStride,
+                            srcStride, srcStride);
+                }
+                else
+                    Turn(pCanvas, width, height, (byte*)bgra->data[0], dstStride, turn);
             }
 
-            ffmpeg.sws_scale(sws, bgra->data, bgra->linesize, 0, height, yuv->data, yuv->linesize);
+            ffmpeg.sws_scale(sws, bgra->data, bgra->linesize, 0, bgra->height, yuv->data, yuv->linesize);
             yuv->pts = index;
             if (encoder.HwFrames == null)
             {

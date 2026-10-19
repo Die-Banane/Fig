@@ -193,14 +193,16 @@ public partial class HomeViewModel : ViewModelBase
 
         var files = await owner.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
         {
-            Title = "Import OpenTimelineIO Project",
+            Title = "Import Project",
             AllowMultiple = true,
             FileTypeFilter = new[]
             {
-                new FilePickerFileType("OpenTimelineIO")
+                new FilePickerFileType("Fig package or OpenTimelineIO")
                 {
-                    Patterns = new[] { "*.otio", "*.otioz", "*.json" },
+                    Patterns = new[] { "*" + ProjectStore.PackageExtension, "*.otio", "*.otioz", "*.json" },
                 },
+                new FilePickerFileType("Fig package") { Patterns = new[] { "*" + ProjectStore.PackageExtension } },
+                new FilePickerFileType("OpenTimelineIO") { Patterns = new[] { "*.otio", "*.otioz", "*.json" } },
             },
         });
 
@@ -210,6 +212,25 @@ public partial class HomeViewModel : ViewModelBase
             var path = file.TryGetLocalPath();
             if (path is null)
                 continue;
+
+            if (path.EndsWith(ProjectStore.PackageExtension, StringComparison.OrdinalIgnoreCase))
+            {
+                // a shared project: unpacked as a new project of its own
+                try
+                {
+                    var unpacked = await Task.Run(() => _store.LoadProject(_store.Unpack(path)));
+                    if (unpacked is not null)
+                    {
+                        Notify?.Invoke($"Opened \"{unpacked.Name}\" from {Path.GetFileName(path)}");
+                        first ??= unpacked;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Notify?.Invoke($"Couldn't open {Path.GetFileName(path)}: {ex.Message}");
+                }
+                continue;
+            }
 
             try
             {

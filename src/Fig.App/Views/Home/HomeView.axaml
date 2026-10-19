@@ -84,7 +84,7 @@
             <TextBlock Text="Projects" FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center"/>
             <Button Grid.Column="1" Classes="fig" Width="148" Content="Import Project…"
                     Command="{Binding ImportOtioCommand}"
-                    ToolTip.Tip="Import an OpenTimelineIO (.otio) timeline as a new project"/>
+                    ToolTip.Tip="Open a shared Fig project (.figpck), or import an OpenTimelineIO (.otio) timeline, as a new project"/>
             <Button Grid.Column="2" Classes="fig primary" Width="148" Content="+ New Project"
                     Command="{Binding CreateProjectCommand}"
                     ToolTip.Tip="Create a new project (Ctrl+N)"/>

@@ -23,7 +23,8 @@ public sealed record ExportChapter(string Name, string FileName, double StartSec
 /// <param name="Chapters">When set, each chapter is exported as a separate file inside <see cref="OutputPath"/>.</param>
 public sealed record ExportOptions(int Width, int Height, int Crf, string OutputPath,
     IReadOnlyList<ExportChapter>? Chapters = null,
-    Fig.Core.Media.VideoEncoderChoice Encoder = Fig.Core.Media.VideoEncoderChoice.Automatic);
+    Fig.Core.Media.VideoEncoderChoice Encoder = Fig.Core.Media.VideoEncoderChoice.Automatic,
+    Fig.Core.Media.ExportTurn Turn = Fig.Core.Media.ExportTurn.None);
 
 /// <summary>One row in the "Export marked ranges" list.</summary>
 public sealed partial class ExportChapterItem : ObservableObject
@@ -123,6 +124,17 @@ public partial class ExportDialogViewModel : ViewModelBase
         set => EncoderIndex = (int)value;
     }
 
+    /// <summary>How the video lies in the file, in the order of <see cref="Fig.Core.Media.ExportTurn"/>.</summary>
+    public static IReadOnlyList<string> Turns { get; } = ["As edited", "Sideways, turned right", "Sideways, turned left"];
+
+    /// <summary>The chosen turn, as an index into <see cref="Turns"/>.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SizeLabel))]
+    [NotifyPropertyChangedFor(nameof(SummaryText))]
+    private int _turnIndex;
+
+    public Fig.Core.Media.ExportTurn Turn => (Fig.Core.Media.ExportTurn)Math.Clamp(TurnIndex, 0, Turns.Count - 1);
+
     /// <summary>The file (single export) or destination folder (marked ranges).</summary>
     [ObservableProperty]
     private string _outputPath = "";
@@ -154,7 +166,8 @@ public partial class ExportDialogViewModel : ViewModelBase
     public ObservableCollection<ExportChapterItem> Chapters { get; } = new();
 
     public string FpsLabel { get; }
-    public string SizeLabel => $"{Width} × {Height}";
+    /// <summary>The file's size: the picture's, the other way up when turned sideways.</summary>
+    public string SizeLabel => Turn == Fig.Core.Media.ExportTurn.None ? $"{Width} × {Height}" : $"{Height} × {Width}";
     public bool IsSingle => !ChapterMode;
     public bool HasTimelineMarkers => _timeline is { Markers.Count: > 0 };
 
@@ -393,6 +406,6 @@ public partial class ExportDialogViewModel : ViewModelBase
             chapters = Chapters.Where(c => c.IsIncluded)
                 .Select(c => new ExportChapter(c.Name, c.FileName.Trim(), c.StartSec, c.EndSec))
                 .ToList();
-        return new ExportOptions(Width, Height, Quality, OutputPath, chapters, Encoder);
+        return new ExportOptions(Width, Height, Quality, OutputPath, chapters, Encoder, Turn);
     }
 }

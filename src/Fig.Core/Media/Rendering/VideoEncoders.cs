@@ -6,6 +6,19 @@ using Fig.Core.Timeline;
 
 namespace Fig.Core.Media
 {
+    /// <summary>
+    /// How the finished video lies in the file: as edited, or turned a quarter so a wide edit fills a phone held
+    /// sideways (the file is tall, the picture on its side).
+    /// </summary>
+    public enum ExportTurn
+    {
+        None,
+        /// <summary>Turned clockwise: watched with the phone turned to the left.</summary>
+        Right,
+        /// <summary>Turned anticlockwise: watched with the phone turned to the right.</summary>
+        Left,
+    }
+
     /// <summary>Which H.264 encoder an export uses.</summary>
     public enum VideoEncoderChoice
     {

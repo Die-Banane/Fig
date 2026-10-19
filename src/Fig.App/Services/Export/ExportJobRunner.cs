@@ -36,16 +36,20 @@ namespace Fig.App.Services
 
         public ExportJob Enqueue(string outputPath, int width, int height, int crf,
             ProjectModel project, TimelineModel timeline, double? startSec = null, double? endSec = null,
-            Fig.Core.Media.VideoEncoderChoice encoder = Fig.Core.Media.VideoEncoderChoice.Automatic)
+            Fig.Core.Media.VideoEncoderChoice encoder = Fig.Core.Media.VideoEncoderChoice.Automatic,
+            Fig.Core.Media.ExportTurn turn = Fig.Core.Media.ExportTurn.None)
         {
-            var job = new ExportJob(outputPath, width, height, timeline.Rate.Fps);
+            // the job shows the file's size: tall when the wide picture is turned sideways
+            var job = turn == Fig.Core.Media.ExportTurn.None
+                ? new ExportJob(outputPath, width, height, timeline.Rate.Fps)
+                : new ExportJob(outputPath, height, width, timeline.Rate.Fps);
             Jobs.Add(job);
-            _ = RunAsync(job, project, timeline, crf, startSec, endSec, encoder);
+            _ = RunAsync(job, project, timeline, width, height, crf, startSec, endSec, encoder, turn);
             return job;
         }
 
-        private async Task RunAsync(ExportJob job, ProjectModel project, TimelineModel timeline, int crf,
-            double? startSec, double? endSec, Fig.Core.Media.VideoEncoderChoice encoder)
+        private async Task RunAsync(ExportJob job, ProjectModel project, TimelineModel timeline, int width, int height, int crf,
+            double? startSec, double? endSec, Fig.Core.Media.VideoEncoderChoice encoder, Fig.Core.Media.ExportTurn turn)
         {
             await _gate.WaitAsync();
             try
@@ -58,9 +62,9 @@ namespace Fig.App.Services
                     // the GPU when the window has one, the CPU kernels otherwise: same scenes, same picture
                     var renderer = await SkiaSceneRenderer.CreateAsync(_renderer());
                     await Task.Run(() => _media.RenderTimeline(
-                        project, timeline, job.OutputPath, job.Width, job.Height, crf,
+                        project, timeline, job.OutputPath, width, height, crf,
                         p => Dispatcher.UIThread.Post(() => job.Progress = p), startSec, endSec, renderer, _layers,
-                        encoder, name => Dispatcher.UIThread.Post(() => job.EncoderName = name)));
+                        encoder, name => Dispatcher.UIThread.Post(() => job.EncoderName = name), turn));
                     job.Status = ExportJobStatus.Done;
                     job.Progress = 1;
                 }

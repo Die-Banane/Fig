@@ -1009,9 +1009,23 @@
                         <Panel>
                         <!-- Media browser -->
                         <DockPanel IsVisible="{Binding IsLibraryMedia}">
-                          <TextBox DockPanel.Dock="Top" Margin="0,0,0,10" Text="{Binding MediaSearchText}"
-                                   PlaceholderText="Search media" IsVisible="{Binding HasMedia}"
-                                   AutomationProperties.Name="Search media"/>
+                          <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" ColumnSpacing="6" Margin="0,0,0,10"
+                                IsVisible="{Binding HasMedia}">
+                              <TextBox Text="{Binding MediaSearchText}" PlaceholderText="Search media"
+                                       AutomationProperties.Name="Search media"/>
+                              <Button Grid.Column="1" Classes="tool-btn" Width="30" MinWidth="30" Padding="6"
+                                      VerticalAlignment="Stretch" ToolTip.Tip="Media options" AutomationProperties.Name="Media options">
+                                  <local:StrokeIcon Icon="ellipsis" Width="15" Height="15"/>
+                                  <Button.Flyout>
+                                      <MenuFlyout Placement="BottomEdgeAlignedRight">
+                                          <MenuItem Header="Collect sources" Command="{Binding CollectSourcesCommand}"
+                                                    ToolTip.Tip="Copy every external file into the project folder"/>
+                                          <MenuItem Header="Save as package…" Command="{Binding SaveAsPackageCommand}"
+                                                    ToolTip.Tip="The project and all its media in one .figpck file, to send to someone"/>
+                                      </MenuFlyout>
+                                  </Button.Flyout>
+                              </Button>
+                          </Grid>
                           <Grid>
                             <ListBox x:Name="MediaBox"
                                      ItemsSource="{Binding VisibleMedia}"
@@ -1064,6 +1078,19 @@
                                                     <Border Background="#0e0f11">
                                                         <Image Source="{Binding Thumbnail, Converter={StaticResource PathToBitmap}}"
                                                                Stretch="Uniform"/>
+                                                    </Border>
+                                                    <!-- where the file lives: in the project folder, or outside it -->
+                                                    <Border HorizontalAlignment="Left" VerticalAlignment="Top"
+                                                            Margin="4" Padding="3" Background="#000000a0" CornerRadius="6"
+                                                            IsVisible="{Binding InProject}"
+                                                            ToolTip.Tip="In the project folder">
+                                                        <local:StrokeIcon Icon="folder-check" Width="11" Height="11" IconBrush="#9fe0b5"/>
+                                                    </Border>
+                                                    <Border HorizontalAlignment="Left" VerticalAlignment="Top"
+                                                            Margin="4" Padding="3" Background="#000000a0" CornerRadius="6"
+                                                            IsVisible="{Binding !InProject}"
+                                                            ToolTip.Tip="External file: not in the project folder (Collect sources copies it in)">
+                                                        <local:StrokeIcon Icon="link" Width="11" Height="11" IconBrush="#d0d3d9"/>
                                                     </Border>
                                                     <Border HorizontalAlignment="Right" VerticalAlignment="Top"
                                                             Margin="4" Padding="4,1"

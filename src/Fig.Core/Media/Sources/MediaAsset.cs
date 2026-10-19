@@ -99,6 +99,25 @@ namespace Fig.Core.Media
         /// </summary>
         public string? ReverseOf { get; set; }
 
+        private bool _inProject;
+
+        /// <summary>
+        /// The file is inside the project's own folder (collected, or made there), so it travels with the project;
+        /// false for one the project points at elsewhere. Worked out by the editor, not saved.
+        /// </summary>
+        [System.Text.Json.Serialization.JsonIgnore]
+        public bool InProject
+        {
+            get => _inProject;
+            set
+            {
+                if (_inProject == value)
+                    return;
+                _inProject = value;
+                Notify();
+            }
+        }
+
         public bool Offline { get; set; }
         public List<string> Tags { get; set; } = new();
 

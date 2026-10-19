@@ -72,13 +72,13 @@ public partial class EditorViewModel
             System.IO.Directory.CreateDirectory(options.OutputPath);
             foreach (var chapter in chapters)
                 Exports.Enqueue(System.IO.Path.Combine(options.OutputPath, chapter.FileName), width, height, crf,
-                    Project, timeline, chapter.StartSec, chapter.EndSec, encoder);
+                    Project, timeline, chapter.StartSec, chapter.EndSec, encoder, options.Turn);
             IsJobsOpen = true;
             Notify?.Invoke($"Exporting {chapters.Count} video{(chapters.Count == 1 ? "" : "s")} — you can keep editing");
             return;
         }
 
-        Exports.Enqueue(options.OutputPath, width, height, crf, Project, timeline, encoder: encoder);
+        Exports.Enqueue(options.OutputPath, width, height, crf, Project, timeline, encoder: encoder, turn: options.Turn);
         IsJobsOpen = true;
         Notify?.Invoke($"Export started: {System.IO.Path.GetFileName(options.OutputPath)} — you can keep editing");
     }

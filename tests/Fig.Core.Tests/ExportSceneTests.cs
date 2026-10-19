@@ -89,6 +89,47 @@ public class ExportSceneTests
         finally { File.Delete(path); }
     }
 
+    /// <summary>Draws a white block in the picture's top-left corner, black elsewhere.</summary>
+    private sealed class CornerRenderer : ISceneRenderer
+    {
+        public int MaxInFlight => 1;
+
+        public Task RenderAsync(RenderScene scene, byte[] canvas)
+        {
+            for (var y = 0; y < scene.Height; y++)
+                for (var x = 0; x < scene.Width; x++)
+                {
+                    var white = x < scene.Width / 4 && y < scene.Height / 4;
+                    var i = (y * scene.Width + x) * 4;
+                    canvas[i] = canvas[i + 1] = canvas[i + 2] = white ? (byte)255 : (byte)0;
+                    canvas[i + 3] = 255;
+                }
+            return Task.CompletedTask;
+        }
+    }
+
+    [Fact]
+    public void ExportTurnedRight_IsATallFile_WithThePictureTurnedClockwise()
+    {
+        var (project, timeline, _) = Setup(0.2);
+        var path = Path.Combine(Path.GetTempPath(), $"fig-export-{Guid.NewGuid():N}.mp4");
+        try
+        {
+            var media = new MediaService();
+            media.RenderTimeline(project, timeline, path, 320, 180, renderer: new CornerRenderer(), turn: ExportTurn.Right);
+            var probe = media.Probe(path);
+            Assert.Equal((180, 320), (probe.Width, probe.Height));
+
+            // turned clockwise, the picture's top-left corner is the file's top-right
+            var frame = media.DecodeFrameAt(path, 0, 180, 320)!;
+            byte At(int x, int y) => frame.Pixels[(y * 180 + x) * 4 + 1];
+            Assert.True(At(170, 10) > 200, "top right should be the white corner");
+            Assert.True(At(10, 10) < 50, "top left should be black");
+            Assert.True(At(170, 310) < 50, "bottom right should be black");
+        }
+        finally { File.Delete(path); }
+    }
+
     [Fact]
     public void Export_PipelinesFrames_AndStillEncodesThemInOrder()
     {
