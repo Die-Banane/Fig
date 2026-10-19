@@ -90,6 +90,8 @@
                     <MenuItem Header="_Save" Command="{Binding Editor.SaveCommand}" InputGesture="{Binding Shortcuts[project.save]}" IsEnabled="{Binding IsEditing}"/>
                     <MenuItem Header="Save _as…" Command="{Binding Editor.SaveAsCommand}" CommandParameter="{Binding #TitleRoot.Owner}"
                               IsEnabled="{Binding IsEditing}"/>
+                    <MenuItem Header="Save as _package…" Command="{Binding Editor.SaveAsPackageCommand}" IsEnabled="{Binding IsEditing}"
+                              ToolTip.Tip="The project and all its media in one .figpck file, to send to someone"/>
                     <MenuItem Header="_Export…" Command="{Binding Editor.ExportCommand}" CommandParameter="{Binding #TitleRoot.Owner}"
                               IsEnabled="{Binding IsEditing}"/>
                     <MenuItem Header="Export marked _ranges…" Command="{Binding Editor.ExportMarkedRangesCommand}"

@@ -1020,8 +1020,6 @@
                                       <MenuFlyout Placement="BottomEdgeAlignedRight">
                                           <MenuItem Header="Collect sources" Command="{Binding CollectSourcesCommand}"
                                                     ToolTip.Tip="Copy every external file into the project folder"/>
-                                          <MenuItem Header="Save as package…" Command="{Binding SaveAsPackageCommand}"
-                                                    ToolTip.Tip="The project and all its media in one .figpck file, to send to someone"/>
                                       </MenuFlyout>
                                   </Button.Flyout>
                               </Button>
