@@ -79,6 +79,49 @@ namespace Fig.Core.Timeline
         public override string ToString() => $"{Num}/{Den}";
     }
 
+    /// <summary>The shape of the picture: follow the footage, or a fixed one for where the video is going.</summary>
+    public enum FrameShape
+    {
+        /// <summary>The first video's own shape (what a project gets until one is picked).</summary>
+        Auto,
+        /// <summary>16:9, for YouTube and screens.</summary>
+        Wide,
+        /// <summary>9:16, for phones: Shorts, Reels, TikTok.</summary>
+        Tall,
+        /// <summary>1:1.</summary>
+        Square,
+        /// <summary>4:5, for feeds.</summary>
+        Portrait,
+    }
+
+    public static class FrameShapes
+    {
+        public static IReadOnlyList<FrameShape> All { get; } =
+            [FrameShape.Auto, FrameShape.Wide, FrameShape.Tall, FrameShape.Square, FrameShape.Portrait];
+
+        public static string Label(FrameShape shape) => shape switch
+        {
+            FrameShape.Wide => "16:9",
+            FrameShape.Tall => "9:16",
+            FrameShape.Square => "1:1",
+            FrameShape.Portrait => "4:5",
+            _ => "Auto",
+        };
+
+        /// <summary>
+        /// The frame a shape exports at: its short side 1080 pixels. Auto is <paramref name="footageWidth"/> by
+        /// <paramref name="footageHeight"/> (the first video's size), or 1920×1080 with no footage.
+        /// </summary>
+        public static (int Width, int Height) Size(FrameShape shape, int footageWidth, int footageHeight) => shape switch
+        {
+            FrameShape.Wide => (1920, 1080),
+            FrameShape.Tall => (1080, 1920),
+            FrameShape.Square => (1080, 1080),
+            FrameShape.Portrait => (1080, 1350),
+            _ => footageWidth > 0 && footageHeight > 0 ? (footageWidth, footageHeight) : (1920, 1080),
+        };
+    }
+
     public class Timeline
     {
         public string Id { get; set; } = Guid.NewGuid().ToString();
@@ -90,6 +133,9 @@ namespace Fig.Core.Timeline
 
         /// <summary>The user set <see cref="Rate"/>, so importing media no longer picks it.</summary>
         public bool RateChosen { get; set; }
+
+        /// <summary>The picture's shape; Auto follows the first video (every project before this setting).</summary>
+        public FrameShape Shape { get; set; }
         public int Revision { get; set; }
         public bool IsAutosave { get; set; }
         public List<Track> Tracks { get; set; } = new();

@@ -52,7 +52,9 @@ public partial class EditorViewModel
 
         var timeline = Editor.Document;
         var settings = Project.Export;
-        var dialog = new ExportDialog(timeline.Rate.Fps, settings.Width, settings.Height, timeline, Project.Name, chapterMode,
+        // "Match project" is the frame shape's size when one is picked
+        var (matchWidth, matchHeight) = timeline.Shape == FrameShape.Auto ? (settings.Width, settings.Height) : Preview.FrameSize;
+        var dialog = new ExportDialog(timeline.Rate.Fps, matchWidth, matchHeight, timeline, Project.Name, chapterMode,
             Preferences.Current.Export);
         dialog.Model.CreateRangesFromBookmarks = () => CreateRangesFromBookmarksAsync(dialog);
         var options = await dialog.ShowDialog<ExportOptions?>(owner);

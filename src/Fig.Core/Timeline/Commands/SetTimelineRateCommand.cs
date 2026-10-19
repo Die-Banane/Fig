@@ -30,4 +30,18 @@ namespace Fig.Core.Timeline
             _editor.Document.RateChosen = chosen;
         }
     }
+
+    /// <summary>Sets the picture's shape.</summary>
+    public sealed class SetFrameShapeCommand(TimelineEditor editor, FrameShape shape) : IEditCommand
+    {
+        private readonly FrameShape _old = editor.Document.Shape;
+
+        public string Description => "set frame shape";
+
+        public void Execute() => editor.Document.Shape = shape;
+
+        public void Undo() => editor.Document.Shape = _old;
+
+        public void Redo() => Execute();
+    }
 }

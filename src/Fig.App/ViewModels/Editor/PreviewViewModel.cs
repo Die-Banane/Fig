@@ -197,25 +197,37 @@ public partial class PreviewViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// Adopts the preview canvas aspect from the first video asset. Called when media is
-    /// added or a project is loaded, so the canvas matches the footage instead of forcing
-    /// everything into 16:9. Only the first asset wins, keeping the canvas stable mid-edit.
+    /// Sets the preview canvas to the project's frame shape: a picked one, or (Auto) the first video's, so the
+    /// canvas matches the footage instead of forcing everything into 16:9. Called when media is added, a project
+    /// is loaded, or the shape changes; under Auto only the first asset counts, keeping the canvas stable mid-edit.
     /// </summary>
     public void UpdateCanvasFromMedia()
     {
-        var asset = _editor?.MediaById.Values.FirstOrDefault(a => a.Width > 0 && a.Height > 0);
-        if (asset is null || (asset.Width == _baseCanvasW && asset.Height == _baseCanvasH))
+        var (w, h) = FrameSize;
+        if (w == _baseCanvasW && h == _baseCanvasH)
             return;
 
-        _baseCanvasW = asset.Width;
-        _baseCanvasH = asset.Height;
+        _baseCanvasW = w;
+        _baseCanvasH = h;
+        OnPropertyChanged(nameof(CanvasAspect));
 
         var height = _targetHeight;
-        var width = Math.Max(1, (int)Math.Round(asset.Width * height / (double)asset.Height));
+        var width = Math.Max(1, (int)Math.Round(w * height / (double)h));
         if (width != _targetWidth)
         {
             _targetWidth = width;
             RequestReset(width, height);
+            RequestFrame();
+        }
+    }
+
+    /// <summary>The project's frame at full size (what it exports at with "Match project").</summary>
+    public (int Width, int Height) FrameSize
+    {
+        get
+        {
+            var asset = _editor?.MediaById.Values.FirstOrDefault(a => a.Width > 0 && a.Height > 0);
+            return FrameShapes.Size(_editor?.Editor.Document.Shape ?? FrameShape.Auto, asset?.Width ?? 0, asset?.Height ?? 0);
         }
     }
 

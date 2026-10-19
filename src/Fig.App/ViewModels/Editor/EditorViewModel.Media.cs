@@ -35,8 +35,9 @@ public partial class EditorViewModel
     {
         var query = MediaSearchText.Trim();
         VisibleMedia.Clear();
-        foreach (var asset in Media.Where(a => query.Length == 0
-                     || a.FileName.Contains(query, StringComparison.OrdinalIgnoreCase)))
+        // a reversed copy belongs to its clip, not to the bin
+        foreach (var asset in Media.Where(a => a.ReverseOf is null && (query.Length == 0
+                     || a.FileName.Contains(query, StringComparison.OrdinalIgnoreCase))))
             VisibleMedia.Add(asset);
         OnPropertyChanged(nameof(NoMediaMatches));
     }

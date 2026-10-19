@@ -73,15 +73,18 @@ namespace Fig.Core.Timeline
             RaiseChanged();
         }
 
-        /// <summary>Gives each listed layer its own layout, as one undo step (a gizmo drag coalesces into it).</summary>
-        public void SetLayouts(IReadOnlyDictionary<string, LayerTransform> layouts)
+        /// <summary>
+        /// Gives each listed layer its own layout at the playhead, as one undo step (a gizmo drag coalesces into
+        /// it): a position value that is animated gets a keyframe there, the rest change the layout itself.
+        /// </summary>
+        public void SetLayouts(IReadOnlyDictionary<string, LayerTransform> layouts, double playheadSec)
         {
-            var changed = layouts.Where(kv => FindClip(kv.Key) is ILayerClip layer && layer.Layout != kv.Value)
+            var changed = layouts.Where(kv => FindClip(kv.Key) is ILayerClip and Clip clip
+                    && ClipProperties.LayoutAt(clip, playheadSec - clip.StartSec) != kv.Value)
                 .ToDictionary(kv => kv.Key, kv => kv.Value);
             if (changed.Count == 0)
                 return;
-            History.ExecuteCoalescing(new SetClipValueCommand<LayerTransform>(this, layouts, "layout",
-                c => ((ILayerClip)c).Layout, (c, v) => ((ILayerClip)c).Layout = v));
+            History.ExecuteCoalescing(new SetLayoutsCommand(this, layouts, playheadSec));
             RaiseChanged();
         }
 
@@ -96,7 +99,8 @@ namespace Fig.Core.Timeline
                 foreach (var clip in track.Clips)
                     if (clip is ILayerClip layer && clip.Enabled
                         && timeSec >= clip.StartSec && timeSec < clip.StartSec + clip.DurSec
-                        && measure(clip) is { } size && LayerGeometry.Contains(layer.Layout, size, x, y, aspect))
+                        && measure(clip) is { } size
+                        && LayerGeometry.Contains(ClipProperties.LayoutAt(clip, timeSec - clip.StartSec), size, x, y, aspect))
                         return clip;
             }
             return null;

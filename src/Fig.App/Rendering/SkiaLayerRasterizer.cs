@@ -41,12 +41,14 @@ public sealed class SkiaLayerRasterizer : ILayerRasterizer
             return null;
 
         TextStyle? textStyle = clip is TextClip t ? StyleAt(t, localT) : null;
+        // where it is then (its position can be keyframed)
+        var layout = clip is ILayerClip ? ClipProperties.LayoutAt(clip, localT) : LayerTransform.Default;
         object? key = clip switch
         {
-            TextClip text => (text.Text, textStyle, text.Layout, width, height),
+            TextClip text => (text.Text, textStyle, layout, width, height),
             // an animation's picture changes with time: which frame is part of what is shown
             ImageClip image when _findMedia(image.SourceId) is { Url: { Length: > 0 } url } && LoadImage(url) is { } source
-                => (url, image.Layout, width, height, source.FrameAt(localT)),
+                => (url, layout, width, height, source.FrameAt(localT)),
             _ => null,
         };
         if (key is null)
@@ -60,9 +62,9 @@ public sealed class SkiaLayerRasterizer : ILayerRasterizer
 
         var picture = clip switch
         {
-            TextClip text => Draw(width, height, canvas => DrawText(canvas, text, textStyle!, width, height)),
+            TextClip text => Draw(width, height, canvas => DrawText(canvas, text, textStyle!, layout, width, height)),
             ImageClip image => LoadImage(_findMedia(image.SourceId)!.Url) is { } source
-                ? Draw(width, height, canvas => DrawImage(canvas, source[source.FrameAt(localT)], image.Layout, width, height))
+                ? Draw(width, height, canvas => DrawImage(canvas, source[source.FrameAt(localT)], layout, width, height))
                 : null,
             _ => null,
         };
@@ -155,7 +157,7 @@ public sealed class SkiaLayerRasterizer : ILayerRasterizer
         canvas.Scale((float)Math.Max(0.01, layout.Scale));
     }
 
-    private static void DrawText(SKCanvas canvas, TextClip clip, TextStyle style, int width, int height)
+    private static void DrawText(SKCanvas canvas, TextClip clip, TextStyle style, LayerTransform layout, int width, int height)
     {
         if (string.IsNullOrEmpty(clip.Text))
             return;
@@ -163,7 +165,7 @@ public sealed class SkiaLayerRasterizer : ILayerRasterizer
         var (blockWidth, blockHeight, size) = (block.BlockWidth, block.BlockHeight, block.Size);
 
         canvas.Save();
-        Place(canvas, clip.Layout, width, height);
+        Place(canvas, layout, width, height);
 
         if (style.Background)
         {

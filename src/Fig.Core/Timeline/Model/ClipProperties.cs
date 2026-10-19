@@ -127,7 +127,7 @@ namespace Fig.Core.Timeline
 
         private static ClipProperty LayoutProperty(ParamDef def, Func<LayerTransform, double> get, Func<LayerTransform, double, LayerTransform> with) => new()
         {
-            Def = def, Facet = Facet.Layout, Group = "Position",
+            Def = def, Facet = Facet.Layout, Group = "Position", Keyable = true,
             Get = c => N(get(((ILayerClip)c).Layout)),
             Set = (c, v) => ((ILayerClip)c).Layout = with(((ILayerClip)c).Layout, Math.Clamp(v.AsNumber, def.Min, def.Max)),
         };
@@ -140,6 +140,21 @@ namespace Fig.Core.Timeline
             l => l.Scale, (l, v) => l with { Scale = v });
         public static readonly ClipProperty LayoutRotation = LayoutProperty(Number("rotation", "Rotation", -180, 180, 0, "{0:0}°"),
             l => l.Rotation, (l, v) => l with { Rotation = v });
+
+        /// <summary>The position values, each with the part of a layout it is.</summary>
+        public static IReadOnlyList<(ClipProperty Property, Func<LayerTransform, double> Of)> LayoutParts { get; } =
+        [
+            (LayoutX, l => l.CenterX), (LayoutY, l => l.CenterY), (LayoutScale, l => l.Scale), (LayoutRotation, l => l.Rotation),
+        ];
+
+        /// <summary>Where a layer is at a moment of it (seconds from its start): its keyframes there, else its layout.</summary>
+        public static LayerTransform LayoutAt(Clip clip, double localT) => ((ILayerClip)clip).Layout with
+        {
+            CenterX = LayoutX.NumberAt(clip, localT),
+            CenterY = LayoutY.NumberAt(clip, localT),
+            Scale = LayoutScale.NumberAt(clip, localT),
+            Rotation = LayoutRotation.NumberAt(clip, localT),
+        };
 
         // ---- sound ----------------------------------------------------------------------------
 

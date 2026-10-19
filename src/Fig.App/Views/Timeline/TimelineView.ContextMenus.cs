@@ -129,6 +129,9 @@ namespace Fig.App.Views
                     : Item("Add speed curve", () => { ed.AddSpeedCurve(clip.Id); InvalidateVisual(); },
                         hint: "Ramp the speed through the clip (a velocity edit): drag the line's points up and down"));
 
+            menu.Items.Add(Item("Reverse", () => _ = vm.ReverseClipsAsync(selected),
+                hint: clip is VideoClip or AudioClip ? "Play it backwards (the first time, a reversed copy is made)" : "Run its animation backwards"));
+
             if (ed.CanDetachAudio(selected))
                 menu.Items.Add(Item("Detach audio", () => { ed.DetachAudio(selected); InvalidateVisual(); },
                     hint: "Move the sound to its own audio clip, which then moves and trims on its own"));

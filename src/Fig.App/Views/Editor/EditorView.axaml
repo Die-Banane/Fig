@@ -1641,6 +1641,10 @@
                                           MinHeight="26" Padding="8,2" FontSize="11" VerticalAlignment="Center"
                                           ToolTip.Tip="Project frame rate: the frame grid and the export rate. Clips always play in real time."
                                           AutomationProperties.Name="Project frame rate"/>
+                                <ComboBox ItemsSource="{Binding FrameShapeLabels}" SelectedIndex="{Binding FrameShapeIndex}"
+                                          MinHeight="26" Padding="8,2" FontSize="11" VerticalAlignment="Center"
+                                          ToolTip.Tip="Frame shape: 9:16 for phones, 16:9 for screens. Auto follows the first video."
+                                          AutomationProperties.Name="Frame shape"/>
                             </StackPanel>
                             <Border Grid.Column="1" Classes="timeline-toolbar" HorizontalAlignment="Left" Padding="3,2"
                                     Background="{StaticResource CardBg}" CornerRadius="10">

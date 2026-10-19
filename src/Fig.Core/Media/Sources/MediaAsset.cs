@@ -93,6 +93,12 @@ namespace Fig.Core.Media
             }
         }
 
+        /// <summary>
+        /// Set on a reversed copy (made when a clip is reversed): the id of the media it is a backwards copy of.
+        /// Copies stay out of the media bin; a reversed clip plays its copy.
+        /// </summary>
+        public string? ReverseOf { get; set; }
+
         public bool Offline { get; set; }
         public List<string> Tags { get; set; } = new();
 

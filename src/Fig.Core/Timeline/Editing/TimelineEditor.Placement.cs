@@ -133,6 +133,14 @@ namespace Fig.Core.Timeline
             RaiseChanged();
         }
 
+        public void SetFrameShape(FrameShape shape)
+        {
+            if (shape == Document.Shape)
+                return;
+            History.Execute(new SetFrameShapeCommand(this, shape));
+            RaiseChanged();
+        }
+
         private bool HasNoClips()
         {
             foreach (var track in Document.Tracks)

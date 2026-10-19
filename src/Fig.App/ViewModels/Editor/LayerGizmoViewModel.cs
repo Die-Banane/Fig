@@ -57,7 +57,7 @@ public sealed partial class LayerGizmoViewModel : ViewModelBase, Fig.App.Control
         var items = new List<GizmoItem>(layers.Count);
         for (var i = 0; i < layers.Count; i++)
             if (Measure(layers[i]) is { } size)
-                items.Add(new GizmoItem(layers[i].Id, ((ILayerClip)layers[i]).Layout, size, i == layers.Count - 1));
+                items.Add(new GizmoItem(layers[i].Id, ClipProperties.LayoutAt(layers[i], t - layers[i].StartSec), size, i == layers.Count - 1));
         if (!items.SequenceEqual(Items))
         {
             Items = items;
@@ -75,7 +75,7 @@ public sealed partial class LayerGizmoViewModel : ViewModelBase, Fig.App.Control
         if (Items.LastOrDefault(item => LayerGeometry.Contains(item.Layout, item.Size, x, y, FrameAspect)) is { } selected)
             return selected;
         return _editor.Editor.LayerAt(_editor.PlayheadTimeSec, x, y, FrameAspect, Measure) is { } clip && Measure(clip) is { } size
-            ? new GizmoItem(clip.Id, ((ILayerClip)clip).Layout, size, IsPrimary: false)
+            ? new GizmoItem(clip.Id, ClipProperties.LayoutAt(clip, _editor.PlayheadTimeSec - clip.StartSec), size, IsPrimary: false)
             : null;
     }
 
@@ -135,7 +135,7 @@ public sealed partial class LayerGizmoViewModel : ViewModelBase, Fig.App.Control
     {
         if (_start.Count == 0)
             return;
-        _editor.Editor.SetLayouts(_start.ToDictionary(kv => kv.Key, kv => change(kv.Value)));
+        _editor.Editor.SetLayouts(_start.ToDictionary(kv => kv.Key, kv => change(kv.Value)), _editor.PlayheadTimeSec);
     }
 
     private static double Normalize(double degrees)

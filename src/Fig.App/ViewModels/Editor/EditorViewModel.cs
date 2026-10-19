@@ -314,11 +314,26 @@ public partial class EditorViewModel : ViewModelBase
         }
     }
 
+    public IReadOnlyList<string> FrameShapeLabels { get; } = FrameShapes.All.Select(FrameShapes.Label).ToList();
+
+    /// <summary>The picture's shape, as an index into <see cref="FrameShapeLabels"/>. Setting it is one undo step.</summary>
+    public int FrameShapeIndex
+    {
+        get => FrameShapes.All.ToList().IndexOf(Editor.Document.Shape);
+        set
+        {
+            if (value >= 0 && value < FrameShapes.All.Count)
+                Editor.SetFrameShape(FrameShapes.All[value]);
+        }
+    }
+
     private void NotifyProjectRate()
     {
         OnPropertyChanged(nameof(ProjectRateLabels));
         OnPropertyChanged(nameof(ProjectRateIndex));
         OnPropertyChanged(nameof(FrameDurationSec));
+        OnPropertyChanged(nameof(FrameShapeIndex));
+        Preview.UpdateCanvasFromMedia();
     }
 
     /// <summary>
