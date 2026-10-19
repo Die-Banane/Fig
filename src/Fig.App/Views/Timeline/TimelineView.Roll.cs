@@ -1,15 +1,17 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Avalonia;
+using Avalonia.Input;
 using Fig.Core.Timeline;
 
 namespace Fig.App.Views
 {
     /// <summary>
-    /// Trimming an edge that touches another clip moves the cut between them (a rolling edit): the clip being
-    /// trimmed grows or shrinks, and the neighbour's start (or end) follows the cut, taking more or less of its own
-    /// footage. Neither clip moves and nothing else on the track does. An edge with a gap after it trims on its
-    /// own, up to the next clip and no further. Linked partners roll with the clip they belong to.
+    /// Trimming an edge: a plain drag trims that clip alone, up to the next clip and no further (a touching
+    /// neighbour is a wall). Holding Ctrl (Cmd) when pressing the edge rolls the cut instead: the trimmed clip grows
+    /// or shrinks and the touching neighbour's start (or end) follows the cut, taking more or less of its own
+    /// footage. Neither clip moves and nothing else on the track does. Linked partners trim with their clip.
     /// </summary>
     public partial class TimelineView
     {
@@ -19,11 +21,23 @@ namespace Fig.App.Views
         private readonly Dictionary<string, RollPartner> _rollPartners = new();
         private readonly HashSet<string> _rollSnapExclude = new();
 
+        /// <summary>The press that started this trim held Ctrl (Cmd) on an edge: roll the cut.</summary>
+        private bool _rollEdit;
+
+        private bool IsRollPress(PointerPressedEventArgs e, Point pos)
+            => (e.KeyModifiers.HasFlag(KeyModifiers.Control) || e.KeyModifiers.HasFlag(KeyModifiers.Meta))
+               && !e.KeyModifiers.HasFlag(KeyModifiers.Shift)
+               && e.GetCurrentPoint(this).Properties.IsLeftButtonPressed
+               && HoverClipEdge(pos, out _) is EdgeKind.Left or EdgeKind.Right;
+
         // how far the trimmed edge may move from where it started (seconds), so no clip overlaps or runs out
         private double _rollLo = double.NegativeInfinity, _rollHi = double.PositiveInfinity;
 
-        /// <summary>A trim begins: find each trimmed clip's neighbour at that edge, and how far the edge can go.</summary>
-        private void BeginRoll(bool atEnd)
+        /// <summary>
+        /// A trim begins: find how far each trimmed clip's edge can go, and, when <paramref name="roll"/>, the
+        /// neighbour at that edge that rolls with it.
+        /// </summary>
+        private void BeginRoll(bool atEnd, bool roll)
         {
             _rollPartners.Clear();
             _rollSnapExclude.Clear();
@@ -40,10 +54,12 @@ namespace Fig.App.Views
                     continue;
                 var others = track.Clips.Where(c => !members.Contains(c.Id)).ToList();
                 var edge = atEnd ? member.StartSec + member.DurSec : member.StartSec;
-                var touching = others.FirstOrDefault(c => Math.Abs((atEnd ? c.StartSec : c.StartSec + c.DurSec) - edge) < 1e-4);
+                var touching = roll
+                    ? others.FirstOrDefault(c => Math.Abs((atEnd ? c.StartSec : c.StartSec + c.DurSec) - edge) < 1e-4)
+                    : null;
                 if (touching is null)
                 {
-                    // a gap: trim up to the next clip, not into it
+                    // trim up to the next clip, not into it (a touching one: not at all, only shorter)
                     if (atEnd)
                         _rollHi = Math.Min(_rollHi, others.Where(c => c.StartSec >= edge - 1e-6).Select(c => c.StartSec - edge).DefaultIfEmpty(double.PositiveInfinity).Min());
                     else

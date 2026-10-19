@@ -337,7 +337,10 @@ namespace Fig.App.Views
                 return;
             }
 
-            if (TryArmCopyDrag(e, pos))
+            // Ctrl / Cmd on a trim edge rolls the cut instead (not a copy-drag or a selection box)
+            _rollEdit = IsRollPress(e, pos);
+
+            if (!_rollEdit && TryArmCopyDrag(e, pos))
             {
                 e.Handled = true;
                 return;
@@ -516,7 +519,7 @@ namespace Fig.App.Views
                 if (clip is not null)
                 {
                     // Shift or Ctrl held: draw a selection region from here (a plain click still adds the clip)
-                    if (e.KeyModifiers.HasFlag(KeyModifiers.Shift) || e.KeyModifiers.HasFlag(KeyModifiers.Control))
+                    if (!_rollEdit && (e.KeyModifiers.HasFlag(KeyModifiers.Shift) || e.KeyModifiers.HasFlag(KeyModifiers.Control)))
                     {
                         ArmMarquee(pos, e.KeyModifiers);
                         _marqueeClickClip = clip;
@@ -525,7 +528,7 @@ namespace Fig.App.Views
                         e.Handled = true;
                         return;
                     }
-                    ClickSelectClip(clip, e.KeyModifiers);
+                    ClickSelectClip(clip, _rollEdit ? KeyModifiers.None : e.KeyModifiers);
                     _pressedPx = pos.X;
                     BeginClipDrag(clip, clipTrack, time, pos);
                     InvalidateVisual();
@@ -694,7 +697,7 @@ namespace Fig.App.Views
                     }
                     case DragMode.ResizeStart:
                     {
-                        // a touching neighbour rolls with the cut; otherwise stop at the clip before
+                        // Ctrl-held: a touching neighbour rolls with the cut; otherwise stop at the clip before
                         ApplyLiveResizeStart(deltaTime);
                         var moved = _dragClip.StartSec - _dragOriginals[_dragClip.Id];
                         if (Math.Abs(ClampRoll(moved) - moved) > 1e-9)
@@ -890,7 +893,7 @@ namespace Fig.App.Views
             if (_dragMode == DragMode.Move)
                 BeginCarryForClips(_dragMembers);
             if (_dragMode is DragMode.ResizeStart or DragMode.ResizeEnd)
-                BeginRoll(atEnd: _dragMode == DragMode.ResizeEnd);
+                BeginRoll(atEnd: _dragMode == DragMode.ResizeEnd, roll: _rollEdit);
         }
     }
 }
